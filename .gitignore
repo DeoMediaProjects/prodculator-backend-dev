@@ -1,8 +1,44 @@
+# Virtual environments
 venv/
-__pycache__/
-*.pyc
+.venv/
+env/
+
+# Environment files
 .env
-.ruff_cache/
+.env.local
+
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Tool caches
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build / packaging
 dist/
+build/
 *.egg-info/
+.eggs/
+
+# Logs
+*.log
+
+# Local runtime data
+storage/
+prodculator.db
+*.sqlite
+*.sqlite3
+
+# Alembic transient files
+alembic/versions/__pycache__/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
