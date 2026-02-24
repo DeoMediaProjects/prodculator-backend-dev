@@ -24,9 +24,13 @@ API docs available at http://localhost:8000/api/docs
 ## Docker
 
 ```bash
-docker build -t prodculator-api .
-docker run --rm -p 8000:8000 --env-file .env prodculator-api
+docker compose up -d --build
 ```
+
+Services:
+- Backend: `http://localhost:8001`
+- Postgres: `localhost:5432`
+- Redis: `localhost:6379`
 
 This backend is self-contained in the `backend/` directory and can be moved to a separate workspace as-is.
 
