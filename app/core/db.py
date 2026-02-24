@@ -19,6 +19,12 @@ def _to_sync_db_url(db_url: str) -> str:
 
 
 def _to_async_db_url(db_url: str) -> str:
+    if db_url.startswith("sqlite:///"):
+        return "sqlite+aiosqlite:///" + db_url[len("sqlite:///") :]
+    if db_url.startswith("postgresql+psycopg2://"):
+        return "postgresql+asyncpg://" + db_url[len("postgresql+psycopg2://") :]
+    if db_url.startswith("postgresql+psycopg://"):
+        return "postgresql+asyncpg://" + db_url[len("postgresql+psycopg://") :]
     if db_url.startswith("postgres://"):
         return "postgresql+asyncpg://" + db_url[len("postgres://") :]
     if db_url.startswith("postgresql://"):
