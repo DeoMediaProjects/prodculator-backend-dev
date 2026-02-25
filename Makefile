@@ -10,13 +10,29 @@ APP ?= app.main:app
 HOST ?= 0.0.0.0
 PORT ?= 8001
 
-.PHONY: help venv install env run dev test test-verbose lint format check db-revision db-upgrade db-downgrade db-current db-history compose-up compose-down compose-logs clean
+.PHONY: help venv rebuild-venv install env run dev test test-verbose lint format check db-revision db-upgrade db-downgrade db-current db-history compose-up compose-down compose-logs clean
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
 
-venv: ## Create local virtualenv
-	python3 -m venv $(VENV)
+venv: ## Create local virtualenv (Python 3.11+)
+	@if [ -x "$(VENV)/bin/python" ]; then \
+		$(VENV)/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || \
+		( echo "Existing $(VENV) is not Python 3.11+. Run: make rebuild-venv" && exit 1 ); \
+	else \
+		if command -v pyenv >/dev/null 2>&1; then \
+			PYENV_VERSION=3.11.14 pyenv exec python -m venv $(VENV); \
+		elif command -v python3.11 >/dev/null 2>&1; then \
+			python3.11 -m venv $(VENV); \
+		else \
+			echo "Python 3.11 is required. Install it, then run make rebuild-venv"; \
+			exit 1; \
+		fi; \
+	fi
+
+rebuild-venv: ## Recreate virtualenv using Python 3.11
+	rm -rf $(VENV)
+	$(MAKE) venv
 
 install: venv ## Install project dependencies
 	$(PIP) install --upgrade pip

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -43,6 +44,7 @@ class _AuthSession:
 class AuthResponse:
     user: _AuthUser | None = None
     session: _AuthSession | None = None
+    claims: dict[str, Any] | None = None
 
 
 class _AdminAuth:
@@ -90,10 +92,11 @@ class AuthClient:
             "user_type": "free",
             "credits_remaining": 0,
             "plan": "free",
+            "created_at": datetime.now(timezone.utc),
         }
         self.client.session.execute(insert(users).values(**insert_payload))
         self.client.session.commit()
-        return self._issue_tokens(user_id, email)
+        return self._issue_tokens(user_id, email, "free")
 
     def sign_in_with_password(self, payload: dict[str, Any]) -> AuthResponse:
         email = (payload.get("email") or "").strip().lower()
@@ -111,7 +114,7 @@ class AuthClient:
         if not stored_hash or not verify_password(password, stored_hash):
             raise ValueError("Invalid email or password")
 
-        return self._issue_tokens(user["id"], user["email"])
+        return self._issue_tokens(user["id"], user["email"], user.get("user_type", "free"))
 
     def sign_out(self) -> None:
         return None
@@ -126,7 +129,7 @@ class AuthClient:
         if not row:
             raise ValueError("Invalid or expired token")
         user = dict(row._mapping)
-        return AuthResponse(user=_AuthUser(id=user["id"], email=user["email"]))
+        return AuthResponse(user=_AuthUser(id=user["id"], email=user["email"]), claims=claims)
 
     def reset_password_email(self, _email: str, _options: dict[str, Any] | None = None) -> None:
         return None
@@ -144,11 +147,14 @@ class AuthClient:
         if not row:
             raise ValueError("Invalid refresh token")
         user = dict(row._mapping)
-        return self._issue_tokens(user["id"], user["email"])
+        # Return old claims alongside new tokens so the caller can revoke the old refresh token
+        response = self._issue_tokens(user["id"], user["email"], user.get("user_type", "free"))
+        response.claims = claims
+        return response
 
-    def _issue_tokens(self, user_id: str, email: str) -> AuthResponse:
-        access_token, expires_in = create_access_token(user_id, self.client.settings)
-        refresh_token = create_refresh_token(user_id, self.client.settings)
+    def _issue_tokens(self, user_id: str, email: str, user_type: str = "free") -> AuthResponse:
+        access_token, expires_in = create_access_token(user_id, user_type, self.client.settings)
+        refresh_token = create_refresh_token(user_id, user_type, self.client.settings)
         return AuthResponse(
             user=_AuthUser(id=user_id, email=email),
             session=_AuthSession(

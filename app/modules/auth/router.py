@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
-from app.core.database_client import DatabaseClient
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.cache import get_redis_client
+from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase, get_current_user
 from app.core.schemas import SuccessResponse
@@ -17,6 +19,8 @@ from app.modules.auth.schemas import (
 from app.modules.auth.service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+_bearer = HTTPBearer(auto_error=True)
 
 
 def get_auth_service(supabase: DatabaseClient = Depends(get_supabase)) -> AuthService:
@@ -61,20 +65,21 @@ async def signin(
 
 @router.post("/signout", response_model=SuccessResponse)
 async def signout(
-    authorization: str = Header(...),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    """Sign out the current user."""
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    token = authorization.removeprefix("Bearer ")
+    """Sign out the current user and revoke their token."""
+    redis = get_redis_client(settings)
     try:
-        auth_service.sign_out(token)
+        await auth_service.sign_out(credentials.credentials, redis_client=redis)
         return SuccessResponse(message="Signed out successfully")
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception:
         raise HTTPException(status_code=500, detail="Sign out failed")
+    finally:
+        await redis.aclose()
 
 
 @router.get("/me", response_model=AuthUser)
@@ -114,15 +119,12 @@ async def resend_verification(
 @router.post("/update-password", response_model=SuccessResponse)
 async def update_password(
     body: UpdatePasswordRequest,
-    authorization: str = Header(...),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """Update the current user's password."""
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    token = authorization.removeprefix("Bearer ")
     try:
-        auth_service.update_password(token=token, new_password=body.new_password)
+        auth_service.update_password(token=credentials.credentials, new_password=body.new_password)
         return SuccessResponse(message="Password updated successfully")
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -149,12 +151,16 @@ async def admin_signin(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     body: RefreshTokenRequest,
+    settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    """Refresh an expired access token."""
+    """Refresh an expired access token and rotate the refresh token."""
+    redis = get_redis_client(settings)
     try:
-        return auth_service.refresh_session(refresh_token=body.refresh_token)
+        return await auth_service.refresh_session(refresh_token=body.refresh_token, redis_client=redis)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception:
         raise HTTPException(status_code=500, detail="Token refresh failed")
+    finally:
+        await redis.aclose()

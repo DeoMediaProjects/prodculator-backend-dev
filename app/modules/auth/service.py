@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+from typing import Any
 
 from app.core.database_client import DatabaseClient
+from app.core.security import revoke_token
 
 from app.modules.auth.schemas import AuthUser, TokenResponse
 
@@ -111,12 +113,13 @@ class AuthService:
             raise PermissionError("Access denied — admin privileges required")
         return token_response
 
-    def sign_out(self, token: str) -> None:
-        """Sign out the current user."""
+    async def sign_out(self, token: str, redis_client: Any | None = None) -> None:
+        """Sign out the current user and revoke their access token."""
         user_response = self.supabase.auth.get_user(token)
         if not user_response or not user_response.user:
             raise ValueError("Invalid or expired token")
-        self.supabase.auth.sign_out()
+        if redis_client:
+            await revoke_token(token, redis_client, self.supabase.settings)
 
     def get_user(self, token: str) -> AuthUser:
         """Verify token and return user profile."""
@@ -174,11 +177,15 @@ class AuthService:
             {"password": new_password},
         )
 
-    def refresh_session(self, refresh_token: str) -> TokenResponse:
-        """Refresh an expired access token."""
+    async def refresh_session(self, refresh_token: str, redis_client: Any | None = None) -> TokenResponse:
+        """Refresh an expired access token and rotate the refresh token."""
         auth_response = self.supabase.auth.refresh_session(refresh_token)
         if not auth_response.session:
             raise ValueError("Failed to refresh session")
+
+        # Revoke the consumed refresh token (rotation)
+        if redis_client and auth_response.claims:
+            await revoke_token(refresh_token, redis_client, self.supabase.settings)
 
         user_response = self.supabase.auth.get_user(auth_response.session.access_token)
         if not user_response or not user_response.user:
