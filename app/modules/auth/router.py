@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -6,6 +7,8 @@ from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase, get_current_user
 from app.core.schemas import SuccessResponse
+
+logger = logging.getLogger(__name__)
 from app.modules.auth.schemas import (
     AuthUser,
     SignUpRequest,
@@ -45,7 +48,8 @@ async def signup(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
+    except Exception as e:
+        logger.error(f"Signup error: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create account")
 
 
