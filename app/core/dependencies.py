@@ -1,10 +1,15 @@
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
+from app.core.cache import get_redis_client
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.db import get_db
+from app.core.security import is_token_revoked
 from app.modules.auth.schemas import AuthUser
+
+_bearer_scheme = HTTPBearer(auto_error=True)
 
 
 def get_supabase(
@@ -23,14 +28,12 @@ def get_db_client(
 
 
 async def get_current_user(
-    authorization: str = Header(..., description="Bearer <access_token>"),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
 ) -> AuthUser:
-    """Extract and verify JWT, return user profile."""
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-    token = authorization.removeprefix("Bearer ")
+    """Extract and verify JWT, check blocklist, return user profile."""
+    token = credentials.credentials
 
     try:
         user_response = supabase.auth.get_user(token)
@@ -39,6 +42,18 @@ async def get_current_user(
 
     if not user_response or not user_response.user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Check token blocklist (revoked via sign-out)
+    if user_response.claims:
+        try:
+            redis = get_redis_client(settings)
+            if await is_token_revoked(user_response.claims, redis):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
+            await redis.aclose()
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Redis unavailable — degrade gracefully, token still valid
 
     result = (
         supabase.table("users")
@@ -70,14 +85,33 @@ async def require_admin(user: AuthUser = Depends(get_current_user)) -> AuthUser:
     return user
 
 
+class RequireRole:
+    """Dependency class that enforces a specific role value on the user.
+
+    Usage: Depends(RequireRole("producer"))
+    """
+
+    def __init__(self, required_role: str) -> None:
+        self.required_role = required_role
+
+    async def __call__(self, user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if user.role != self.required_role:
+            raise HTTPException(status_code=403, detail=f"Role '{self.required_role}' required")
+        return user
+
+
+_optional_bearer_scheme = HTTPBearer(auto_error=False)
+
+
 async def get_optional_user(
-    authorization: str | None = Header(None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
     supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
 ) -> AuthUser | None:
     """Optional auth; returns None if no token provided."""
-    if not authorization:
+    if not credentials:
         return None
     try:
-        return await get_current_user(authorization, supabase)
+        return await get_current_user(credentials, supabase, settings)
     except HTTPException:
         return None
