@@ -297,7 +297,8 @@ async def list_festivals_admin(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return _list_resource(service, table_name="film_festivals", limit=limit, offset=offset)
+        items, total = service.list_festivals(limit=limit, offset=offset)
+        return AdminListResponse(items=items, total=total, limit=limit, offset=offset)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch festivals")
 
@@ -309,7 +310,7 @@ async def create_festival_admin(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return service.create_row("film_festivals", body.payload)
+        return service.create_festival(body.payload)
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to create festivals")
 
@@ -322,7 +323,7 @@ async def update_festival_admin(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return service.update_row("film_festivals", item_id, body.payload)
+        return service.update_festival(item_id, body.payload)
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to update festivals")
 
