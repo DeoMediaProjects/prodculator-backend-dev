@@ -136,22 +136,6 @@ async def update_password(
         raise HTTPException(status_code=400, detail="Failed to update password")
 
 
-@router.post("/admin/signin", response_model=TokenResponse)
-async def admin_signin(
-    body: SignInRequest,
-    auth_service: AuthService = Depends(get_auth_service),
-):
-    """Sign in as an admin user."""
-    try:
-        return auth_service.admin_sign_in(email=body.email, password=body.password)
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    except Exception:
-        raise HTTPException(status_code=500, detail="Admin sign in failed")
-
-
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     body: RefreshTokenRequest,

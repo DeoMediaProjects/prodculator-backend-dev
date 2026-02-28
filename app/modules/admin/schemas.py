@@ -3,6 +3,20 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
+class AdminUser(BaseModel):
+    id: str
+    email: str
+    name: str | None = None
+
+
+class AdminTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: AdminUser
+
+
 class AdminRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
 

@@ -4,6 +4,7 @@ from typing import Any
 from app.core.database_client import DatabaseClient
 from app.core.security import revoke_token
 
+from app.modules.admin.schemas import AdminTokenResponse, AdminUser
 from app.modules.auth.schemas import AuthUser, TokenResponse
 
 
@@ -105,13 +106,71 @@ class AuthService:
             user=user,
         )
 
-    def admin_sign_in(self, email: str, password: str) -> TokenResponse:
-        """Sign in and verify admin access."""
-        token_response = self.sign_in(email, password)
-        if token_response.user.user_type != "admin":
-            self.supabase.auth.sign_out()
-            raise PermissionError("Access denied — admin privileges required")
-        return token_response
+    def admin_sign_in(self, email: str, password: str) -> AdminTokenResponse:
+        """Sign in against the admins table. Rejects non-admin credentials."""
+        auth_response = self.supabase.auth.sign_in_admin(email, password)
+
+        if not auth_response.user or not auth_response.session:
+            raise ValueError("Invalid email or password")
+
+        result = (
+            self.supabase.table("admins")
+            .select("*")
+            .eq("id", auth_response.user.id)
+            .single()
+            .execute()
+        )
+
+        if not result.data:
+            raise ValueError("Invalid email or password")
+
+        admin = AdminUser(
+            id=result.data["id"],
+            email=result.data["email"],
+            name=result.data.get("name"),
+        )
+
+        return AdminTokenResponse(
+            access_token=auth_response.session.access_token,
+            refresh_token=auth_response.session.refresh_token,
+            expires_in=auth_response.session.expires_in,
+            user=admin,
+        )
+
+    async def admin_refresh_session(
+        self, refresh_token: str, redis_client: Any | None = None
+    ) -> AdminTokenResponse:
+        """Refresh an admin session. Rejects tokens not belonging to an admin."""
+        auth_response = self.supabase.auth.refresh_admin_session(refresh_token)
+        if not auth_response.session:
+            raise ValueError("Failed to refresh session")
+
+        if redis_client and auth_response.claims:
+            await revoke_token(refresh_token, redis_client, self.supabase.settings)
+
+        result = (
+            self.supabase.table("admins")
+            .select("*")
+            .eq("id", auth_response.user.id)
+            .single()
+            .execute()
+        )
+
+        if not result.data:
+            raise ValueError("Invalid refresh token")
+
+        admin = AdminUser(
+            id=result.data["id"],
+            email=result.data["email"],
+            name=result.data.get("name"),
+        )
+
+        return AdminTokenResponse(
+            access_token=auth_response.session.access_token,
+            refresh_token=auth_response.session.refresh_token,
+            expires_in=auth_response.session.expires_in,
+            user=admin,
+        )
 
     async def sign_out(self, token: str, redis_client: Any | None = None) -> None:
         """Sign out the current user and revoke their access token."""

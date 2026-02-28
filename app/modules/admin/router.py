@@ -1,37 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.database_client import DatabaseClient
 
-from app.core.dependencies import get_supabase, require_admin
+from app.core.dependencies import get_current_admin, get_supabase
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import (
     AdminListResponse,
     AdminUpsertRequest,
+    AdminUser,
     BusinessMetricsResponse,
     ProductionSignalsResponse,
 )
 from app.modules.admin.service import AdminService
-from app.modules.auth.schemas import AuthUser
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
-RESOURCE_TABLE_MAP = {
-    "incentives": "incentive_programs",
-    "crew-costs": "crew_costs",
-    "comparables": "comparable_productions",
-    "grants": "grant_opportunities",
-    "festivals": "film_festivals",
-}
-
-
 def get_admin_service(supabase: DatabaseClient = Depends(get_supabase)) -> AdminService:
     return AdminService(supabase)
-
-
-def _table_or_404(resource: str) -> str:
-    table_name = RESOURCE_TABLE_MAP.get(resource)
-    if not table_name:
-        raise HTTPException(status_code=404, detail="Unknown admin resource")
-    return table_name
 
 
 def _list_resource(
@@ -49,7 +33,7 @@ def _list_resource(
 async def list_users(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -62,7 +46,7 @@ async def list_users(
 async def list_reports(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -73,7 +57,7 @@ async def list_reports(
 
 @router.get("/metrics", response_model=BusinessMetricsResponse)
 async def get_metrics(
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -87,7 +71,7 @@ async def get_production_signals(
     territory: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -105,7 +89,7 @@ async def get_production_signals(
 async def list_incentives(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -117,7 +101,7 @@ async def list_incentives(
 @router.post("/incentives", response_model=dict)
 async def create_incentive(
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -130,7 +114,7 @@ async def create_incentive(
 async def update_incentive(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -142,7 +126,7 @@ async def update_incentive(
 @router.delete("/incentives/{item_id}", response_model=SuccessResponse)
 async def delete_incentive(
     item_id: str,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -156,7 +140,7 @@ async def delete_incentive(
 async def list_crew_costs(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -168,7 +152,7 @@ async def list_crew_costs(
 @router.post("/crew-costs", response_model=dict)
 async def create_crew_cost(
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -181,7 +165,7 @@ async def create_crew_cost(
 async def update_crew_cost(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -193,7 +177,7 @@ async def update_crew_cost(
 @router.delete("/crew-costs/{item_id}", response_model=SuccessResponse)
 async def delete_crew_cost(
     item_id: str,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -207,7 +191,7 @@ async def delete_crew_cost(
 async def list_comparables(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -219,7 +203,7 @@ async def list_comparables(
 @router.post("/comparables", response_model=dict)
 async def create_comparable(
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -232,7 +216,7 @@ async def create_comparable(
 async def update_comparable(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -244,7 +228,7 @@ async def update_comparable(
 @router.delete("/comparables/{item_id}", response_model=SuccessResponse)
 async def delete_comparable(
     item_id: str,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -258,7 +242,7 @@ async def delete_comparable(
 async def list_grants_admin(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -270,7 +254,7 @@ async def list_grants_admin(
 @router.post("/grants", response_model=dict)
 async def create_grant_admin(
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -283,7 +267,7 @@ async def create_grant_admin(
 async def update_grant_admin(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -295,7 +279,7 @@ async def update_grant_admin(
 @router.delete("/grants/{item_id}", response_model=SuccessResponse)
 async def delete_grant_admin(
     item_id: str,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -309,7 +293,7 @@ async def delete_grant_admin(
 async def list_festivals_admin(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -321,7 +305,7 @@ async def list_festivals_admin(
 @router.post("/festivals", response_model=dict)
 async def create_festival_admin(
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -334,7 +318,7 @@ async def create_festival_admin(
 async def update_festival_admin(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -346,7 +330,7 @@ async def update_festival_admin(
 @router.delete("/festivals/{item_id}", response_model=SuccessResponse)
 async def delete_festival_admin(
     item_id: str,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -354,63 +338,3 @@ async def delete_festival_admin(
         return SuccessResponse(message="festival item deleted")
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to delete festivals")
-
-
-# Backward-compatible generic admin resource routes.
-@router.get("/{resource}", response_model=AdminListResponse)
-async def list_resource(
-    resource: str,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    _: AuthUser = Depends(require_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    table_name = _table_or_404(resource)
-    try:
-        return _list_resource(service, table_name=table_name, limit=limit, offset=offset)
-    except Exception:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch {resource}")
-
-
-@router.post("/{resource}", response_model=dict)
-async def create_resource(
-    resource: str,
-    body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    table_name = _table_or_404(resource)
-    try:
-        return service.create_row(table_name, body.payload)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Failed to create {resource}")
-
-
-@router.patch("/{resource}/{item_id}", response_model=dict)
-async def update_resource(
-    resource: str,
-    item_id: str,
-    body: AdminUpsertRequest,
-    _: AuthUser = Depends(require_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    table_name = _table_or_404(resource)
-    try:
-        return service.update_row(table_name, item_id, body.payload)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Failed to update {resource}")
-
-
-@router.delete("/{resource}/{item_id}", response_model=SuccessResponse)
-async def delete_resource(
-    resource: str,
-    item_id: str,
-    _: AuthUser = Depends(require_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    table_name = _table_or_404(resource)
-    try:
-        service.delete_row(table_name, item_id)
-        return SuccessResponse(message=f"{resource} item deleted")
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Failed to delete {resource}")

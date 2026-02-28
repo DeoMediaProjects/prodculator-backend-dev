@@ -116,6 +116,52 @@ class AuthClient:
 
         return self._issue_tokens(user["id"], user["email"], user.get("user_type", "free"))
 
+    def sign_in_admin(self, email: str, password: str) -> AuthResponse:
+        email = email.strip().lower()
+        admins = self.client._table("admins")
+
+        row = self.client.session.execute(
+            select(admins).where(func.lower(admins.c.email) == email)
+        ).first()
+        if not row:
+            raise ValueError("Invalid email or password")
+        admin = dict(row._mapping)
+
+        if not verify_password(password, admin["password_hash"]):
+            raise ValueError("Invalid email or password")
+
+        return self._issue_tokens(admin["id"], admin["email"], "admin")
+
+    def get_admin(self, token: str) -> AuthResponse:
+        claims = decode_token(token, self.client.settings)
+        if claims.get("type") != "access":
+            raise ValueError("Invalid or expired token")
+
+        admins = self.client._table("admins")
+        row = self.client.session.execute(
+            select(admins).where(admins.c.id == claims["sub"])
+        ).first()
+        if not row:
+            raise ValueError("Invalid or expired token")
+        admin = dict(row._mapping)
+        return AuthResponse(user=_AuthUser(id=admin["id"], email=admin["email"]), claims=claims)
+
+    def refresh_admin_session(self, refresh_token: str) -> AuthResponse:
+        claims = decode_token(refresh_token, self.client.settings)
+        if claims.get("type") != "refresh":
+            raise ValueError("Invalid refresh token")
+
+        admins = self.client._table("admins")
+        row = self.client.session.execute(
+            select(admins).where(admins.c.id == claims["sub"])
+        ).first()
+        if not row:
+            raise ValueError("Invalid refresh token")
+        admin = dict(row._mapping)
+        response = self._issue_tokens(admin["id"], admin["email"], "admin")
+        response.claims = claims
+        return response
+
     def sign_out(self) -> None:
         return None
 

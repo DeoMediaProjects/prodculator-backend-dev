@@ -7,6 +7,7 @@ from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.db import get_db
 from app.core.security import is_token_revoked
+from app.modules.admin.schemas import AdminUser
 from app.modules.auth.schemas import AuthUser
 
 _bearer_scheme = HTTPBearer(auto_error=True)
@@ -78,11 +79,49 @@ async def get_current_user(
     )
 
 
-async def require_admin(user: AuthUser = Depends(get_current_user)) -> AuthUser:
-    """Require admin user_type."""
-    if user.user_type != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
+async def get_current_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
+) -> AdminUser:
+    """Validate token against the admins table. Rejects user tokens."""
+    token = credentials.credentials
+
+    try:
+        admin_response = supabase.auth.get_admin(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    if not admin_response or not admin_response.user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    if admin_response.claims:
+        try:
+            redis = get_redis_client(settings)
+            if await is_token_revoked(admin_response.claims, redis):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
+            await redis.aclose()
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Redis unavailable — degrade gracefully
+
+    result = (
+        supabase.table("admins")
+        .select("*")
+        .eq("id", admin_response.user.id)
+        .single()
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return AdminUser(
+        id=result.data["id"],
+        email=result.data["email"],
+        name=result.data.get("name"),
+    )
 
 
 class RequireRole:
