@@ -8,6 +8,16 @@ from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 
+class Admin(SQLModel, table=True):
+    __tablename__ = "admins"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    email: str = Field(index=True, nullable=False, unique=True)
+    password_hash: str
+    name: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class User(SQLModel, table=True):
     __tablename__ = "users"
 

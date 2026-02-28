@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import Settings, get_settings
-from app.core.dependencies import require_admin
+from app.core.dependencies import get_current_admin
 from app.core.schemas import SuccessResponse
-from app.modules.auth.schemas import AuthUser
+from app.modules.admin.schemas import AdminUser
 from app.modules.email.schemas import (
     EmailPreviewRequest,
     EmailPreviewResponse,
@@ -21,7 +21,7 @@ def get_email_service(settings: Settings = Depends(get_settings)) -> EmailServic
 @router.post("/preview", response_model=EmailPreviewResponse)
 async def preview_email(
     body: EmailPreviewRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: EmailService = Depends(get_email_service),
 ):
     try:
@@ -36,7 +36,7 @@ async def preview_email(
 @router.post("/send-test", response_model=SuccessResponse)
 async def send_test_email(
     body: SendTestEmailRequest,
-    _: AuthUser = Depends(require_admin),
+    _: AdminUser = Depends(get_current_admin),
     service: EmailService = Depends(get_email_service),
 ):
     try:
