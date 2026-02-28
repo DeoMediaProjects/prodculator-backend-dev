@@ -1,0 +1,38 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            cd ${{ secrets.APP_DIR }}
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Installing dependencies..."
+            venv/bin/pip install -r requirements.txt --quiet
+
+            echo "Running database migrations..."
+            venv/bin/alembic upgrade head
+
+            echo "Restarting service..."
+            sudo systemctl restart prodculator.service
+
+            echo "Deploy complete."
