@@ -6,6 +6,9 @@ from app.core.config import get_settings
 from app.core.db import init_db
 from app.modules.admin.router import router as admin_router
 from app.modules.admin.auth_router import router as admin_auth_router
+from app.modules.festivals.admin_router import router as festivals_admin_router
+from app.modules.incentives.admin_router import router as incentives_admin_router
+from app.modules.grants.admin_router import router as grants_admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.email.router import router as admin_email_router
 from app.modules.health.router import router as health_router
@@ -87,4 +90,7 @@ app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
+app.include_router(festivals_admin_router)
+app.include_router(incentives_admin_router)
+app.include_router(grants_admin_router)
 app.include_router(admin_email_router)
