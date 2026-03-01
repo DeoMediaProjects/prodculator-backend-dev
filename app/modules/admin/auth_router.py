@@ -42,7 +42,7 @@ async def admin_signout(
     """Sign out the current admin and revoke their token."""
     redis = get_redis_client(settings)
     try:
-        await auth_service.sign_out(credentials.credentials, redis_client=redis)
+        await auth_service.sign_out_admin(credentials.credentials, redis_client=redis)
         return SuccessResponse(message="Signed out successfully")
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))

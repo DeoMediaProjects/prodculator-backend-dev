@@ -180,6 +180,14 @@ class AuthService:
         if redis_client:
             await revoke_token(token, redis_client, self.supabase.settings)
 
+    async def sign_out_admin(self, token: str, redis_client: Any | None = None) -> None:
+        """Sign out the current admin and revoke their access token."""
+        user_response = self.supabase.auth.get_admin(token)
+        if not user_response or not user_response.user:
+            raise ValueError("Invalid or expired token")
+        if redis_client:
+            await revoke_token(token, redis_client, self.supabase.settings)
+
     def get_user(self, token: str) -> AuthUser:
         """Verify token and return user profile."""
         user_response = self.supabase.auth.get_user(token)
