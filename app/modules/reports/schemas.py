@@ -1,114 +1,151 @@
 from typing import Literal
 
-from pydantic import BaseModel
-
-from app.modules.scripts.schemas import ScriptAnalysisResult
+from pydantic import BaseModel, model_validator
 
 
-class IncentiveDetail(BaseModel):
-    programName: str
+# --- Input Schemas ---
+
+
+class CreateReportRequest(BaseModel):
+    script_title: str
+    report_type: Literal["preview", "paid", "b2b"] = "paid"
+    script_file_path: str | None = None
+
+    # Project metadata (required)
+    genre: list[str]
+    budget_range: Literal["<500k", "500k-2m", "2m-5m", "5m-15m", "15m-30m", "30m+"]
+    format: Literal[
+        "Feature Film",
+        "Short",
+        "TV Series",
+        "Limited Series",
+        "Mini-Series",
+        "Documentary",
+        "Docuseries",
+        "Animated Feature",
+        "Animation Series",
+        "Commercial",
+        "Music Video",
+        "Interactive",
+        "VR",
+    ]
+    country: Literal[
+        "UK",
+        "Canada",
+        "USA",
+        "Australia",
+        "Malta",
+        "Ireland",
+        "France",
+        "Germany",
+        "Spain",
+        "Czech Republic",
+        "Hungary",
+        "Other",
+    ]
+    location_strategy: Literal["domestic", "open", "international"]
+    production_priority: Literal["incentive", "full", "location"] = "full"
+
+    # Conditional / optional metadata
+    state_province: str | None = None
+    territories_considering: list[str] | None = None
+    filming_start_date: str | None = None
+    filming_duration: int | None = None
+    camera_equipment: list[str] | None = None
+    crew_size: int | None = None
+    principal_cast: int | None = None
+    supporting_cast: int | None = None
+    target_audience: str | None = None
+    language: str | None = None
+
+    @model_validator(mode="after")
+    def validate_constraints(self):
+        if self.report_type in ("paid", "b2b") and not self.script_file_path:
+            raise ValueError("script_file_path is required for paid and b2b reports")
+        return self
+
+
+# --- Output Schemas (ScriptAnalysis interface) ---
+
+
+class LocationRanking(BaseModel):
+    name: str
+    country: str
+    score: int  # 0-100
+    costEfficiency: int  # 0-100
+    crewDepth: int  # 0-100
+    infrastructure: int  # 0-100
+    incentiveStrength: int  # 0-100
+    currencyAdvantage: int  # 0-100
+    reasoning: list[str]  # 3-5 bullet points
+    isAssessmentOnly: bool | None = None
+
+
+class IncentiveEstimate(BaseModel):
+    territory: str
+    program: str
     rate: str
     cap: str
-    potentialRebateUSD: int
+    qualifyingSpend: str
+    estimatedRebate: str
+    requirements: list[str]
+    disclaimer: str = "Estimate only. Final eligibility depends on official approval."
+    dataSource: str = "Prodculator backend datasets"
+    lastUpdated: str
 
 
-class CrewCostBreakdown(BaseModel):
-    role: str
-    dayRate: float
-    weekRate: float
-
-
-class EstimatedCrewCosts(BaseModel):
-    dailyTotal: float
-    weeklyTotal: float
-    totalForProduction: float
-    currency: str
-    breakdown: list[CrewCostBreakdown]
-
-
-class LocationMatch(BaseModel):
-    score: float
-    reasons: list[str]
-
-
-class TerritoryAnalysis(BaseModel):
+class CrewInsight(BaseModel):
     territory: str
-    country: str
-    overallScore: int
-    incentives: list[IncentiveDetail]
-    estimatedCrewCosts: EstimatedCrewCosts
-    locationMatch: LocationMatch
-    pros: list[str]
-    cons: list[str]
+    availability: Literal["High", "Medium", "Low"]
+    costVsUSD: str
+    qualityRating: int  # 1-5
+    specialties: list[str]  # up to 5 roles
+    tradeoff: str
 
 
-class TopIncentive(BaseModel):
-    territory: str
-    programName: str
-    potentialRebate: int
-    rate: str
-
-
-class ExecutiveSummary(BaseModel):
-    recommendedTerritories: list[str]
-    estimatedBudgetRange: str
-    topIncentiveOpportunity: TopIncentive
-    keyInsights: list[str]
-
-
-class ComparableProduction(BaseModel):
+class ComparableProductionEntry(BaseModel):
     title: str
-    year: int
-    budget: str
-    territory: str
-    incentiveUsed: str
-    genres: list[str]
-    relevanceScore: int
-
-
-class GrantOpportunity(BaseModel):
-    title: str
-    organization: str
-    amount: str
-    deadline: str
-    territory: str
-    matchScore: int
-
-
-class FestivalRecommendation(BaseModel):
-    name: str
+    genre: str
+    budgetRange: str
+    visualScale: str
     location: str
+    year: int
+    source: str
+
+
+class WeatherLogistic(BaseModel):
+    territory: str
+    bestMonths: list[str]
+    weatherRisk: Literal["Low", "Medium", "High"]
+    infrastructure: str
+    travelVisa: str
+    avgTempRange: str | None = None
+    avgRainfall: str | None = None
+    daylightHours: str | None = None
+    seasonalConsiderations: str | None = None
+
+
+class FundingOpportunity(BaseModel):
+    type: Literal["Fund", "Festival"]
+    name: str
+    genre: list[str]
     deadline: str
-    tier: str
-    submissionFees: str
-    matchScore: int
+    notes: str
+    website: str | None = None
+    tier: str | None = None
 
 
-class ProductionDetails(BaseModel):
-    format: str
-    genres: list[str]
-    estimatedShootingDays: int
-    crewSize: str
-    castSize: str
-    vfxRequirements: str
-    specialRequirements: list[str]
-
-
-class ReportMetadata(BaseModel):
-    analysisVersion: str = "1.0.0"
-
-
-class B2CReport(BaseModel):
-    reportId: str
-    scriptTitle: str
-    generatedAt: str
-    executiveSummary: ExecutiveSummary
-    territoryAnalysis: list[TerritoryAnalysis]
-    comparableProductions: list[ComparableProduction]
-    grantOpportunities: list[GrantOpportunity]
-    festivalRecommendations: list[FestivalRecommendation]
-    productionDetails: ProductionDetails
-    _metadata: ReportMetadata = ReportMetadata()
+class ScriptAnalysis(BaseModel):
+    genre: str
+    tone: str
+    scale: str
+    complexity: Literal["Low", "Medium", "High", "Very High"]
+    locationRankings: list[LocationRanking]
+    incentiveEstimates: list[IncentiveEstimate]
+    crewInsights: list[CrewInsight]
+    comparables: list[ComparableProductionEntry]
+    weatherLogistics: list[WeatherLogistic]
+    fundingOpportunities: list[FundingOpportunity]
 
 
 class ProductionIntelligence(BaseModel):
@@ -117,27 +154,16 @@ class ProductionIntelligence(BaseModel):
     riskAssessment: dict
 
 
-class B2BReport(B2CReport):
-    productionIntelligence: ProductionIntelligence | None = None
-    branding: dict | None = None
-
-
-class CreateReportRequest(BaseModel):
-    script_title: str
-    report_type: Literal["free", "paid", "b2b"] = "free"
-    script_file_path: str | None = None
+# --- Response Schemas ---
 
 
 class ReportResponse(BaseModel):
     id: str
-    user_id: str
-    script_title: str
-    status: str
-    report_type: str
-    report_data: dict | None = None
-    pdf_url: str | None = None
-    created_at: str
-    completed_at: str | None = None
+    title: str
+    reportType: str
+    createdAt: str
+    analysis: dict | None = None
+    pdfUrl: str | None = None
 
 
 class ReportStatusResponse(BaseModel):
@@ -145,3 +171,9 @@ class ReportStatusResponse(BaseModel):
     report_id: str
     message: str | None = None
     error: str | None = None
+    progress: int | None = None
+
+
+class PreviewReportResponse(BaseModel):
+    reportType: str = "preview"
+    analysis: dict

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from sqlalchemy import JSON, Column
@@ -9,7 +9,7 @@ from sqlmodel import Field, SQLModel
 
 
 class Admin(SQLModel, table=True):
-    __tablename__ = "admins"
+    __tablename__: ClassVar[str] = "admins"  # type: ignore[assignment]
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     email: str = Field(index=True, nullable=False, unique=True)
@@ -19,7 +19,7 @@ class Admin(SQLModel, table=True):
 
 
 class User(SQLModel, table=True):
-    __tablename__ = "users"
+    __tablename__: ClassVar[str] = "users"  # type: ignore[assignment]
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     email: str = Field(index=True, nullable=False, unique=True)
@@ -35,7 +35,7 @@ class User(SQLModel, table=True):
 
 
 class Subscription(SQLModel, table=True):
-    __tablename__ = "subscriptions"
+    __tablename__: ClassVar[str] = "subscriptions"  # type: ignore[assignment]
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     user_id: str | None = Field(default=None, index=True)
@@ -54,8 +54,8 @@ class Subscription(SQLModel, table=True):
 
 
 class Report(SQLModel, table=True):
-    __tablename__ = "reports"
-
+    __tablename__: ClassVar[str] = "reports"  # type: ignore[assignment]
+    
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     user_id: str = Field(index=True)
     script_title: str
@@ -63,6 +63,7 @@ class Report(SQLModel, table=True):
     status: str = Field(default="processing")
     report_type: str = Field(default="free")
     share_token: str | None = Field(default=None, index=True)
+    request_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column("request_metadata", JSON))
     report_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     pdf_url: str | None = None
     completed_at: datetime | None = None
@@ -70,7 +71,7 @@ class Report(SQLModel, table=True):
 
 
 class TerritoryWatchlist(SQLModel, table=True):
-    __tablename__ = "territory_watchlist"
+    __tablename__: ClassVar[str] = "territory_watchlist"  # type: ignore[assignment]
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     user_id: str = Field(index=True)

@@ -186,7 +186,10 @@ class AuthService:
         if not user_response or not user_response.user:
             raise ValueError("Invalid or expired token")
         if redis_client:
-            await revoke_token(token, redis_client, self.supabase.settings)
+            try:
+                await revoke_token(token, redis_client, self.supabase.settings)
+            except Exception:
+                pass  # Redis unavailable — degrade gracefully, token expires naturally
 
     def get_user(self, token: str) -> AuthUser:
         """Verify token and return user profile."""

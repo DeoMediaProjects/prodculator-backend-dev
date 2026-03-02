@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
-    OPENAI_MAX_TOKENS: int = 2000
+    OPENAI_MAX_TOKENS: int = 8000
+    OPENAI_ANALYSIS_TIMEOUT: int = 120
 
     # SendGrid
     SENDGRID_API_KEY: str = ""

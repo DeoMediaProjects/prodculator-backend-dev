@@ -1,4 +1,4 @@
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_optional_user
 from app.modules.reports import router as reports_router
 from app.modules.reports.router import get_report_service
 
@@ -8,7 +8,14 @@ class FakeReportService:
         self._reports = {}
         self._counter = 0
 
-    def create_report(self, user_id: str, script_title: str, report_type: str, script_file_path=None):
+    def create_report(
+        self,
+        user_id: str,
+        script_title: str,
+        report_type: str,
+        script_file_path=None,
+        request_metadata=None,
+    ):
         self._counter += 1
         report_id = f"report-{self._counter}"
         self._reports[report_id] = {
@@ -25,7 +32,7 @@ class FakeReportService:
         return report_id
 
     def get_user_reports(self, user_id: str):
-        return [r for r in self._reports.values() if r["user_id"] == user_id]
+        return [r for r in self._reports.values() if r["user_id"] == user_id and r["report_type"] != "preview"]
 
     def get_report(self, report_id: str):
         return self._reports.get(report_id)
@@ -34,9 +41,23 @@ class FakeReportService:
         return None
 
 
+VALID_REPORT_PAYLOAD = {
+    "script_title": "My Script",
+    "report_type": "paid",
+    "script_file_path": "user-1/123.txt",
+    "genre": ["Drama"],
+    "budget_range": "2m-5m",
+    "format": "Feature Film",
+    "country": "UK",
+    "location_strategy": "open",
+    "production_priority": "full",
+}
+
+
 def test_report_create_triggers_background_and_status_transitions(client, auth_user, monkeypatch):
     service = FakeReportService()
     client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_optional_user] = lambda: auth_user
     client.app.dependency_overrides[get_report_service] = lambda: service
 
     def fake_task(report_id, *_args, **_kwargs):
@@ -48,11 +69,7 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     create_response = client.post(
         "/api/reports",
         headers={"Authorization": "Bearer token"},
-        json={
-            "script_title": "My Script",
-            "report_type": "free",
-            "script_file_path": "user-1/123.txt",
-        },
+        json=VALID_REPORT_PAYLOAD,
     )
     assert create_response.status_code == 200
     report_id = create_response.json()["report_id"]
@@ -70,7 +87,7 @@ def test_report_access_denied_for_other_user(client, auth_user):
     report_id = service.create_report(
         user_id="another-user",
         script_title="Other Script",
-        report_type="free",
+        report_type="paid",
         script_file_path="another-user/123.txt",
     )
     client.app.dependency_overrides[get_current_user] = lambda: auth_user
