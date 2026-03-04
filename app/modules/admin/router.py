@@ -85,57 +85,6 @@ async def get_production_signals(
         raise HTTPException(status_code=500, detail="Failed to fetch production signals")
 
 
-@router.get("/crew-costs", response_model=AdminListResponse)
-async def list_crew_costs(
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    try:
-        return _list_resource(service, table_name="crew_costs", limit=limit, offset=offset)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to fetch crew costs")
-
-
-@router.post("/crew-costs", response_model=dict)
-async def create_crew_cost(
-    body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    try:
-        return service.create_row("crew_costs", body.payload)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Failed to create crew costs")
-
-
-@router.patch("/crew-costs/{item_id}", response_model=dict)
-async def update_crew_cost(
-    item_id: str,
-    body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    try:
-        return service.update_row("crew_costs", item_id, body.payload)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Failed to update crew costs")
-
-
-@router.delete("/crew-costs/{item_id}", response_model=SuccessResponse)
-async def delete_crew_cost(
-    item_id: str,
-    _: AdminUser = Depends(get_current_admin),
-    service: AdminService = Depends(get_admin_service),
-):
-    try:
-        service.delete_row("crew_costs", item_id)
-        return SuccessResponse(message="crew cost item deleted")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Failed to delete crew costs")
-
-
 @router.get("/comparables", response_model=AdminListResponse)
 async def list_comparables(
     limit: int = Query(50, ge=1, le=500),

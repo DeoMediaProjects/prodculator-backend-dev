@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from app.core.database_client import DatabaseClient
 from app.modules.scripts.schemas import ScriptAnalysisResult
@@ -24,11 +25,13 @@ class ReportService:
     ) -> str:
         """Create a new report record, returns report ID."""
         payload = {
+            "id": str(uuid4()),
             "user_id": user_id,
             "script_title": script_title,
             "script_file_path": script_file_path,
             "status": "processing",
             "report_type": report_type,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if request_metadata is not None:
             payload["request_metadata"] = request_metadata

@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 
-from app.core.dependencies import get_supabase, require_admin
-from app.modules.auth.schemas import AuthUser
+from app.core.dependencies import get_current_admin, get_supabase
+from app.modules.admin.schemas import AdminUser
 from app.modules.email.router import get_email_service
 
 
@@ -127,18 +127,16 @@ class FakeEmailService:
         return None
 
 
-def _admin_user() -> AuthUser:
-    return AuthUser(
+def _admin_user() -> AdminUser:
+    return AdminUser(
         id="admin-1",
         email="admin@example.com",
-        user_type="admin",
-        credits_remaining=0,
-        plan="studio",
+        name="Admin",
     )
 
 
 def test_admin_metrics_and_resource_crud(client):
-    client.app.dependency_overrides[require_admin] = _admin_user
+    client.app.dependency_overrides[get_current_admin] = _admin_user
     fake_supabase = FakeSupabase()
     client.app.dependency_overrides[get_supabase] = lambda: fake_supabase
 
@@ -177,13 +175,13 @@ def test_admin_requires_admin(client):
     def deny_admin():
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    client.app.dependency_overrides[require_admin] = deny_admin
+    client.app.dependency_overrides[get_current_admin] = deny_admin
     response = client.get("/api/admin/users", headers={"Authorization": "Bearer token"})
     assert response.status_code == 403
 
 
 def test_admin_email_preview_and_send(client):
-    client.app.dependency_overrides[require_admin] = _admin_user
+    client.app.dependency_overrides[get_current_admin] = _admin_user
     client.app.dependency_overrides[get_email_service] = lambda: FakeEmailService()
 
     preview = client.post(

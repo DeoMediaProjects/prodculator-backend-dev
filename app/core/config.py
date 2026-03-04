@@ -1,6 +1,7 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import PydanticBaseSettingsSource
 
 
 class Settings(BaseSettings):
@@ -64,11 +65,24 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True,
-        "extra": "ignore",
-    }
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # .env file takes priority over shell environment variables
+        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
 
 
 @lru_cache()
