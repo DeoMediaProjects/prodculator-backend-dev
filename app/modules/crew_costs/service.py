@@ -61,7 +61,12 @@ def _pending_change_from_db(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sync_settings_from_db(row: dict[str, Any]) -> dict[str, Any]:
-    return {_SS_SNAKE_TO_CAMEL.get(k, k): v for k, v in row.items()}
+    result = {}
+    for k, v in row.items():
+        if isinstance(v, datetime):
+            v = v.isoformat()
+        result[_SS_SNAKE_TO_CAMEL.get(k, k)] = v
+    return result
 
 
 class CrewCostsService:

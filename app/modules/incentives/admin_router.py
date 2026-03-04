@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_current_admin, get_supabase
 from app.core.schemas import SuccessResponse
+
+logger = logging.getLogger(__name__)
 from app.modules.admin.schemas import (
     AdminListResponse,
     AdminUpsertRequest,
@@ -34,7 +38,8 @@ async def list_incentives_admin(
     try:
         items, total = service.list_for_admin(limit=limit, offset=offset)
         return AdminListResponse(items=items, total=total, limit=limit, offset=offset)
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to fetch incentives")
         raise HTTPException(status_code=500, detail="Failed to fetch incentives")
 
 
@@ -60,7 +65,8 @@ async def get_sync_status(
 ):
     try:
         return SyncStatusResponse(**service.get_sync_status())
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to fetch sync status")
         raise HTTPException(status_code=500, detail="Failed to fetch sync status")
 
 
