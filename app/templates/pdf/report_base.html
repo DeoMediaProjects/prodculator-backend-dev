@@ -1,34 +1,870 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Prodculator Report</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 24px;
-        color: #111;
-      }
-      h1, h2 {
-        margin-bottom: 8px;
-      }
-      .muted {
-        color: #555;
-      }
-      pre {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        padding: 12px;
-        border-radius: 6px;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Prodculator Report</h1>
-    <p class="muted">Generated server-side.</p>
-    <h2>{{ report.scriptTitle or report.script_title or "Untitled" }}</h2>
-    <pre>{{ report | tojson(indent=2) }}</pre>
-  </body>
+<head>
+<meta charset="utf-8" />
+<title>Prodculator Report — {{ script_title }}</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @page {
+    size: A4;
+    margin: 20mm;
+    @bottom-right { content: counter(page); font-size: 9px; color: #888; }
+  }
+
+  @page cover { margin: 0; }
+  @page toc   { margin: 20mm; }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #1a1a1a;
+  }
+
+  /* ── Utility Classes ──────────────────────────────────────── */
+  .page-break { page-break-before: always; }
+  .avoid-break { page-break-inside: avoid; }
+
+  .gold { color: #D4AF37; }
+  .muted { color: #666; font-size: 9px; }
+  .small { font-size: 9px; }
+
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+  h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; border-bottom: 2px solid #D4AF37; padding-bottom: 6px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  h4 { font-size: 11px; font-weight: 600; margin: 10px 0 4px; }
+
+  p { margin-bottom: 8px; }
+
+  /* ── Tables ───────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+    font-size: 10px;
+  }
+  th, td {
+    padding: 6px 8px;
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  th {
+    background: #f5f5f5;
+    font-weight: 600;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #555;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Score Bar ─────────────────────────────────────────────── */
+  .score-bar {
+    display: inline-block;
+    width: 80px;
+    height: 8px;
+    background: #e8e8e8;
+    border-radius: 4px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+  }
+  .score-high  { background: #22c55e; }
+  .score-mid   { background: #D4AF37; }
+  .score-low   { background: #ef4444; }
+
+  /* ── Cards ────────────────────────────────────────────────── */
+  .card {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 12px;
+    page-break-inside: avoid;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  /* ── Stat Grid ────────────────────────────────────────────── */
+  .stat-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .stat-box {
+    flex: 1 1 120px;
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #D4AF37;
+  }
+  .stat-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 0.3px;
+    margin-top: 2px;
+  }
+
+  /* ── Tag / Pill ───────────────────────────────────────────── */
+  .tag {
+    display: inline-block;
+    background: #f0f0f0;
+    color: #444;
+    font-size: 9px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin: 2px 2px 2px 0;
+  }
+  .tag-gold {
+    background: rgba(212, 175, 55, 0.15);
+    color: #96791f;
+  }
+
+  /* ── Risk Badges ──────────────────────────────────────────── */
+  .risk-low    { color: #16a34a; font-weight: 600; }
+  .risk-medium { color: #ca8a04; font-weight: 600; }
+  .risk-high   { color: #dc2626; font-weight: 600; }
+
+  /* ── Data Source Footer ───────────────────────────────────── */
+  .data-source {
+    font-size: 8px;
+    color: #999;
+    border-top: 1px solid #eee;
+    padding-top: 6px;
+    margin-top: 10px;
+  }
+
+  /* ── Disclaimer ───────────────────────────────────────────── */
+  .disclaimer {
+    font-size: 9px;
+    color: #666;
+    line-height: 1.6;
+    margin-bottom: 10px;
+  }
+
+  /* ── Cover Page ───────────────────────────────────────────── */
+  .cover {
+    page: cover;
+    width: 210mm;
+    height: 297mm;
+    background: #000;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 40mm 30mm;
+  }
+  .cover-brand {
+    font-size: 14px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: #D4AF37;
+    margin-bottom: 40px;
+  }
+  .cover-title {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 16px;
+  }
+  .cover-subtitle {
+    font-size: 14px;
+    color: #D4AF37;
+    margin-bottom: 40px;
+  }
+  .cover-divider {
+    width: 60px;
+    height: 2px;
+    background: #D4AF37;
+    margin: 0 auto 40px;
+  }
+  .cover-meta {
+    font-size: 11px;
+    color: #999;
+  }
+  .cover-meta span { color: #ccc; }
+
+  /* ── TOC ──────────────────────────────────────────────────── */
+  .toc { page: toc; }
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px dotted #ddd;
+    font-size: 12px;
+  }
+  .toc-item:last-child { border-bottom: none; }
+  .toc-number { color: #D4AF37; font-weight: 600; width: 30px; }
+  .toc-title  { flex: 1; }
+
+  /* ── Preview placeholder ──────────────────────────────────── */
+  .preview-placeholder {
+    background: #f9f9f9;
+    border: 1px dashed #ccc;
+    border-radius: 6px;
+    padding: 20px;
+    text-align: center;
+    color: #999;
+    font-size: 11px;
+    margin-bottom: 14px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════
+     1. COVER PAGE
+     ════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-brand">PRODCULATOR</div>
+  <div class="cover-divider"></div>
+  <div class="cover-title">{{ script_title }}</div>
+  <div class="cover-subtitle">Production Analysis Report</div>
+  <div class="cover-divider"></div>
+  <div class="cover-meta">
+    <span>{{ report_type | upper }}</span> &nbsp;&bull;&nbsp;
+    Generated {{ created_at[:10] if created_at else "N/A" }}
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     2. TABLE OF CONTENTS
+     ════════════════════════════════════════════════════════════ -->
+<div class="toc page-break">
+  <h1>Contents</h1>
+  <div class="toc-item"><span class="toc-number">01</span><span class="toc-title">Executive Summary</span></div>
+  <div class="toc-item"><span class="toc-number">02</span><span class="toc-title">Script Analysis</span></div>
+  <div class="toc-item"><span class="toc-number">03</span><span class="toc-title">Territory Rankings</span></div>
+  <div class="toc-item"><span class="toc-number">04</span><span class="toc-title">Tax Incentive Analysis</span></div>
+  {% if report.crewInsights %}
+  <div class="toc-item"><span class="toc-number">05</span><span class="toc-title">Crew Cost Estimates</span></div>
+  {% endif %}
+  {% if report.comparables %}
+  <div class="toc-item"><span class="toc-number">06</span><span class="toc-title">Comparable Productions</span></div>
+  {% endif %}
+  {% if report.weatherLogistics %}
+  <div class="toc-item"><span class="toc-number">07</span><span class="toc-title">Weather &amp; Logistics</span></div>
+  {% endif %}
+  {% if report.fundingOpportunities %}
+  <div class="toc-item"><span class="toc-number">08</span><span class="toc-title">Funding &amp; Festival Opportunities</span></div>
+  {% endif %}
+  {% if report.productionIntelligence %}
+  <div class="toc-item"><span class="toc-number">09</span><span class="toc-title">Production Intelligence</span></div>
+  {% endif %}
+  <div class="toc-item"><span class="toc-number">10</span><span class="toc-title">Production Economics Summary</span></div>
+  <div class="toc-item"><span class="toc-number">11</span><span class="toc-title">Next Steps &amp; Recommendations</span></div>
+  <div class="toc-item"><span class="toc-number">12</span><span class="toc-title">Disclaimers</span></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     3. EXECUTIVE SUMMARY
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>01 &mdash; Executive Summary</h2>
+
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="stat-value">{{ report.genre or "N/A" }}</div>
+      <div class="stat-label">Genre</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value">{{ report.tone or "N/A" }}</div>
+      <div class="stat-label">Tone</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value">{{ report.scale or "N/A" }}</div>
+      <div class="stat-label">Scale</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value">{{ report.complexity or "N/A" }}</div>
+      <div class="stat-label">Complexity</div>
+    </div>
+  </div>
+
+  {% if report.locationRankings %}
+  <h3>Top Recommendation</h3>
+  {% set top = report.locationRankings[0] %}
+  <div class="card">
+    <div class="card-header">
+      <h4>{{ top.name }}, {{ top.country }}</h4>
+      <span class="gold" style="font-size: 18px; font-weight: 700;">{{ top.score }}/100</span>
+    </div>
+    <p>
+      {% for reason in top.reasoning[:3] %}
+        {{ reason }}{% if not loop.last %} &bull; {% endif %}
+      {% endfor %}
+    </p>
+  </div>
+  {% endif %}
+
+  <h3>Report Overview</h3>
+  <p>
+    This report analyses <strong>{{ script_title }}</strong> across
+    {{ report.locationRankings | length }} territor{{ "y" if report.locationRankings | length == 1 else "ies" }},
+    evaluating tax incentives, crew costs, infrastructure, and logistical considerations
+    to identify the optimal filming locations for this
+    {{ report.genre | lower if report.genre else "" }}
+    {{ report.scale | lower if report.scale else "" }} production.
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     4. SCRIPT ANALYSIS
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>02 &mdash; Script Analysis</h2>
+
+  <table>
+    <tr><th style="width: 180px;">Property</th><th>Value</th></tr>
+    <tr><td>Title</td><td><strong>{{ script_title }}</strong></td></tr>
+    <tr><td>Genre</td><td>{{ report.genre or "N/A" }}</td></tr>
+    <tr><td>Tone</td><td>{{ report.tone or "N/A" }}</td></tr>
+    <tr><td>Scale</td><td>{{ report.scale or "N/A" }}</td></tr>
+    <tr><td>Complexity</td><td>{{ report.complexity or "N/A" }}</td></tr>
+    <tr><td>Report Type</td><td>{{ report_type | upper }}</td></tr>
+    <tr><td>Territories Analysed</td><td>{{ report.locationRankings | length }}</td></tr>
+  </table>
+
+  {% if report.locationRankings %}
+  <h3>Location Requirements</h3>
+  <p>The analysis identified the following territories as candidates based on script requirements, available incentives, and production infrastructure:</p>
+  <div style="margin-top: 8px;">
+    {% for loc in report.locationRankings %}
+      <span class="tag tag-gold">{{ loc.name }}, {{ loc.country }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     5. TERRITORY RANKINGS
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>03 &mdash; Territory Rankings</h2>
+
+  {% if report.locationRankings %}
+  {% for loc in report.locationRankings[:10] %}
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 style="margin: 0;">{{ loop.index }}. {{ loc.name }}, {{ loc.country }}</h3>
+        {% if loc.isAssessmentOnly %}<span class="tag">Assessment Only</span>{% endif %}
+      </div>
+      <span class="gold" style="font-size: 20px; font-weight: 700;">{{ loc.score }}</span>
+    </div>
+
+    <table>
+      <tr>
+        <th>Metric</th><th>Score</th><th></th>
+      </tr>
+      {% set metrics = [
+        ("Cost Efficiency", loc.costEfficiency),
+        ("Crew Depth", loc.crewDepth),
+        ("Infrastructure", loc.infrastructure),
+        ("Incentive Strength", loc.incentiveStrength),
+        ("Currency Advantage", loc.currencyAdvantage)
+      ] %}
+      {% for name, val in metrics %}
+      <tr>
+        <td>{{ name }}</td>
+        <td>{{ val }}/100</td>
+        <td>
+          <div class="score-bar">
+            <div class="score-bar-fill {% if val >= 70 %}score-high{% elif val >= 40 %}score-mid{% else %}score-low{% endif %}" style="width: {{ val }}%"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    {% if loc.reasoning %}
+    <h4>Reasoning</h4>
+    <ul style="padding-left: 16px; font-size: 10px;">
+      {% for r in loc.reasoning %}
+      <li>{{ r }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="muted">No territory rankings available.</p>
+  {% endif %}
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     6. TAX INCENTIVE ANALYSIS
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>04 &mdash; Tax Incentive Analysis</h2>
+
+  {% if report.incentiveEstimates %}
+  {% for inc in report.incentiveEstimates %}
+  <div class="card">
+    <h3>{{ inc.territory }} &mdash; {{ inc.program }}</h3>
+    <table>
+      <tr><th style="width: 160px;">Detail</th><th>Value</th></tr>
+      <tr><td>Rate</td><td><strong>{{ inc.rate }}</strong></td></tr>
+      <tr><td>Cap</td><td>{{ inc.cap }}</td></tr>
+      <tr><td>Qualifying Spend</td><td>{{ inc.qualifyingSpend }}</td></tr>
+      <tr><td>Estimated Rebate</td><td class="gold"><strong>{{ inc.estimatedRebate }}</strong></td></tr>
+    </table>
+
+    {% if inc.requirements %}
+    <h4>Requirements</h4>
+    <ul style="padding-left: 16px; font-size: 10px;">
+      {% for req in inc.requirements %}
+      <li>{{ req }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if inc.disclaimer %}
+    <p class="disclaimer" style="margin-top: 8px;"><em>{{ inc.disclaimer }}</em></p>
+    {% endif %}
+
+    <div class="data-source">
+      Data Source: {{ inc.dataSource or "Prodculator backend datasets" }}
+      {% if inc.lastUpdated %}&nbsp;&bull;&nbsp; Last Verified: {{ inc.lastUpdated[:10] }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="preview-placeholder">
+    Tax incentive details are available in the full report.
+  </div>
+  {% endif %}
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     7. CREW COST ESTIMATES
+     ════════════════════════════════════════════════════════════ -->
+{% if report.crewInsights %}
+<div class="page-break">
+  <h2>05 &mdash; Crew Cost Estimates</h2>
+
+  <table>
+    <tr>
+      <th>Territory</th>
+      <th>Availability</th>
+      <th>Cost vs USD</th>
+      <th>Quality</th>
+      <th>Specialties</th>
+      <th>Trade-off</th>
+    </tr>
+    {% for crew in report.crewInsights %}
+    <tr class="avoid-break">
+      <td><strong>{{ crew.territory }}</strong></td>
+      <td>
+        <span class="{% if crew.availability == 'High' %}risk-low{% elif crew.availability == 'Medium' %}risk-medium{% else %}risk-high{% endif %}">
+          {{ crew.availability }}
+        </span>
+      </td>
+      <td>{{ crew.costVsUSD }}</td>
+      <td>{{ crew.qualityRating }}/5</td>
+      <td>
+        {% for s in crew.specialties[:4] %}
+          <span class="tag">{{ s }}</span>
+        {% endfor %}
+      </td>
+      <td style="font-size: 9px;">{{ crew.tradeoff }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% elif report_type != "preview" %}
+{# Only show placeholder for non-preview that somehow has no data #}
+{% endif %}
+
+<!-- ════════════════════════════════════════════════════════════
+     8. COMPARABLE PRODUCTIONS
+     ════════════════════════════════════════════════════════════ -->
+{% if report.comparables %}
+<div class="page-break">
+  <h2>06 &mdash; Comparable Productions</h2>
+
+  <table>
+    <tr>
+      <th>Title</th>
+      <th>Genre</th>
+      <th>Budget Range</th>
+      <th>Location</th>
+      <th>Year</th>
+      <th>Source</th>
+    </tr>
+    {% for comp in report.comparables %}
+    <tr class="avoid-break">
+      <td><strong>{{ comp.title }}</strong></td>
+      <td>{{ comp.genre }}</td>
+      <td>{{ comp.budgetRange }}</td>
+      <td>{{ comp.location }}</td>
+      <td>{{ comp.year }}</td>
+      <td class="small">{{ comp.source or "N/A" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% endif %}
+
+<!-- ════════════════════════════════════════════════════════════
+     9. WEATHER & LOGISTICS
+     ════════════════════════════════════════════════════════════ -->
+{% if report.weatherLogistics %}
+<div class="page-break">
+  <h2>07 &mdash; Weather &amp; Logistics</h2>
+
+  {% for wl in report.weatherLogistics %}
+  <div class="card">
+    <div class="card-header">
+      <h3 style="margin: 0;">{{ wl.territory }}</h3>
+      <span class="{% if wl.weatherRisk == 'Low' %}risk-low{% elif wl.weatherRisk == 'Medium' %}risk-medium{% else %}risk-high{% endif %}">
+        {{ wl.weatherRisk }} Risk
+      </span>
+    </div>
+
+    <table>
+      <tr>
+        <th style="width: 160px;">Factor</th><th>Detail</th>
+      </tr>
+      <tr><td>Best Months</td><td>{{ wl.bestMonths | join(", ") if wl.bestMonths else "N/A" }}</td></tr>
+      {% if wl.avgTempRange %}<tr><td>Temperature Range</td><td>{{ wl.avgTempRange }}</td></tr>{% endif %}
+      {% if wl.avgRainfall %}<tr><td>Avg Rainfall</td><td>{{ wl.avgRainfall }}</td></tr>{% endif %}
+      {% if wl.daylightHours %}<tr><td>Daylight Hours</td><td>{{ wl.daylightHours }}</td></tr>{% endif %}
+      {% if wl.seasonalConsiderations %}<tr><td>Seasonal Notes</td><td>{{ wl.seasonalConsiderations }}</td></tr>{% endif %}
+      <tr><td>Infrastructure</td><td>{{ wl.infrastructure or "N/A" }}</td></tr>
+      <tr><td>Travel &amp; Visa</td><td>{{ wl.travelVisa or "N/A" }}</td></tr>
+    </table>
+  </div>
+  {% endfor %}
+
+  <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% endif %}
+
+<!-- ════════════════════════════════════════════════════════════
+     10. FUNDING & FESTIVAL OPPORTUNITIES
+     ════════════════════════════════════════════════════════════ -->
+{% if report.fundingOpportunities %}
+<div class="page-break">
+  <h2>08 &mdash; Funding &amp; Festival Opportunities</h2>
+
+  <h3>Grants &amp; Funds</h3>
+  {% set funds = report.fundingOpportunities | selectattr("type", "equalto", "Fund") | list %}
+  {% if funds %}
+  <table>
+    <tr>
+      <th>Name</th><th>Genres</th><th>Deadline</th><th>Notes</th><th>Website</th>
+    </tr>
+    {% for f in funds %}
+    <tr class="avoid-break">
+      <td><strong>{{ f.name }}</strong></td>
+      <td>
+        {% for g in (f.genre or [])[:3] %}<span class="tag">{{ g }}</span>{% endfor %}
+      </td>
+      <td>{{ f.deadline or "N/A" }}</td>
+      <td class="small">{{ f.notes or "" }}</td>
+      <td class="small">{{ f.website or "N/A" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No matching funds identified.</p>
+  {% endif %}
+
+  <h3>Festivals</h3>
+  {% set festivals = report.fundingOpportunities | selectattr("type", "equalto", "Festival") | list %}
+  {% if festivals %}
+  <table>
+    <tr>
+      <th>Name</th><th>Tier</th><th>Genres</th><th>Deadline</th><th>Notes</th>
+    </tr>
+    {% for f in festivals %}
+    <tr class="avoid-break">
+      <td><strong>{{ f.name }}</strong></td>
+      <td><span class="tag tag-gold">{{ f.tier or "N/A" }}</span></td>
+      <td>
+        {% for g in (f.genre or [])[:3] %}<span class="tag">{{ g }}</span>{% endfor %}
+      </td>
+      <td>{{ f.deadline or "N/A" }}</td>
+      <td class="small">{{ f.notes or "" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No matching festivals identified.</p>
+  {% endif %}
+
+  <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% endif %}
+
+<!-- ════════════════════════════════════════════════════════════
+     11. PRODUCTION INTELLIGENCE (B2B only)
+     ════════════════════════════════════════════════════════════ -->
+{% if report.productionIntelligence %}
+{% set pi = report.productionIntelligence %}
+<div class="page-break">
+  <h2>09 &mdash; Production Intelligence</h2>
+
+  {% if pi.marketTrends %}
+  <h3>Market Trends</h3>
+
+  {% if pi.marketTrends.cameraEquipmentDemand %}
+  <h4>Camera &amp; Equipment Demand</h4>
+  <table>
+    <tr><th>Equipment</th><th>Demand</th><th>Trend</th></tr>
+    {% for eq in pi.marketTrends.cameraEquipmentDemand %}
+    <tr><td>{{ eq.equipment }}</td><td>{{ eq.demand }}</td><td>{{ eq.trend }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if pi.marketTrends.crewAvailability %}
+  <h4>Crew Availability by Territory</h4>
+  <table>
+    <tr><th>Territory</th><th>Availability</th><th>Rate</th></tr>
+    {% for ca in pi.marketTrends.crewAvailability %}
+    <tr><td>{{ ca.territory }}</td><td>{{ ca.availability }}</td><td>{{ ca.rate }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if pi.marketTrends.territoryDemand %}
+  <h4>Territory Demand</h4>
+  <table>
+    <tr><th>Territory</th><th>Demand Level</th><th>Forecast</th></tr>
+    {% for td in pi.marketTrends.territoryDemand %}
+    <tr><td>{{ td.territory }}</td><td>{{ td.demandLevel }}</td><td>{{ td.forecast }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% endif %}
+
+  {% if pi.competitiveAnalysis %}
+  <h3>Competitive Analysis</h3>
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="stat-value">{{ pi.competitiveAnalysis.similarProjectsInProduction or 0 }}</div>
+      <div class="stat-label">Similar Projects in Production</div>
+    </div>
+  </div>
+  <p>{{ pi.competitiveAnalysis.territoryCompetition or "" }}</p>
+  {% if pi.competitiveAnalysis.recommendations %}
+  <h4>Recommendations</h4>
+  <ul style="padding-left: 16px; font-size: 10px;">
+    {% for rec in pi.competitiveAnalysis.recommendations %}
+    <li>{{ rec }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endif %}
+
+  {% if pi.riskAssessment %}
+  <h3>Risk Assessment</h3>
+  {% if pi.riskAssessment.overallRiskScore is defined %}
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="stat-value">{{ pi.riskAssessment.overallRiskScore }}/100</div>
+      <div class="stat-label">Overall Risk Score</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pi.riskAssessment.incentiveStability %}
+  <h4>Incentive Stability</h4>
+  <table>
+    <tr><th>Territory</th><th>Risk</th><th>Note</th></tr>
+    {% for is in pi.riskAssessment.incentiveStability %}
+    <tr>
+      <td>{{ is.territory }}</td>
+      <td><span class="risk-{{ is.risk | lower }}">{{ is.risk }}</span></td>
+      <td>{{ is.note }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if pi.riskAssessment.crewCostVolatility %}
+  <h4>Crew Cost Volatility</h4>
+  <table>
+    <tr><th>Territory</th><th>Volatility</th></tr>
+    {% for cv in pi.riskAssessment.crewCostVolatility %}
+    <tr><td>{{ cv.territory }}</td><td>{{ cv.volatility }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ════════════════════════════════════════════════════════════
+     12. PRODUCTION ECONOMICS SUMMARY
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>{% if report.productionIntelligence %}10{% else %}09{% endif %} &mdash; Production Economics Summary</h2>
+
+  {% if report.locationRankings and report.incentiveEstimates %}
+  <h3>Territory Comparison</h3>
+  <table>
+    <tr>
+      <th>Territory</th>
+      <th>Overall Score</th>
+      <th>Cost Efficiency</th>
+      <th>Incentive Strength</th>
+      {% if report.incentiveEstimates %}<th>Est. Rebate</th>{% endif %}
+    </tr>
+    {% for loc in report.locationRankings[:5] %}
+    <tr>
+      <td><strong>{{ loc.name }}</strong></td>
+      <td>{{ loc.score }}/100</td>
+      <td>{{ loc.costEfficiency }}/100</td>
+      <td>{{ loc.incentiveStrength }}/100</td>
+      {% set matching_inc = report.incentiveEstimates | selectattr("territory", "equalto", loc.name) | first %}
+      <td class="gold">{{ matching_inc.estimatedRebate if matching_inc else "N/A" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h3>Key Takeaways</h3>
+  <ul style="padding-left: 16px;">
+    {% if report.locationRankings %}
+    <li>{{ report.locationRankings | length }} territor{{ "y" if report.locationRankings | length == 1 else "ies" }} analysed</li>
+    <li>Top territory: <strong>{{ report.locationRankings[0].name }}</strong> (score: {{ report.locationRankings[0].score }}/100)</li>
+    {% endif %}
+    {% if report.incentiveEstimates %}
+    <li>{{ report.incentiveEstimates | length }} incentive program{{ "s" if report.incentiveEstimates | length != 1 }} identified</li>
+    {% endif %}
+    {% if report.comparables %}
+    <li>{{ report.comparables | length }} comparable production{{ "s" if report.comparables | length != 1 }} analysed</li>
+    {% endif %}
+    {% if report.fundingOpportunities %}
+    <li>{{ report.fundingOpportunities | length }} funding/festival opportunit{{ "y" if report.fundingOpportunities | length == 1 else "ies" }} identified</li>
+    {% endif %}
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     13. NEXT STEPS & RECOMMENDATIONS
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>{% if report.productionIntelligence %}11{% else %}10{% endif %} &mdash; Next Steps &amp; Recommendations</h2>
+
+  <div class="card">
+    <h3>Recommended Actions</h3>
+    <ol style="padding-left: 20px; line-height: 2;">
+      {% if report.locationRankings %}
+      <li>Explore incentive pre-qualification with <strong>{{ report.locationRankings[0].name }}</strong> film commission</li>
+      {% endif %}
+      <li>Engage local line producers in top-ranked territories for budgeting validation</li>
+      <li>Begin crew availability checks for preferred shooting windows</li>
+      {% if report.incentiveEstimates %}
+      <li>Verify incentive programme eligibility criteria with relevant authorities</li>
+      {% endif %}
+      {% if report.fundingOpportunities %}
+      <li>Prepare grant applications for identified funding opportunities before stated deadlines</li>
+      {% endif %}
+      <li>Commission detailed location scouts in shortlisted territories</li>
+      <li>Review comparable production budgets and adjust financial model accordingly</li>
+    </ol>
+  </div>
+
+  {% if report_type == "preview" %}
+  <div class="card" style="border-color: #D4AF37;">
+    <h3 class="gold">Upgrade to Full Report</h3>
+    <p>
+      This preview report provides a high-level assessment. The full Prodculator report includes
+      detailed crew cost analysis, comparable productions, weather &amp; logistics data,
+      funding opportunities, and comprehensive territory breakdowns.
+    </p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     14. DISCLAIMERS
+     ════════════════════════════════════════════════════════════ -->
+<div class="page-break">
+  <h2>{% if report.productionIntelligence %}12{% else %}11{% endif %} &mdash; Disclaimers</h2>
+
+  <div class="disclaimer">
+    <h4>Not Professional Advice</h4>
+    <p>This report is provided for informational purposes only and does not constitute professional financial, tax, legal, or production advice. Always consult qualified professionals before making production decisions based on this analysis.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Data Accuracy</h4>
+    <p>While every effort has been made to ensure the accuracy of the data presented, Prodculator makes no warranties or representations regarding the completeness, accuracy, or currency of the information. Data is sourced from publicly available databases, government publications, and industry sources, and may be subject to change without notice.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Tax Incentive Estimates</h4>
+    <p>All tax incentive figures, rebate estimates, and financial projections are approximate and based on publicly available programme guidelines. Actual amounts may differ based on project specifics, eligibility determinations, and programme changes. Final eligibility and amounts are subject to official approval by the relevant authorities.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Intellectual Property &amp; Script Analysis</h4>
+    <p>Script content uploaded for analysis is processed solely for the purpose of generating this report. Prodculator does not retain, share, or use script content beyond the scope of this analysis.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Crew Costs</h4>
+    <p>Crew cost estimates are indicative and based on aggregated industry data. Actual costs will vary based on crew experience, union agreements, shooting schedules, and local market conditions at the time of production.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Limitation of Liability</h4>
+    <p>Prodculator, its officers, directors, employees, and agents shall not be liable for any direct, indirect, incidental, consequential, or punitive damages arising from the use of or reliance on this report or the information contained herein.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>User Responsibilities</h4>
+    <p>Users are responsible for independently verifying all information presented in this report before making production, financial, or legal decisions. This report should be used as one of several inputs in a comprehensive decision-making process.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Data Sources</h4>
+    <p>This report draws on data from government film commission publications, industry databases, publicly available incentive programme documentation, and Prodculator's proprietary datasets. Individual data sources are attributed within each section where applicable.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Governing Law</h4>
+    <p>This report and any dispute arising from its use shall be governed by and construed in accordance with applicable laws. By using this report, you agree to these terms and conditions.</p>
+  </div>
+
+  <div class="disclaimer">
+    <h4>Support</h4>
+    <p>For questions about this report or to request corrections, please contact the Prodculator team at support@prodculator.com.</p>
+  </div>
+
+  <div style="margin-top: 30px; text-align: center; color: #ccc; font-size: 9px;">
+    <div style="width: 40px; height: 2px; background: #D4AF37; margin: 0 auto 10px;"></div>
+    Generated by <strong style="color: #D4AF37;">PRODCULATOR</strong> &nbsp;&bull;&nbsp; {{ created_at[:10] if created_at else "" }}
+  </div>
+</div>
+
+</body>
 </html>

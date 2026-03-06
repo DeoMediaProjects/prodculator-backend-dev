@@ -13,7 +13,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         "app": settings.APP_NAME,
         "environment": settings.APP_ENV,
         "database_configured": bool(settings.DB_URL),
-        "openai_configured": bool(settings.OPENAI_API_KEY),
+        "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
         "stripe_configured": bool(settings.STRIPE_SECRET_KEY),
         "sendgrid_configured": bool(settings.SENDGRID_API_KEY),
     }

@@ -1,9 +1,12 @@
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from uuid import uuid4
+
+from sqlalchemy.exc import NoSuchTableError
 
 from app.core.database_client import DatabaseClient
-
 from app.modules.scripts.schemas import ScriptAnalysisResult
+from app.modules.scripts.service import ScriptAnalysisService
 
 logger = logging.getLogger(__name__)
 
@@ -12,21 +15,31 @@ class ReportService:
     def __init__(self, supabase: DatabaseClient):
         self.supabase = supabase
 
+    # --- CRUD operations (unchanged) ---
+
     def create_report(
-        self, user_id: str, script_title: str, report_type: str, script_file_path: str | None = None
+        self,
+        user_id: str,
+        script_title: str,
+        report_type: str,
+        script_file_path: str | None = None,
+        request_metadata: dict | None = None,
     ) -> str:
         """Create a new report record, returns report ID."""
+        payload = {
+            "id": str(uuid4()),
+            "user_id": user_id,
+            "script_title": script_title,
+            "script_file_path": script_file_path,
+            "status": "processing",
+            "report_type": report_type,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if request_metadata is not None:
+            payload["request_metadata"] = request_metadata
         result = (
             self.supabase.table("reports")
-            .insert(
-                {
-                    "user_id": user_id,
-                    "script_title": script_title,
-                    "script_file_path": script_file_path,
-                    "status": "processing",
-                    "report_type": report_type,
-                }
-            )
+            .insert(payload)
             .select("id")
             .single()
             .execute()
@@ -43,6 +56,12 @@ class ReportService:
                 "pdf_url": pdf_url,
             }
         ).eq("id", report_id).execute()
+
+    def update_pdf_url(self, report_id: str, pdf_url: str) -> None:
+        """Update the PDF URL for a completed report."""
+        self.supabase.table("reports").update({"pdf_url": pdf_url}).eq(
+            "id", report_id
+        ).execute()
 
     def fail_report(self, report_id: str, error_message: str) -> None:
         """Mark report as failed."""
@@ -69,7 +88,7 @@ class ReportService:
         return result.data
 
     def get_user_reports(self, user_id: str) -> list[dict]:
-        """Get all reports for a user."""
+        """Get all reports for a user (excludes previews)."""
         result = (
             self.supabase.table("reports")
             .select("*")
@@ -77,13 +96,236 @@ class ReportService:
             .order("created_at", desc=True)
             .execute()
         )
-        return result.data or []
+        reports = result.data or []
+        return [r for r in reports if r.get("report_type") != "preview"]
+
+    # --- New analysis report generation ---
+
+    def generate_preview_report(
+        self,
+        *,
+        request_metadata: dict,
+        script_service: ScriptAnalysisService,
+    ) -> dict:
+        """Generate a free preview report synchronously (no script, no DB row)."""
+        datasets = self._load_analysis_datasets(
+            territories_hint=request_metadata.get("territories_considering")
+        )
+        return script_service.generate_production_analysis(
+            script_analysis=None,
+            request_metadata=request_metadata,
+            datasets=datasets,
+            is_preview=True,
+        )
+
+    def generate_analysis_report(
+        self,
+        *,
+        script_analysis: ScriptAnalysisResult,
+        request_metadata: dict,
+        report_id: str,
+        script_service: ScriptAnalysisService,
+        is_b2b: bool = False,
+    ) -> dict:
+        """Generate a full paid/b2b analysis report."""
+        datasets = self._load_analysis_datasets(
+            territories_hint=request_metadata.get("territories_considering")
+        )
+        report_data = script_service.generate_production_analysis(
+            script_analysis=script_analysis,
+            request_metadata=request_metadata,
+            datasets=datasets,
+            is_preview=False,
+        )
+
+        if is_b2b:
+            report_data["productionIntelligence"] = self._build_production_intelligence()
+
+        return report_data
+
+    # --- Dataset loading ---
+
+    def _safe_query(self, table_name: str, builder) -> list[dict]:
+        try:
+            logger.debug("Loading analysis dataset table=%s", table_name)
+            query = self.supabase.table(table_name)
+            result = builder(query).execute()
+            rows = result.data or []
+            logger.debug("Loaded analysis dataset table=%s rows=%s", table_name, len(rows))
+            return rows
+        except NoSuchTableError:
+            logger.warning("Optional dataset table missing: %s", table_name)
+            return []
+
+    def _load_analysis_datasets(self, territories_hint: list[str] | None = None) -> dict:
+        """Load admin-managed datasets for AI prompt injection."""
+        logger.info(
+            "Loading analysis datasets: territories_hint=%s",
+            territories_hint or [],
+        )
+        # Active incentive programs
+        all_incentives = self._safe_query(
+            "incentive_programs",
+            lambda q: q.select("*").eq("status", "active"),
+        )
+        if territories_hint:
+            filtered = [i for i in all_incentives if i.get("territory") in territories_hint]
+            # Fall back to all if filter yields nothing
+            incentives = filtered if filtered else all_incentives
+        else:
+            incentives = all_incentives
+
+        # Crew costs
+        all_crew = self._safe_query("crew_costs", lambda q: q.select("*"))
+        if territories_hint:
+            filtered = [c for c in all_crew if c.get("territory") in territories_hint]
+            crew_costs = filtered if filtered else all_crew
+        else:
+            crew_costs = all_crew
+
+        # Comparable productions (small dataset, load all)
+        comparables = self._safe_query("comparable_productions", lambda q: q.select("*"))
+
+        # Open grants
+        grants = self._safe_query(
+            "grant_opportunities",
+            lambda q: q.select("*").in_("status", ["open", "opening_soon", "closing_soon"]),
+        )
+
+        # Upcoming festivals
+        all_festivals = self._safe_query("film_festivals", lambda q: q.select("*"))
+        festivals = [f for f in all_festivals if self._is_open_or_upcoming_festival(f)]
+        festivals.sort(key=self._festival_sort_key)
+        logger.info(
+            "Loaded analysis datasets counts: incentives=%s crew_costs=%s comparables=%s grants=%s festivals=%s",
+            len(incentives),
+            len(crew_costs),
+            len(comparables),
+            len(grants),
+            len(festivals),
+        )
+
+        return {
+            "incentives": incentives,
+            "crew_costs": crew_costs,
+            "comparables": comparables,
+            "grants": grants,
+            "festivals": festivals,
+        }
+
+    @staticmethod
+    def _parse_iso_date(value: object) -> date | None:
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            return date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
+
+    def _next_known_festival_deadline(self, festival: dict) -> date | None:
+        today = date.today()
+        candidates: list[date] = []
+
+        submission_deadline = self._parse_iso_date(festival.get("submission_deadline"))
+        if submission_deadline:
+            candidates.append(submission_deadline)
+
+        deadlines = festival.get("deadlines")
+        if isinstance(deadlines, list):
+            for deadline in deadlines:
+                if not isinstance(deadline, dict):
+                    continue
+                parsed = self._parse_iso_date(deadline.get("date"))
+                if parsed:
+                    candidates.append(parsed)
+
+        if not candidates:
+            return None
+
+        future = [d for d in candidates if d >= today]
+        if future:
+            return min(future)
+        return min(candidates)
+
+    def _is_open_or_upcoming_festival(self, festival: dict) -> bool:
+        status = str(festival.get("status") or festival.get("current_status") or "").strip().lower()
+        if status:
+            closed_statuses = {"closed", "completed", "archived"}
+            if status in closed_statuses:
+                return False
+
+            open_like_statuses = {
+                "open",
+                "upcoming",
+                "early-bird-open",
+                "regular-open",
+                "late-open",
+                "opening_soon",
+            }
+            if status in open_like_statuses:
+                return True
+
+        next_deadline = self._next_known_festival_deadline(festival)
+        if next_deadline:
+            return next_deadline >= date.today()
+        return True
+
+    def _festival_sort_key(self, festival: dict) -> tuple[bool, date, str]:
+        next_deadline = self._next_known_festival_deadline(festival)
+        return (
+            next_deadline is None,
+            next_deadline or date.max,
+            str(festival.get("name") or ""),
+        )
+
+    # --- B2B production intelligence (kept for backward compatibility) ---
+
+    def _build_production_intelligence(self) -> dict:
+        return {
+            "marketTrends": {
+                "cameraEquipmentDemand": [
+                    {"equipment": "ARRI", "demand": "High", "trend": "+12% QoQ"},
+                    {"equipment": "RED", "demand": "Medium", "trend": "-5% QoQ"},
+                ],
+                "crewAvailability": [
+                    {"territory": "British Columbia", "availability": "Good", "rate": "Stable"},
+                    {"territory": "Georgia (USA)", "availability": "Excellent", "rate": "Rising +8%"},
+                ],
+                "territoryDemand": [
+                    {"territory": "Malta", "demandLevel": "High", "forecast": "Increasing"},
+                    {"territory": "UK", "demandLevel": "Very High", "forecast": "Stable"},
+                ],
+            },
+            "competitiveAnalysis": {
+                "similarProjectsInProduction": 5,
+                "territoryCompetition": "Moderate competition for crew in peak season",
+                "recommendations": [
+                    "Book key crew members early",
+                    "Consider off-season filming for better rates",
+                ],
+            },
+            "riskAssessment": {
+                "incentiveStability": [
+                    {"territory": "Georgia (USA)", "risk": "Low", "note": "Program well-established"},
+                    {"territory": "South Africa", "risk": "Medium", "note": "Payment delays reported"},
+                ],
+                "crewCostVolatility": [
+                    {"territory": "British Columbia", "volatility": "Low"},
+                    {"territory": "California (USA)", "volatility": "Medium-High"},
+                ],
+                "overallRiskScore": 35,
+            },
+        }
+
+    # --- Deprecated legacy methods (kept for backward compatibility) ---
 
     def generate_b2c_report(
         self, script_title: str, analysis: ScriptAnalysisResult, report_id: str
     ) -> dict:
-        """Generate a B2C report from script analysis."""
-        # Get incentive programs
+        """DEPRECATED: Use generate_analysis_report() instead."""
         incentives_result = (
             self.supabase.table("incentive_programs")
             .select("*")
@@ -91,11 +333,7 @@ class ReportService:
             .execute()
         )
         all_incentives = incentives_result.data or []
-
-        # Match territories
         matched = self._match_territories(analysis, all_incentives)
-
-        # Build territory analysis
         territory_analysis = []
         for territory in matched:
             crew_result = (
@@ -108,21 +346,11 @@ class ReportService:
             incentives = [i for i in all_incentives if i["territory"] == territory["name"]]
             ta = self._build_territory_analysis(territory, incentives, crew_costs, analysis)
             territory_analysis.append(ta)
-
         territory_analysis.sort(key=lambda t: t["overallScore"], reverse=True)
-
-        # Comparables
         comparables = self._find_comparables(analysis)
-
-        # Grants
         grants = self._find_grants(analysis, territory_analysis)
-
-        # Festivals
         festivals = self._recommend_festivals(analysis)
-
-        # Executive summary
         summary = self._build_summary(territory_analysis, analysis, comparables)
-
         return {
             "reportId": report_id,
             "scriptTitle": script_title,
@@ -150,10 +378,9 @@ class ReportService:
         report_id: str,
         client_id: str | None = None,
     ) -> dict:
-        """Generate B2B report (extends B2C with production intelligence)."""
+        """DEPRECATED: Use generate_analysis_report(is_b2b=True) instead."""
         report = self.generate_b2c_report(script_title, analysis, report_id)
-        report["productionIntelligence"] = self._build_production_intelligence(analysis)
-
+        report["productionIntelligence"] = self._build_production_intelligence()
         if client_id:
             client_result = (
                 self.supabase.table("b2b_clients")
@@ -167,10 +394,9 @@ class ReportService:
                     "companyName": client_result.data["company_name"],
                     "customColors": True,
                 }
-
         return report
 
-    # --- Private helpers ---
+    # --- Legacy private helpers (kept for deprecated methods) ---
 
     def _match_territories(self, analysis: ScriptAnalysisResult, incentives: list[dict]):
         territories: dict[str, dict] = {}
@@ -184,15 +410,12 @@ class ReportService:
             else:
                 territories[t]["score"] += loc.frequency * 5
                 territories[t]["reasons"].append(f"{loc.frequency} scenes set in {loc.name}")
-
-        # Add high-incentive territories
         for inc in incentives[:3]:
             if (inc.get("rate_min") or 0) >= 25 and inc["territory"] not in territories:
                 territories[inc["territory"]] = {
                     "score": 20,
                     "reasons": ["High tax incentive available"],
                 }
-
         return sorted(
             [{"name": k, "matchScore": v["score"], "reasons": v["reasons"]} for k, v in territories.items()],
             key=lambda x: x["matchScore"],
@@ -213,8 +436,6 @@ class ReportService:
             incentive_details.append(
                 {"programName": inc["program_name"], "rate": rate_str, "cap": cap, "potentialRebateUSD": rebate}
             )
-
-        # Crew costs
         shooting_days = analysis.productionScale.estimatedShootingDays
         daily = sum((c.get("day_rate_cents") or 0) for c in crew_costs) / 100
         weekly = sum((c.get("week_rate_cents") or 0) for c in crew_costs) / 100
@@ -231,13 +452,10 @@ class ReportService:
             "currency": crew_costs[0]["currency"] if crew_costs else "USD",
             "breakdown": breakdown,
         }
-
-        # Score: incentive 40%, crew cost 40%, location 20%
         inc_score = min((incentive_details[0]["potentialRebateUSD"] / 1_000_000 * 10) if incentive_details else 0, 40)
         crew_score = max(40 - (total / 1_000_000 * 5), 0)
         loc_score = territory["matchScore"] / 100 * 20
         overall = min(round(inc_score + crew_score + loc_score), 100)
-
         pros = []
         if incentive_details and incentive_details[0]["potentialRebateUSD"] > 500_000:
             pros.append(f"Strong incentive: {incentive_details[0]['rate']} rebate available")
@@ -247,13 +465,11 @@ class ReportService:
             pros.append("Strong location match for script requirements")
         if not pros:
             pros = ["Viable filming location"]
-
         cons = []
         if not incentive_details:
             cons.append("No incentive programs available")
         if any(i["cap"] != "Uncapped" for i in incentive_details):
             cons.append("Incentive program has caps")
-
         return {
             "territory": territory["name"],
             "country": incentives[0]["country"] if incentives else "Unknown",
@@ -350,41 +566,4 @@ class ReportService:
                 f"{len(comparables)} comparable productions analyzed",
                 f"Estimated {analysis.productionScale.estimatedShootingDays} shooting days required",
             ],
-        }
-
-    def _build_production_intelligence(self, analysis: ScriptAnalysisResult) -> dict:
-        return {
-            "marketTrends": {
-                "cameraEquipmentDemand": [
-                    {"equipment": "ARRI", "demand": "High", "trend": "+12% QoQ"},
-                    {"equipment": "RED", "demand": "Medium", "trend": "-5% QoQ"},
-                ],
-                "crewAvailability": [
-                    {"territory": "British Columbia", "availability": "Good", "rate": "Stable"},
-                    {"territory": "Georgia (USA)", "availability": "Excellent", "rate": "Rising +8%"},
-                ],
-                "territoryDemand": [
-                    {"territory": "Malta", "demandLevel": "High", "forecast": "Increasing"},
-                    {"territory": "UK", "demandLevel": "Very High", "forecast": "Stable"},
-                ],
-            },
-            "competitiveAnalysis": {
-                "similarProjectsInProduction": 5,
-                "territoryCompetition": "Moderate competition for crew in peak season",
-                "recommendations": [
-                    "Book key crew members early",
-                    "Consider off-season filming for better rates",
-                ],
-            },
-            "riskAssessment": {
-                "incentiveStability": [
-                    {"territory": "Georgia (USA)", "risk": "Low", "note": "Program well-established"},
-                    {"territory": "South Africa", "risk": "Medium", "note": "Payment delays reported"},
-                ],
-                "crewCostVolatility": [
-                    {"territory": "British Columbia", "volatility": "Low"},
-                    {"territory": "California (USA)", "volatility": "Medium-High"},
-                ],
-                "overallRiskScore": 35,
-            },
         }

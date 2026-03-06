@@ -1,6 +1,7 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import PydanticBaseSettingsSource
 
 
 class Settings(BaseSettings):
@@ -8,6 +9,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Prodculator API"
     APP_ENV: str = "development"
     DEBUG: bool = True
+    LOG_LEVEL: str = "INFO"
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
 
@@ -35,10 +37,11 @@ class Settings(BaseSettings):
     STRIPE_PRICE_STUDIO_USD: str = "price_1Sx8AfLcLlewla5Exif5R15n"
     STRIPE_PRICE_STUDIO_GBP: str = "price_1Sx8CpLcLlewla5E42HQTVmg"
 
-    # OpenAI
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
-    OPENAI_MAX_TOKENS: int = 2000
+    # Anthropic Claude
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
+    ANTHROPIC_MAX_TOKENS: int = 8000
+    ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
 
     # SendGrid
     SENDGRID_API_KEY: str = ""
@@ -60,14 +63,32 @@ class Settings(BaseSettings):
     GRANTIFY_API_KEY: str = ""
     GRANTIFY_AFFILIATE_ID: str = ""
 
+    # Scraper
+    SCRAPER_ENABLED: bool = True
+    SCRAPER_REQUEST_TIMEOUT: int = 30
+    SCRAPER_MAX_TEXT_CHARS: int = 60000
+
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True,
-        "extra": "ignore",
-    }
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # .env file takes priority over shell environment variables
+        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
 
 
 @lru_cache()

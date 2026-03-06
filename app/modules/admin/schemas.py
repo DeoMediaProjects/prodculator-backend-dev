@@ -45,3 +45,39 @@ class ProductionSignalsResponse(BaseModel):
     items: list[dict[str, Any]]
     total: int
 
+
+class SyncStatusResponse(BaseModel):
+    territoriesSyncing: int
+    pendingChanges: int
+    daysSinceLastCheck: int
+    nextScheduledCheck: str | None = None
+
+
+class PendingChangeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    territory: str
+    field: str
+    currentValue: str | None = None
+    detectedValue: str
+    confidence: str
+    source: str | None = None
+    status: str = "pending"
+    createdAt: str | None = None
+    resourceId: str | None = None
+    recordLabel: str | None = None
+    resolvedAt: str | None = None
+
+
+class SyncSettingsResponse(BaseModel):
+    schedule: str | None = None
+    enabled: bool = True
+    lastSyncAt: str | None = None
+    nextScheduledCheck: str | None = None
+
+
+class SyncSettingsUpdateRequest(BaseModel):
+    schedule: str | None = None
+    enabled: bool | None = None
+

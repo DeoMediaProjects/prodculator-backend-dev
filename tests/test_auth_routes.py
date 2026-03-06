@@ -1,5 +1,6 @@
 from app.core.dependencies import get_current_user, get_supabase
 from app.modules.auth.router import get_auth_service
+from app.modules.admin.auth_router import get_auth_service as get_admin_auth_service
 from app.modules.auth.schemas import AuthUser, TokenResponse
 
 
@@ -19,7 +20,7 @@ class FakeAuthService:
 
     def admin_sign_in(self, **kwargs):
         if self.user_type != "admin":
-            raise PermissionError("Access denied — admin privileges required")
+            raise ValueError("Invalid email or password")
         return self._token_response(user_type="admin")
 
     def refresh_session(self, refresh_token: str):
@@ -60,12 +61,12 @@ def test_signup(client):
 
 
 def test_admin_signin_forbidden_for_non_admin(client):
-    client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(user_type="free")
+    client.app.dependency_overrides[get_admin_auth_service] = lambda: FakeAuthService(user_type="free")
     response = client.post(
-        "/api/auth/admin/signin",
+        "/api/admin/auth/signin",
         json={"email": "user@example.com", "password": "password123"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 def test_me_returns_user_profile(client, auth_user):

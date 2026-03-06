@@ -4,18 +4,17 @@ from uuid import uuid4
 
 from app.core.database_client import DatabaseClient
 
-_TABLE = "incentive_programs"
+_TABLE = "crew_costs"
 _SYNC_SETTINGS_TABLE = "sync_settings"
 _PENDING_CHANGES_TABLE = "pending_changes"
-_RESOURCE_TYPE = "incentives"
+_RESOURCE_TYPE = "crew_costs"
 
-# ── Incentive field maps (camelCase ↔ snake_case) ────────────────────────────
+# ── Crew cost field maps (camelCase ↔ snake_case) ────────────────────────────
 
 _CAMEL_TO_SNAKE: dict[str, str] = {
+    "dayRate": "day_rate",
+    "weekRate": "week_rate",
     "lastUpdated": "last_updated",
-    "sourceUrl": "source_url",
-    "autoSyncEnabled": "auto_sync_enabled",
-    "lastAutoCheck": "last_auto_check",
     "createdAt": "created_at",
     "updatedAt": "updated_at",
 }
@@ -45,7 +44,7 @@ _SS_CAMEL_TO_SNAKE: dict[str, str] = {
 _SS_SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _SS_CAMEL_TO_SNAKE.items()}
 
 
-def _incentive_to_db(payload: dict[str, Any]) -> dict[str, Any]:
+def _crew_to_db(payload: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for k, v in payload.items():
         result[_CAMEL_TO_SNAKE.get(k, k)] = v
@@ -54,7 +53,7 @@ def _incentive_to_db(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _incentive_from_db(row: dict[str, Any]) -> dict[str, Any]:
+def _crew_from_db(row: dict[str, Any]) -> dict[str, Any]:
     return {_SNAKE_TO_CAMEL.get(k, k): v for k, v in row.items()}
 
 
@@ -76,7 +75,7 @@ def _sync_settings_from_db(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-class IncentivesService:
+class CrewCostsService:
     def __init__(self, supabase: DatabaseClient):
         self.supabase = supabase
 
@@ -94,19 +93,19 @@ class IncentivesService:
             .data
             or []
         )
-        return [_incentive_from_db(r) for r in rows], count
+        return [_crew_from_db(r) for r in rows], count
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
-        db_payload = _incentive_to_db(payload)
+        db_payload = _crew_to_db(payload)
         db_payload.setdefault("id", str(uuid4()))
         db_payload["created_at"] = now
         db_payload["updated_at"] = now
         result = self.supabase.table(_TABLE).insert(db_payload).select("*").single().execute()
-        return _incentive_from_db(result.data)
+        return _crew_from_db(result.data)
 
     def update(self, row_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        db_payload = _incentive_to_db(payload)
+        db_payload = _crew_to_db(payload)
         db_payload["updated_at"] = datetime.now(timezone.utc).isoformat()
         result = (
             self.supabase.table(_TABLE)
@@ -116,7 +115,7 @@ class IncentivesService:
             .single()
             .execute()
         )
-        return _incentive_from_db(result.data)
+        return _crew_from_db(result.data)
 
     def delete(self, row_id: str) -> None:
         self.supabase.table(_TABLE).delete().eq("id", row_id).execute()
@@ -124,11 +123,9 @@ class IncentivesService:
     # ── Sync status ──────────────────────────────────────────────────────────
 
     def get_sync_status(self) -> dict[str, Any]:
-        # Count distinct territories
         all_rows = self.supabase.table(_TABLE).select("territory").execute().data or []
         territories = len({r.get("territory") for r in all_rows if r.get("territory")})
 
-        # Count pending changes
         pending_count = (
             self.supabase.table(_PENDING_CHANGES_TABLE)
             .select("*", count="exact", head=True)
@@ -138,7 +135,6 @@ class IncentivesService:
             .count or 0
         )
 
-        # Get sync settings for last check date
         settings_row = self._get_or_create_sync_settings()
         last_sync = settings_row.get("last_sync_at")
         next_scheduled = settings_row.get("next_scheduled")
@@ -175,7 +171,6 @@ class IncentivesService:
     def approve_change(self, change_id: str, admin_id: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
 
-        # Fetch the pending change
         change = (
             self.supabase.table(_PENDING_CHANGES_TABLE)
             .select("*")
@@ -187,8 +182,6 @@ class IncentivesService:
         if not change:
             raise ValueError("Pending change not found")
 
-        # Apply the change to the resource row. If resource_id is missing
-        # (newly discovered incentive), create/reuse a row first.
         resource_id = change.get("resource_id")
         field = change.get("field")
         detected_value = change.get("detected_value")
@@ -200,7 +193,6 @@ class IncentivesService:
                 {db_field: detected_value, "updated_at": now}
             ).eq("id", resource_id).execute()
 
-        # Mark the change as approved
         update_payload: dict[str, Any] = {
             "status": "approved",
             "resolved_at": now,
@@ -231,17 +223,56 @@ class IncentivesService:
         )
         return _pending_change_from_db(result.data)
 
+    # ── Sync trigger ─────────────────────────────────────────────────────────
+
+    def trigger_sync(self) -> dict[str, Any]:
+        from app.core.config import get_settings
+        from app.modules.scraper.service import ScraperService
+
+        settings = get_settings()
+        scraper = ScraperService(self.supabase, settings)
+        return scraper.run_for_resource(_RESOURCE_TYPE, triggered_by="admin")
+
+    # ── Sync settings ────────────────────────────────────────────────────────
+
+    def get_sync_settings(self) -> dict[str, Any]:
+        row = self._get_or_create_sync_settings()
+        return _sync_settings_from_db(row)
+
+    def update_sync_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        settings = self._get_or_create_sync_settings()
+        now = datetime.now(timezone.utc).isoformat()
+
+        update_data: dict[str, Any] = {"updated_at": now}
+        if "schedule" in payload:
+            update_data["schedule"] = payload["schedule"]
+        if "enabled" in payload:
+            update_data["enabled"] = payload["enabled"]
+
+        if "schedule" in payload and payload["schedule"]:
+            update_data["next_scheduled"] = self._compute_next_scheduled(payload["schedule"])
+
+        result = (
+            self.supabase.table(_SYNC_SETTINGS_TABLE)
+            .update(update_data)
+            .eq("id", settings["id"])
+            .select("*")
+            .single()
+            .execute()
+        )
+        return _sync_settings_from_db(result.data)
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
     def _get_or_create_resource_id_for_change(self, change: dict[str, Any], now: str) -> str:
         territory = change.get("territory")
-        source_url = change.get("source")
+        source = change.get("source")
 
-        # Reuse a recently created row for the same territory/source to keep
-        # multi-field approvals (e.g. rate + cap) on one resource.
         query = self.supabase.table(_TABLE).select("id").order("created_at", desc=True).limit(1)
         if territory:
             query = query.eq("territory", territory)
-        if source_url:
-            query = query.eq("source_url", source_url)
+        if source:
+            query = query.eq("source", source)
         existing = query.execute().data or []
         if existing:
             return existing[0]["id"]
@@ -250,7 +281,7 @@ class IncentivesService:
         create_payload: dict[str, Any] = {
             "id": row_id,
             "territory": territory,
-            "source_url": source_url,
+            "source": source,
             "created_at": now,
             "updated_at": now,
         }
@@ -288,48 +319,6 @@ class IncentivesService:
                 "id", change["id"]
             ).execute()
 
-    # ── Sync trigger ─────────────────────────────────────────────────────────
-
-    def trigger_sync(self) -> dict[str, Any]:
-        from app.core.config import get_settings
-        from app.modules.scraper.service import ScraperService
-
-        settings = get_settings()
-        scraper = ScraperService(self.supabase, settings)
-        return scraper.run_for_resource(_RESOURCE_TYPE, triggered_by="admin")
-
-    # ── Sync settings ────────────────────────────────────────────────────────
-
-    def get_sync_settings(self) -> dict[str, Any]:
-        row = self._get_or_create_sync_settings()
-        return _sync_settings_from_db(row)
-
-    def update_sync_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
-        settings = self._get_or_create_sync_settings()
-        now = datetime.now(timezone.utc).isoformat()
-
-        update_data: dict[str, Any] = {"updated_at": now}
-        if "schedule" in payload:
-            update_data["schedule"] = payload["schedule"]
-        if "enabled" in payload:
-            update_data["enabled"] = payload["enabled"]
-
-        # Compute next_scheduled based on schedule
-        if "schedule" in payload and payload["schedule"]:
-            update_data["next_scheduled"] = self._compute_next_scheduled(payload["schedule"])
-
-        result = (
-            self.supabase.table(_SYNC_SETTINGS_TABLE)
-            .update(update_data)
-            .eq("id", settings["id"])
-            .select("*")
-            .single()
-            .execute()
-        )
-        return _sync_settings_from_db(result.data)
-
-    # ── Helpers ───────────────────────────────────────────────────────────────
-
     def _get_or_create_sync_settings(self) -> dict[str, Any]:
         rows = (
             self.supabase.table(_SYNC_SETTINGS_TABLE)
@@ -341,7 +330,6 @@ class IncentivesService:
         if rows:
             return rows[0]
 
-        # Auto-create default settings row
         now = datetime.now(timezone.utc).isoformat()
         default = {
             "id": str(uuid4()),
