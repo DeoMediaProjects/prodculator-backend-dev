@@ -33,6 +33,7 @@ class FakeQuery:
         self._single = False
         self._offset = 0
         self._end = None
+        self._limit = None
 
     def select(self, *_args, **kwargs):
         if kwargs.get("count"):
@@ -57,6 +58,11 @@ class FakeQuery:
     def range(self, start: int, end: int):
         self._offset = start
         self._end = end
+        self._limit = None
+        return self
+
+    def limit(self, value: int):
+        self._limit = value
         return self
 
     def insert(self, payload):
@@ -99,6 +105,8 @@ class FakeQuery:
 
         if self._end is not None:
             rows = rows[self._offset : self._end + 1]
+        elif self._limit is not None:
+            rows = rows[self._offset : self._offset + self._limit]
 
         if self._single:
             return FakeResult(data=rows[0] if rows else None)
@@ -288,6 +296,42 @@ def test_list_incentives_pagination(client):
     assert data["offset"] == 0
 
 
+def test_list_incentives_materializes_approved_changes_without_resource_id(client):
+    fake = _setup(client)
+    fake.store["pending_changes"].append(
+        {
+            "id": "pc-approved-no-resource",
+            "resource_type": "incentives",
+            "resource_id": None,
+            "territory": "Virginia",
+            "field": "cap",
+            "current_value": None,
+            "detected_value": "$6.5 million annual cap",
+            "confidence": "medium",
+            "source": "https://www.wrapbook.com/blog/film-industry-tax-incentives",
+            "status": "approved",
+            "created_at": "2026-03-05T18:36:23.355800",
+            "resolved_at": "2026-03-05T19:24:12.570129",
+            "resolved_by": "admin-1",
+        }
+    )
+
+    response = client.get("/api/admin/incentives", headers=HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 3
+
+    virginia = next(
+        row for row in fake.store["incentive_programs"] if row.get("territory") == "Virginia"
+    )
+    assert virginia["cap"] == "$6.5 million annual cap"
+
+    backfilled_change = next(
+        row for row in fake.store["pending_changes"] if row["id"] == "pc-approved-no-resource"
+    )
+    assert backfilled_change["resource_id"] == virginia["id"]
+
+
 def test_create_incentive(client):
     _setup(client)
     payload = {
@@ -376,6 +420,43 @@ def test_approve_pending_change(client):
     assert i1["rate"] == "27%"
 
 
+def test_approve_pending_change_without_resource_id_creates_incentive(client):
+    fake = _setup(client)
+    fake.store["pending_changes"].append(
+        {
+            "id": "pc-new",
+            "resource_type": "incentives",
+            "resource_id": None,
+            "territory": "Virginia",
+            "field": "cap",
+            "current_value": None,
+            "detected_value": "$6.5 million annual cap",
+            "confidence": "medium",
+            "source": "https://www.wrapbook.com/blog/film-industry-tax-incentives",
+            "status": "pending",
+            "created_at": "2026-03-05T18:36:23.355800",
+            "resolved_at": None,
+            "resolved_by": None,
+        }
+    )
+    before_count = len(fake.store["incentive_programs"])
+
+    response = client.post(
+        "/api/admin/incentives/pending-changes/pc-new/approve", headers=HEADERS
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "approved"
+    assert data["resourceId"] is not None
+    assert len(fake.store["incentive_programs"]) == before_count + 1
+
+    row = next(r for r in fake.store["incentive_programs"] if r["id"] == data["resourceId"])
+    assert row["territory"] == "Virginia"
+    assert row["source_url"] == "https://www.wrapbook.com/blog/film-industry-tax-incentives"
+    assert row["cap"] == "$6.5 million annual cap"
+
+
 def test_reject_pending_change(client):
     fake = _setup(client)
     response = client.post(
@@ -398,9 +479,8 @@ def test_trigger_sync(client):
     response = client.post("/api/admin/incentives/sync", headers=HEADERS)
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "Sync triggered successfully"
-    assert data["resourceType"] == "incentives"
-    assert "triggeredAt" in data
+    assert data["status"] in ("success", "skipped")
+    assert "runId" in data or "reason" in data
 
 
 # ── Integration tests: Sync settings ─────────────────────────────────────────

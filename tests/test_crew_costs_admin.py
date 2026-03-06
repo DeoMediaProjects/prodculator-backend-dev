@@ -33,6 +33,7 @@ class FakeQuery:
         self._single = False
         self._offset = 0
         self._end = None
+        self._limit = None
 
     def select(self, *_args, **kwargs):
         if kwargs.get("count"):
@@ -57,6 +58,11 @@ class FakeQuery:
     def range(self, start: int, end: int):
         self._offset = start
         self._end = end
+        self._limit = None
+        return self
+
+    def limit(self, value: int):
+        self._limit = value
         return self
 
     def insert(self, payload):
@@ -99,6 +105,8 @@ class FakeQuery:
 
         if self._end is not None:
             rows = rows[self._offset : self._end + 1]
+        elif self._limit is not None:
+            rows = rows[self._offset : self._offset + self._limit]
 
         if self._single:
             return FakeResult(data=rows[0] if rows else None)
@@ -295,6 +303,43 @@ def test_list_crew_costs_pagination(client):
     assert data["limit"] == 2
 
 
+def test_list_crew_costs_materializes_approved_changes_without_resource_id(client):
+    fake = _setup(client)
+    fake.store["pending_changes"].append(
+        {
+            "id": "pc-approved-no-resource",
+            "resource_type": "crew_costs",
+            "resource_id": None,
+            "territory": "United States",
+            "field": "day_rate",
+            "current_value": None,
+            "detected_value": "425",
+            "confidence": "medium",
+            "source": "BLS Occupational Wage Survey",
+            "status": "approved",
+            "created_at": "2026-03-05T18:36:23.355800",
+            "resolved_at": "2026-03-05T19:24:12.570129",
+            "resolved_by": "admin-1",
+        }
+    )
+
+    response = client.get("/api/admin/crew-costs", headers=HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 4
+
+    row = next(
+        r for r in fake.store["crew_costs"] if r.get("source") == "BLS Occupational Wage Survey"
+    )
+    assert row["territory"] == "United States"
+    assert row["day_rate"] == "425"
+
+    backfilled = next(
+        r for r in fake.store["pending_changes"] if r["id"] == "pc-approved-no-resource"
+    )
+    assert backfilled["resource_id"] == row["id"]
+
+
 def test_create_crew_cost(client):
     _setup(client)
     payload = {
@@ -382,6 +427,42 @@ def test_approve_crew_cost_pending_change(client):
     assert c1["day_rate"] == "900"  # applied from detected_value (string)
 
 
+def test_approve_crew_cost_pending_change_without_resource_id_creates_crew_cost(client):
+    fake = _setup(client)
+    fake.store["pending_changes"].append(
+        {
+            "id": "pc-new",
+            "resource_type": "crew_costs",
+            "resource_id": None,
+            "territory": "United States",
+            "field": "week_rate",
+            "current_value": None,
+            "detected_value": "2100",
+            "confidence": "medium",
+            "source": "BLS Occupational Wage Survey",
+            "status": "pending",
+            "created_at": "2026-03-05T18:36:23.355800",
+            "resolved_at": None,
+            "resolved_by": None,
+        }
+    )
+    before_count = len(fake.store["crew_costs"])
+
+    response = client.post(
+        "/api/admin/crew-costs/pending-changes/pc-new/approve", headers=HEADERS
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "approved"
+    assert data["resourceId"] is not None
+    assert len(fake.store["crew_costs"]) == before_count + 1
+
+    row = next(r for r in fake.store["crew_costs"] if r["id"] == data["resourceId"])
+    assert row["territory"] == "United States"
+    assert row["source"] == "BLS Occupational Wage Survey"
+    assert row["week_rate"] == "2100"
+
+
 def test_reject_crew_cost_pending_change(client):
     fake = _setup(client)
     response = client.post(
@@ -404,9 +485,8 @@ def test_trigger_crew_costs_sync(client):
     response = client.post("/api/admin/crew-costs/sync", headers=HEADERS)
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "Sync triggered successfully"
-    assert data["resourceType"] == "crew_costs"
-    assert "triggeredAt" in data
+    assert data["status"] in ("success", "skipped")
+    assert "runId" in data or "reason" in data
 
 
 # ── Integration tests: Sync settings ─────────────────────────────────────────

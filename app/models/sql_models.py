@@ -77,3 +77,19 @@ class TerritoryWatchlist(SQLModel, table=True):
     user_id: str = Field(index=True)
     territory: str = Field(index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ComparableProduction(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "comparable_productions"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    title: str
+    year: int | None = None
+    budget_usd: int | None = None
+    primary_territory: str | None = None
+    incentive_used: str | None = None
+    genre: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    production_company: str | None = None
+    director: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

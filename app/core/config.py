@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Prodculator API"
     APP_ENV: str = "development"
     DEBUG: bool = True
+    LOG_LEVEL: str = "INFO"
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
 
@@ -36,11 +37,11 @@ class Settings(BaseSettings):
     STRIPE_PRICE_STUDIO_USD: str = "price_1Sx8AfLcLlewla5Exif5R15n"
     STRIPE_PRICE_STUDIO_GBP: str = "price_1Sx8CpLcLlewla5E42HQTVmg"
 
-    # OpenAI
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
-    OPENAI_MAX_TOKENS: int = 8000
-    OPENAI_ANALYSIS_TIMEOUT: int = 120
+    # Anthropic Claude
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
+    ANTHROPIC_MAX_TOKENS: int = 8000
+    ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
 
     # SendGrid
     SENDGRID_API_KEY: str = ""
@@ -61,6 +62,11 @@ class Settings(BaseSettings):
     # Grantify
     GRANTIFY_API_KEY: str = ""
     GRANTIFY_AFFILIATE_ID: str = ""
+
+    # Scraper
+    SCRAPER_ENABLED: bool = True
+    SCRAPER_REQUEST_TIMEOUT: int = 30
+    SCRAPER_MAX_TEXT_CHARS: int = 60000
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]

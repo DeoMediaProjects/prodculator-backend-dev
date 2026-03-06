@@ -110,6 +110,7 @@ class FakeSupabase:
         }
 
     def table(self, name: str):
+        self.store.setdefault(name, [])
         return FakeQuery(name, self.store)
 
 

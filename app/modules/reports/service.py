@@ -1,6 +1,8 @@
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
+
+from sqlalchemy.exc import NoSuchTableError
 
 from app.core.database_client import DatabaseClient
 from app.modules.scripts.schemas import ScriptAnalysisResult
@@ -54,6 +56,12 @@ class ReportService:
                 "pdf_url": pdf_url,
             }
         ).eq("id", report_id).execute()
+
+    def update_pdf_url(self, report_id: str, pdf_url: str) -> None:
+        """Update the PDF URL for a completed report."""
+        self.supabase.table("reports").update({"pdf_url": pdf_url}).eq(
+            "id", report_id
+        ).execute()
 
     def fail_report(self, report_id: str, error_message: str) -> None:
         """Mark report as failed."""
@@ -137,11 +145,29 @@ class ReportService:
 
     # --- Dataset loading ---
 
+    def _safe_query(self, table_name: str, builder) -> list[dict]:
+        try:
+            logger.debug("Loading analysis dataset table=%s", table_name)
+            query = self.supabase.table(table_name)
+            result = builder(query).execute()
+            rows = result.data or []
+            logger.debug("Loaded analysis dataset table=%s rows=%s", table_name, len(rows))
+            return rows
+        except NoSuchTableError:
+            logger.warning("Optional dataset table missing: %s", table_name)
+            return []
+
     def _load_analysis_datasets(self, territories_hint: list[str] | None = None) -> dict:
         """Load admin-managed datasets for AI prompt injection."""
+        logger.info(
+            "Loading analysis datasets: territories_hint=%s",
+            territories_hint or [],
+        )
         # Active incentive programs
-        incentives_q = self.supabase.table("incentive_programs").select("*").eq("status", "active")
-        all_incentives = incentives_q.execute().data or []
+        all_incentives = self._safe_query(
+            "incentive_programs",
+            lambda q: q.select("*").eq("status", "active"),
+        )
         if territories_hint:
             filtered = [i for i in all_incentives if i.get("territory") in territories_hint]
             # Fall back to all if filter yields nothing
@@ -150,8 +176,7 @@ class ReportService:
             incentives = all_incentives
 
         # Crew costs
-        crew_q = self.supabase.table("crew_costs").select("*")
-        all_crew = crew_q.execute().data or []
+        all_crew = self._safe_query("crew_costs", lambda q: q.select("*"))
         if territories_hint:
             filtered = [c for c in all_crew if c.get("territory") in territories_hint]
             crew_costs = filtered if filtered else all_crew
@@ -159,27 +184,25 @@ class ReportService:
             crew_costs = all_crew
 
         # Comparable productions (small dataset, load all)
-        comparables = self.supabase.table("comparable_productions").select("*").execute().data or []
+        comparables = self._safe_query("comparable_productions", lambda q: q.select("*"))
 
         # Open grants
-        grants = (
-            self.supabase.table("grant_opportunities")
-            .select("*")
-            .in_("status", ["open", "opening_soon", "closing_soon"])
-            .execute()
-            .data
-            or []
+        grants = self._safe_query(
+            "grant_opportunities",
+            lambda q: q.select("*").in_("status", ["open", "opening_soon", "closing_soon"]),
         )
 
         # Upcoming festivals
-        festivals = (
-            self.supabase.table("film_festivals")
-            .select("*")
-            .in_("status", ["upcoming", "open"])
-            .order("submission_deadline", desc=False)
-            .execute()
-            .data
-            or []
+        all_festivals = self._safe_query("film_festivals", lambda q: q.select("*"))
+        festivals = [f for f in all_festivals if self._is_open_or_upcoming_festival(f)]
+        festivals.sort(key=self._festival_sort_key)
+        logger.info(
+            "Loaded analysis datasets counts: incentives=%s crew_costs=%s comparables=%s grants=%s festivals=%s",
+            len(incentives),
+            len(crew_costs),
+            len(comparables),
+            len(grants),
+            len(festivals),
         )
 
         return {
@@ -189,6 +212,74 @@ class ReportService:
             "grants": grants,
             "festivals": festivals,
         }
+
+    @staticmethod
+    def _parse_iso_date(value: object) -> date | None:
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            return date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
+
+    def _next_known_festival_deadline(self, festival: dict) -> date | None:
+        today = date.today()
+        candidates: list[date] = []
+
+        submission_deadline = self._parse_iso_date(festival.get("submission_deadline"))
+        if submission_deadline:
+            candidates.append(submission_deadline)
+
+        deadlines = festival.get("deadlines")
+        if isinstance(deadlines, list):
+            for deadline in deadlines:
+                if not isinstance(deadline, dict):
+                    continue
+                parsed = self._parse_iso_date(deadline.get("date"))
+                if parsed:
+                    candidates.append(parsed)
+
+        if not candidates:
+            return None
+
+        future = [d for d in candidates if d >= today]
+        if future:
+            return min(future)
+        return min(candidates)
+
+    def _is_open_or_upcoming_festival(self, festival: dict) -> bool:
+        status = str(festival.get("status") or festival.get("current_status") or "").strip().lower()
+        if status:
+            closed_statuses = {"closed", "completed", "archived"}
+            if status in closed_statuses:
+                return False
+
+            open_like_statuses = {
+                "open",
+                "upcoming",
+                "early-bird-open",
+                "regular-open",
+                "late-open",
+                "opening_soon",
+            }
+            if status in open_like_statuses:
+                return True
+
+        next_deadline = self._next_known_festival_deadline(festival)
+        if next_deadline:
+            return next_deadline >= date.today()
+        return True
+
+    def _festival_sort_key(self, festival: dict) -> tuple[bool, date, str]:
+        next_deadline = self._next_known_festival_deadline(festival)
+        return (
+            next_deadline is None,
+            next_deadline or date.max,
+            str(festival.get("name") or ""),
+        )
 
     # --- B2B production intelligence (kept for backward compatibility) ---
 

@@ -1,6 +1,7 @@
 import logging
+from time import perf_counter
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
@@ -35,15 +36,33 @@ async def create_report(
     settings: Settings = Depends(get_settings),
 ):
     """Create a new report. Previews return synchronously; paid/b2b are async."""
+    logger.info(
+        "Create report request received: report_type=%s title=%s has_user=%s",
+        body.report_type,
+        body.script_title,
+        bool(user),
+    )
     if body.report_type == "preview":
         # Preview: synchronous, no DB row, no auth required
-        script_service = ScriptAnalysisService(settings)
-        metadata = body.model_dump(exclude={"script_file_path"})
-        analysis = service.generate_preview_report(
-            request_metadata=metadata,
-            script_service=script_service,
-        )
-        return PreviewReportResponse(analysis=analysis)
+        started = perf_counter()
+        try:
+            script_service = ScriptAnalysisService(settings)
+            metadata = body.model_dump(exclude={"script_file_path"})
+            analysis = service.generate_preview_report(
+                request_metadata=metadata,
+                script_service=script_service,
+            )
+            elapsed_ms = int((perf_counter() - started) * 1000)
+            logger.info(
+                "Preview report generated: title=%s elapsed_ms=%s location_rankings=%s",
+                body.script_title,
+                elapsed_ms,
+                len(analysis.get("locationRankings", [])),
+            )
+            return PreviewReportResponse(analysis=analysis)
+        except Exception:
+            logger.exception("Preview report generation failed: title=%s", body.script_title)
+            raise HTTPException(status_code=500, detail="Failed to generate preview report")
 
     # Paid/B2B: requires auth
     if not user:
@@ -53,6 +72,7 @@ async def create_report(
         raise HTTPException(status_code=400, detail="script_file_path is required for paid reports")
 
     try:
+        started = perf_counter()
         metadata = body.model_dump()
         report_id = service.create_report(
             user_id=user.id,
@@ -68,13 +88,26 @@ async def create_report(
             user.email,
             settings,
         )
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "Queued paid report processing: report_id=%s user_id=%s report_type=%s elapsed_ms=%s",
+            report_id,
+            user.id,
+            body.report_type,
+            elapsed_ms,
+        )
         return ReportStatusResponse(
             status="processing",
             report_id=report_id,
             message="Report generation started",
         )
     except Exception:
-        logger.exception("Failed to create report")
+        logger.exception(
+            "Failed to create report: user_id=%s report_type=%s title=%s",
+            user.id,
+            body.report_type,
+            body.script_title,
+        )
         raise HTTPException(status_code=500, detail="Failed to create report")
 
 
@@ -154,16 +187,35 @@ async def download_pdf(
     report_id: str,
     user: AuthUser = Depends(get_current_user),
     service: ReportService = Depends(get_report_service),
+    supabase: DatabaseClient = Depends(get_supabase),
 ):
-    """Get PDF download URL for a report."""
+    """Download the PDF file for a report as raw bytes."""
     report = service.get_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     if report["user_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     if not report.get("pdf_url"):
-        raise HTTPException(status_code=404, detail="PDF not yet generated")
-    return {"pdf_url": report["pdf_url"]}
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    storage_path = f"{report['user_id']}/{report_id}.pdf"
+    try:
+        pdf_bytes = supabase.storage.from_("reports").download(storage_path)
+    except Exception:
+        logger.warning("PDF download from storage failed: report_id=%s path=%s", report_id, storage_path)
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    script_title = report.get("script_title", "Report")
+    filename = f"Report - {script_title}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
 
 
 def _format_report_response(report: dict) -> dict:
@@ -186,6 +238,11 @@ def process_report_task(
 ) -> None:
     """Background task: load script -> analyze -> generate report -> persist."""
     with get_db_context() as db:
+        started = perf_counter()
+        current_step = "init"
+        report_row: dict | None = None
+        logger.info("Report background task started: report_id=%s user_id=%s", report_id, user_id)
+
         supabase = DatabaseClient(db, settings)
         report_service = ReportService(supabase)
         script_service = ScriptAnalysisService(settings)
@@ -194,6 +251,7 @@ def process_report_task(
 
         try:
             # Fetch the report row to get metadata
+            current_step = "load_report_row"
             report_row = report_service.get_report(report_id)
             if not report_row:
                 logger.error("Report not found in background task: %s", report_id)
@@ -203,27 +261,68 @@ def process_report_task(
             report_type = report_row["report_type"]
             script_file_path = report_row.get("script_file_path")
             request_metadata = report_row.get("request_metadata") or {}
+            logger.info(
+                "Loaded report row: report_id=%s report_type=%s script_path=%s metadata_keys=%s",
+                report_id,
+                report_type,
+                script_file_path,
+                sorted(request_metadata.keys()),
+            )
 
             try:
+                current_step = "email_processing_started"
                 email_service.send(
                     user_email,
                     "processing_started",
                     {"script_title": script_title, "report_id": report_id},
                 )
+                logger.debug("Sent processing_started email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send processing_started email for report_id=%s", report_id)
 
             # Step 1: Download and parse script
+            current_step = "download_script"
+            if not script_file_path:
+                raise ValueError("Report is missing script_file_path")
+            step_started = perf_counter()
+            logger.info("Downloading script file: report_id=%s path=%s", report_id, script_file_path)
             file_bytes = supabase.storage.from_("scripts").download(script_file_path)
+            logger.info(
+                "Downloaded script file: report_id=%s bytes=%s elapsed_ms=%s",
+                report_id,
+                len(file_bytes),
+                int((perf_counter() - step_started) * 1000),
+            )
             filename = script_file_path.rsplit("/", 1)[-1]
+
+            current_step = "extract_script_text"
+            step_started = perf_counter()
             script_text = script_service.extract_text(filename, file_bytes)
+            logger.info(
+                "Extracted script text: report_id=%s filename=%s chars=%s elapsed_ms=%s",
+                report_id,
+                filename,
+                len(script_text),
+                int((perf_counter() - step_started) * 1000),
+            )
             if not script_text.strip():
                 raise ValueError("Script file appears to be empty")
 
             # Step 2: Script analysis (Call 1 — existing method)
+            current_step = "script_analysis"
+            step_started = perf_counter()
             analysis = script_service.analyze(script_text, script_title)
+            logger.info(
+                "Script analysis complete: report_id=%s locations=%s budget_range=%s elapsed_ms=%s",
+                report_id,
+                len(analysis.locations),
+                analysis.budgetEstimate.range,
+                int((perf_counter() - step_started) * 1000),
+            )
 
             # Step 3: Full production analysis (Call 2 — new method)
+            current_step = "production_analysis"
+            step_started = perf_counter()
             is_b2b = report_type == "b2b"
             report_data = report_service.generate_analysis_report(
                 script_analysis=analysis,
@@ -232,12 +331,43 @@ def process_report_task(
                 script_service=script_service,
                 is_b2b=is_b2b,
             )
+            logger.info(
+                "Production analysis complete: report_id=%s is_b2b=%s location_rankings=%s elapsed_ms=%s",
+                report_id,
+                is_b2b,
+                len(report_data.get("locationRankings", [])),
+                int((perf_counter() - step_started) * 1000),
+            )
 
             # Step 4: PDF generation
+            current_step = "pdf_render"
             pdf_url = ""
-            html = pdf_service.render_report_html(report_data)
+            step_started = perf_counter()
+            html = pdf_service.render_report_html(
+                report_data,
+                script_title=script_title,
+                report_type=report_type,
+                created_at=str(report_row.get("created_at", "")),
+            )
+            logger.debug(
+                "Rendered PDF HTML: report_id=%s html_chars=%s elapsed_ms=%s",
+                report_id,
+                len(html),
+                int((perf_counter() - step_started) * 1000),
+            )
+
+            current_step = "pdf_generate"
+            step_started = perf_counter()
             pdf_bytes = pdf_service.generate_pdf_bytes(html)
+            logger.info(
+                "PDF generation step complete: report_id=%s has_pdf=%s elapsed_ms=%s",
+                report_id,
+                bool(pdf_bytes),
+                int((perf_counter() - step_started) * 1000),
+            )
             if pdf_bytes:
+                current_step = "pdf_upload"
+                step_started = perf_counter()
                 uploaded_pdf_url = pdf_service.upload_pdf(
                     supabase,
                     user_id=user_id,
@@ -245,29 +375,50 @@ def process_report_task(
                     pdf_bytes=pdf_bytes,
                 )
                 pdf_url = uploaded_pdf_url or ""
+                logger.info(
+                    "PDF upload complete: report_id=%s pdf_url_set=%s elapsed_ms=%s",
+                    report_id,
+                    bool(pdf_url),
+                    int((perf_counter() - step_started) * 1000),
+                )
 
+            current_step = "persist_report"
             report_service.complete_report(report_id, report_data, pdf_url=pdf_url)
+            logger.info(
+                "Report marked completed: report_id=%s total_elapsed_ms=%s",
+                report_id,
+                int((perf_counter() - started) * 1000),
+            )
 
             try:
+                current_step = "email_report_ready"
                 email_service.send(
                     user_email,
                     "report_ready",
                     {"script_title": script_title, "report_id": report_id, "pdf_url": pdf_url},
                 )
+                logger.debug("Sent report_ready email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send report_ready email for report_id=%s", report_id)
         except Exception as exc:
-            logger.exception("Report background processing failed for report_id=%s", report_id)
+            logger.exception(
+                "Report background processing failed: report_id=%s step=%s elapsed_ms=%s",
+                report_id,
+                current_step,
+                int((perf_counter() - started) * 1000),
+            )
             report_service.fail_report(report_id, str(exc))
+            logger.info("Report marked failed: report_id=%s", report_id)
             try:
                 email_service.send(
                     user_email,
                     "report_ready",
                     {
-                        "script_title": report_row.get("script_title", "Unknown"),
+                        "script_title": (report_row or {}).get("script_title", "Unknown"),
                         "report_id": report_id,
                         "error": str(exc),
                     },
                 )
+                logger.debug("Sent failure email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send failure email for report_id=%s", report_id)

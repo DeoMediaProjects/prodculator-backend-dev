@@ -1,17 +1,30 @@
 import json
 import logging
+import re
+from time import perf_counter, sleep
+from typing import Any
 
 import pdfplumber
-from openai import OpenAI
+from anthropic import Anthropic
 
 from app.core.config import Settings
-from app.modules.scripts.schemas import ScriptAnalysisResult
+from app.modules.scripts.schemas import (
+    BudgetEstimate,
+    Challenges,
+    Equipment,
+    Location,
+    Metadata,
+    ProductionScale,
+    ScriptAnalysisResult,
+)
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {"pdf", "txt", "fountain", "fdx"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
-MAX_SCRIPT_CHARS = 90_000
+MAX_SCRIPT_CHARS = 12_000
+MAX_PROMPT_TEXT_CHARS = 240
+MAX_PROMPT_LIST_ITEMS = 8
 
 SCRIPT_ANALYSIS_PROMPT = """You are a professional film production analyst. Analyze the provided script and extract detailed production intelligence.
 
@@ -209,7 +222,10 @@ SECTION REQUIREMENTS:
 class ScriptAnalysisService:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = Anthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            timeout=settings.ANTHROPIC_ANALYSIS_TIMEOUT,
+        )
 
     def validate_file(self, filename: str, file_size: int) -> tuple[bool, str | None]:
         """Validate script file type and size."""
@@ -224,54 +240,85 @@ class ScriptAnalysisService:
         """Extract text from PDF using pdfplumber."""
         import io
 
+        started = perf_counter()
         text_parts = []
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            page_count = len(pdf.pages)
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text_parts.append(page_text)
-        return "\n".join(text_parts)
+        combined = "\n".join(text_parts)
+        logger.debug(
+            "PDF text extraction complete: pages=%s bytes=%s chars=%s elapsed_ms=%s",
+            page_count,
+            len(file_bytes),
+            len(combined),
+            int((perf_counter() - started) * 1000),
+        )
+        return combined
 
     def extract_text(self, filename: str, file_bytes: bytes) -> str:
         """Extract text from various script formats."""
         ext = filename.rsplit(".", 1)[-1].lower()
+        logger.debug(
+            "Extracting text from file: filename=%s ext=%s bytes=%s",
+            filename,
+            ext,
+            len(file_bytes),
+        )
         if ext == "pdf":
             return self.extract_text_from_pdf(file_bytes)
         return file_bytes.decode("utf-8")
 
     def analyze(self, script_content: str, script_title: str) -> ScriptAnalysisResult:
-        """Analyze script using OpenAI GPT-4o."""
-        if not self.settings.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key is not configured")
+        """Analyze script using Anthropic Claude."""
+        if not self.settings.ANTHROPIC_API_KEY:
+            raise ValueError("Anthropic API key is not configured")
 
-        truncated = script_content[:MAX_SCRIPT_CHARS]
-        if len(script_content) > MAX_SCRIPT_CHARS:
-            truncated += "\n\n[Script truncated due to length]"
-
-        response = self.client.chat.completions.create(
-            model=self.settings.OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional film production analyst specializing in script breakdown and production budgeting.",
-                },
-                {
-                    "role": "user",
-                    "content": f"{SCRIPT_ANALYSIS_PROMPT}\n\n===== SCRIPT TITLE: {script_title} =====\n\n{truncated}",
-                },
-            ],
-            temperature=0.3,
-            max_tokens=self.settings.OPENAI_MAX_TOKENS,
-            response_format={"type": "json_object"},
+        started = perf_counter()
+        trimmed_script, was_truncated = self._trim_script_for_prompt(script_content)
+        user_content = (
+            f"{SCRIPT_ANALYSIS_PROMPT}\n\n===== SCRIPT TITLE: {script_title} =====\n\n{trimmed_script}"
+        )
+        logger.info(
+            "Script analysis started: title=%s input_chars=%s prompt_chars=%s truncated=%s model=%s",
+            script_title,
+            len(script_content),
+            len(user_content),
+            was_truncated,
+            self.settings.ANTHROPIC_MODEL,
         )
 
-        raw = response.choices[0].message.content
+        response = self._call_anthropic_with_retry(
+            system_prompt="You are a professional film production analyst specializing in script breakdown and production budgeting.",
+            user_content=user_content,
+            temperature=0.3,
+            stage="script_analysis",
+        )
+
+        raw = self._extract_text_response(response)
         try:
-            data = json.loads(raw)
+            data = self._parse_json_payload(raw)
             data["rawResponse"] = raw
-            return self._sanitize(data)
+            sanitized = self._sanitize(data)
+            logger.info(
+                "Script analysis completed: title=%s locations=%s budget_range=%s elapsed_ms=%s",
+                script_title,
+                len(sanitized.locations),
+                sanitized.budgetEstimate.range,
+                int((perf_counter() - started) * 1000),
+            )
+            return sanitized
         except (json.JSONDecodeError, Exception) as e:
-            logger.error("Failed to parse OpenAI response: %s", e)
+            logger.exception(
+                "Failed to parse script analysis response: title=%s raw_chars=%s elapsed_ms=%s error=%s",
+                script_title,
+                len(raw),
+                int((perf_counter() - started) * 1000),
+                e,
+            )
+            logger.warning("Using fallback script analysis: title=%s", script_title)
             return self._fallback(script_title)
 
     def generate_production_analysis(
@@ -283,20 +330,39 @@ class ScriptAnalysisService:
         is_preview: bool,
     ) -> dict:
         """Generate the full ScriptAnalysis JSON from script parse + metadata + datasets."""
-        if not self.settings.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key is not configured")
+        if not self.settings.ANTHROPIC_API_KEY:
+            raise ValueError("Anthropic API key is not configured")
+
+        started = perf_counter()
+        dataset_counts = {
+            key: len(value) if isinstance(value, list) else 0 for key, value in datasets.items()
+        }
+        compacted_datasets = self._compact_datasets_for_prompt(datasets, is_preview=is_preview)
+        compacted_counts = {
+            key: len(value) if isinstance(value, list) else 0 for key, value in compacted_datasets.items()
+        }
+        logger.info(
+            "Production analysis started: preview=%s has_script_analysis=%s metadata_keys=%s dataset_counts=%s compacted_counts=%s model=%s",
+            is_preview,
+            bool(script_analysis),
+            sorted(request_metadata.keys()),
+            dataset_counts,
+            compacted_counts,
+            self.settings.ANTHROPIC_MODEL,
+        )
 
         # Build user message with all context
         parts = []
 
         # Project metadata
         parts.append("=== PROJECT METADATA ===")
-        parts.append(json.dumps(request_metadata, indent=2))
+        parts.append(json.dumps(self._trim_value_for_prompt(request_metadata), default=str, separators=(",", ":")))
 
         # Script analysis (if available — not for preview)
         if script_analysis:
             parts.append("\n=== SCRIPT ANALYSIS (from script parse) ===")
-            parts.append(json.dumps(script_analysis.model_dump(exclude={"rawResponse"}), indent=2))
+            script_payload = self._trim_value_for_prompt(script_analysis.model_dump(exclude={"rawResponse"}))
+            parts.append(json.dumps(script_payload, default=str, separators=(",", ":")))
         else:
             parts.append("\n=== SCRIPT ANALYSIS ===")
             parts.append("No script provided. Generate analysis from project metadata only.")
@@ -310,10 +376,10 @@ class ScriptAnalysisService:
             ("grants", "GRANT OPPORTUNITIES"),
             ("festivals", "FILM FESTIVALS"),
         ]:
-            data = datasets.get(key, [])
-            parts.append(f"\n{label} ({len(data)} records):")
+            data = compacted_datasets.get(key, [])
+            parts.append(f"\n{label} ({len(data)} records in prompt):")
             if data:
-                parts.append(json.dumps(data, indent=2, default=str))
+                parts.append(json.dumps(data, default=str, separators=(",", ":")))
             else:
                 parts.append("No data available.")
 
@@ -334,26 +400,269 @@ class ScriptAnalysisService:
             )
 
         user_message = "\n".join(parts)
-
-        response = self.client.chat.completions.create(
-            model=self.settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": PRODUCTION_ANALYSIS_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.2,
-            max_tokens=self.settings.OPENAI_MAX_TOKENS,
-            response_format={"type": "json_object"},
-            timeout=self.settings.OPENAI_ANALYSIS_TIMEOUT,
+        logger.info(
+            "Production analysis prompt prepared: preview=%s prompt_chars=%s",
+            is_preview,
+            len(user_message),
         )
 
-        raw = response.choices[0].message.content
+        response = self._call_anthropic_with_retry(
+            system_prompt=PRODUCTION_ANALYSIS_PROMPT,
+            user_content=user_message,
+            temperature=0.2,
+            stage="production_analysis",
+        )
+
+        raw = self._extract_text_response(response)
         try:
-            data = json.loads(raw)
-            return self._sanitize_analysis(data, is_preview)
+            data = self._parse_json_payload(raw)
+            sanitized = self._sanitize_analysis(data, is_preview)
+            logger.info(
+                "Production analysis completed: preview=%s location_rankings=%s incentives=%s elapsed_ms=%s",
+                is_preview,
+                len(sanitized.get("locationRankings", [])),
+                len(sanitized.get("incentiveEstimates", [])),
+                int((perf_counter() - started) * 1000),
+            )
+            return sanitized
         except (json.JSONDecodeError, Exception) as e:
-            logger.error("Failed to parse production analysis response: %s", e)
+            logger.exception(
+                "Failed to parse production analysis response: preview=%s raw_chars=%s elapsed_ms=%s error=%s",
+                is_preview,
+                len(raw),
+                int((perf_counter() - started) * 1000),
+                e,
+            )
+            logger.warning("Using fallback production analysis: preview=%s", is_preview)
             return self._fallback_analysis(request_metadata, is_preview)
+
+    def _trim_script_for_prompt(self, script_content: str) -> tuple[str, bool]:
+        clean = script_content.strip()
+        if len(clean) <= MAX_SCRIPT_CHARS:
+            return clean, False
+
+        segment = MAX_SCRIPT_CHARS // 3
+        mid_start = max((len(clean) // 2) - (segment // 2), 0)
+        mid_end = mid_start + segment
+        combined = (
+            clean[:segment]
+            + "\n\n[...SCRIPT CONTENT OMITTED FOR TOKEN CONTROL...]\n\n"
+            + clean[mid_start:mid_end]
+            + "\n\n[...SCRIPT CONTENT OMITTED FOR TOKEN CONTROL...]\n\n"
+            + clean[-segment:]
+        )
+        return combined, True
+
+    def _compact_datasets_for_prompt(self, datasets: dict, *, is_preview: bool) -> dict:
+        preview_caps = {
+            "incentives": 8,
+            "crew_costs": 8,
+            "comparables": 6,
+            "grants": 8,
+            "festivals": 8,
+        }
+        paid_caps = {
+            "incentives": 18,
+            "crew_costs": 18,
+            "comparables": 12,
+            "grants": 15,
+            "festivals": 15,
+        }
+        field_whitelist = {
+            "incentives": [
+                "territory",
+                "program_name",
+                "program_type",
+                "rate",
+                "cap",
+                "qualifying_spend",
+                "stackable",
+                "last_updated",
+            ],
+            "crew_costs": [
+                "territory",
+                "role",
+                "category",
+                "day_rate",
+                "week_rate",
+                "currency",
+                "source",
+                "last_updated",
+            ],
+            "comparables": [
+                "title",
+                "year",
+                "genre",
+                "budget_usd",
+                "primary_territory",
+                "incentive_used",
+            ],
+            "grants": [
+                "title",
+                "territory",
+                "status",
+                "amount",
+                "deadline",
+                "genres",
+                "url",
+            ],
+            "festivals": [
+                "name",
+                "location",
+                "submission_deadline",
+                "deadlines",
+                "genres",
+                "tier",
+                "website_url",
+                "filmfreeway_url",
+            ],
+        }
+        caps = preview_caps if is_preview else paid_caps
+        compacted: dict[str, list] = {}
+        for key, value in datasets.items():
+            rows = value if isinstance(value, list) else []
+            limited = rows[: caps.get(key, 10)]
+            allowed_fields = field_whitelist.get(key)
+            compacted_rows = []
+            for row in limited:
+                if not isinstance(row, dict):
+                    compacted_rows.append(self._trim_value_for_prompt(row))
+                    continue
+                if allowed_fields:
+                    slim = {field: row.get(field) for field in allowed_fields if field in row}
+                else:
+                    slim = row
+                compacted_rows.append(self._trim_value_for_prompt(slim))
+            compacted[key] = compacted_rows
+        return compacted
+
+    def _trim_value_for_prompt(self, value: Any) -> Any:
+        if isinstance(value, str):
+            if len(value) <= MAX_PROMPT_TEXT_CHARS:
+                return value
+            return value[:MAX_PROMPT_TEXT_CHARS] + "..."
+        if isinstance(value, list):
+            return [self._trim_value_for_prompt(item) for item in value[:MAX_PROMPT_LIST_ITEMS]]
+        if isinstance(value, dict):
+            result = {}
+            for idx, (k, v) in enumerate(value.items()):
+                if idx >= 30:
+                    break
+                result[k] = self._trim_value_for_prompt(v)
+            return result
+        return value
+
+    def _call_anthropic_with_retry(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        temperature: float,
+        stage: str,
+    ):
+        retry_delays = [8, 20]
+        max_attempts = len(retry_delays) + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self.client.messages.create(
+                    model=self.settings.ANTHROPIC_MODEL,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_content}],
+                    temperature=temperature,
+                    max_tokens=self.settings.ANTHROPIC_MAX_TOKENS,
+                )
+            except Exception as exc:
+                if not self._is_rate_limit_error(exc) or attempt >= max_attempts:
+                    raise
+                delay = retry_delays[attempt - 1]
+                logger.warning(
+                    "Anthropic rate limit at stage=%s attempt=%s/%s, retrying in %ss",
+                    stage,
+                    attempt,
+                    max_attempts,
+                    delay,
+                )
+                sleep(delay)
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return (
+            "rate_limit_error" in message
+            or "rate limit" in message
+            or "429" in message
+            or "input tokens per minute" in message
+        )
+
+    @staticmethod
+    def _repair_json(text: str) -> str:
+        """Best-effort repair of common LLM JSON mistakes."""
+        # Remove trailing commas before } or ]
+        text = re.sub(r",\s*([}\]])", r"\1", text)
+        # Insert missing commas between a value and the next key:
+        #   "value"\n  "nextKey"  or  "value"  "nextKey"
+        #   number/bool/null\n  "nextKey"
+        text = re.sub(
+            r'(?<=["\d\w])\s*\n(\s*")', r',\n\1', text
+        )
+        # Fix: true/false/null followed by "key" on next line (the lookbehind above
+        # catches most, but be explicit for end-of-word boundaries)
+        text = re.sub(
+            r'(true|false|null)\s*\n(\s*")', r'\1,\n\2', text
+        )
+        # Fix missing comma after ] or } followed by "key"
+        text = re.sub(r'([}\]])\s*\n(\s*")', r'\1,\n\2', text)
+        return text
+
+    @staticmethod
+    def _parse_json_payload(raw: str) -> dict[str, Any]:
+        payload = raw.strip()
+
+        # Handle fenced JSON responses: ```json ... ```
+        if payload.startswith("```"):
+            payload = re.sub(r"^```(?:json)?\s*", "", payload, flags=re.IGNORECASE)
+            payload = re.sub(r"\s*```$", "", payload)
+            payload = payload.strip()
+
+        def _try_load(text: str) -> dict[str, Any] | None:
+            try:
+                data = json.loads(text)
+                return data if isinstance(data, dict) else None
+            except (json.JSONDecodeError, ValueError):
+                return None
+
+        # 1. Try raw payload as-is
+        result = _try_load(payload)
+        if result is not None:
+            return result
+
+        # 2. Extract first JSON object block from mixed text
+        match = re.search(r"\{[\s\S]*\}", payload)
+        if match:
+            result = _try_load(match.group(0))
+            if result is not None:
+                return result
+
+            # 3. Try repairing extracted JSON
+            repaired = ScriptAnalysisService._repair_json(match.group(0))
+            result = _try_load(repaired)
+            if result is not None:
+                logger.warning("JSON required repair to parse successfully")
+                return result
+
+        preview = payload[:220].replace("\n", " ")
+        raise ValueError(f"No valid JSON object found in model response: {preview}")
+
+    def _extract_text_response(self, response) -> str:
+        """Extract plain text from Anthropic messages API response blocks."""
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                return block.text
+        logger.error(
+            "Anthropic response had no text block: block_types=%s",
+            [getattr(block, "type", None) for block in getattr(response, "content", [])],
+        )
+        raise ValueError("Anthropic returned no text content")
 
     def _sanitize_analysis(self, data: dict, is_preview: bool) -> dict:
         """Validate and fill defaults for production analysis AI response."""
@@ -440,53 +749,71 @@ class ScriptAnalysisService:
             "fundingOpportunities": [],
         }
 
-    def _sanitize(self, data: dict) -> ScriptAnalysisResult:
+    def _sanitize(self, data: dict[str, Any]) -> ScriptAnalysisResult:
         """Validate and fill defaults for AI response."""
+        locations_raw = data.get("locations", [])
+        budget_raw = data.get("budgetEstimate", {})
+        scale_raw = data.get("productionScale", {})
+        equipment_raw = data.get("equipment", {})
+        metadata_raw = data.get("metadata", {})
+        challenges_raw = data.get("challenges", {})
+
+        if not isinstance(locations_raw, list):
+            locations_raw = []
+        if not isinstance(budget_raw, dict):
+            budget_raw = {}
+        if not isinstance(scale_raw, dict):
+            scale_raw = {}
+        if not isinstance(equipment_raw, dict):
+            equipment_raw = {}
+        if not isinstance(metadata_raw, dict):
+            metadata_raw = {}
+        if not isinstance(challenges_raw, dict):
+            challenges_raw = {}
+
+        locations = [
+            Location.model_validate(loc)
+            for loc in locations_raw
+            if isinstance(loc, dict)
+        ]
+
         return ScriptAnalysisResult(
-            locations=data.get("locations", []),
-            budgetEstimate={
-                "range": data.get("budgetEstimate", {}).get("range", "medium"),
-                "minUSD": data.get("budgetEstimate", {}).get("minUSD", 5_000_000),
-                "maxUSD": data.get("budgetEstimate", {}).get("maxUSD", 30_000_000),
-                "confidence": data.get("budgetEstimate", {}).get("confidence", 0.7),
-                "indicators": data.get("budgetEstimate", {}).get(
-                    "indicators", ["General industry estimates"]
-                ),
-            },
-            productionScale={
-                "crewSize": data.get("productionScale", {}).get("crewSize", "medium"),
-                "principalCast": data.get("productionScale", {}).get("principalCast", "medium"),
-                "supportingCast": data.get("productionScale", {}).get("supportingCast", "medium"),
-                "backgroundExtras": data.get("productionScale", {}).get(
-                    "backgroundExtras", "medium"
-                ),
-                "estimatedShootingDays": data.get("productionScale", {}).get(
-                    "estimatedShootingDays", 30
-                ),
-            },
-            equipment={
-                "cameraEquipment": data.get("equipment", {}).get("cameraEquipment", "arri"),
-                "specialEquipment": data.get("equipment", {}).get("specialEquipment", []),
-                "vfxRequirements": data.get("equipment", {}).get("vfxRequirements", "moderate"),
-            },
-            metadata={
-                "genres": data.get("metadata", {}).get("genres", ["Drama"]),
-                "format": data.get("metadata", {}).get("format", "feature"),
-                "tone": data.get("metadata", {}).get("tone", "Unknown"),
-                "targetAudience": data.get("metadata", {}).get(
-                    "targetAudience", "General audiences"
-                ),
-            },
-            challenges={
-                "weatherDependent": data.get("challenges", {}).get("weatherDependent", False),
-                "historicalPeriod": data.get("challenges", {}).get("historicalPeriod", False),
-                "specialPermits": data.get("challenges", {}).get("specialPermits", False),
-                "stunts": data.get("challenges", {}).get("stunts", False),
-                "animalWrangling": data.get("challenges", {}).get("animalWrangling", False),
-                "waterWork": data.get("challenges", {}).get("waterWork", False),
-                "nightShooting": data.get("challenges", {}).get("nightShooting", False),
-                "notes": data.get("challenges", {}).get("notes", []),
-            },
+            locations=locations,
+            budgetEstimate=BudgetEstimate(
+                range=budget_raw.get("range", "medium"),
+                minUSD=budget_raw.get("minUSD", 5_000_000),
+                maxUSD=budget_raw.get("maxUSD", 30_000_000),
+                confidence=budget_raw.get("confidence", 0.7),
+                indicators=budget_raw.get("indicators", ["General industry estimates"]),
+            ),
+            productionScale=ProductionScale(
+                crewSize=scale_raw.get("crewSize", "medium"),
+                principalCast=scale_raw.get("principalCast", "medium"),
+                supportingCast=scale_raw.get("supportingCast", "medium"),
+                backgroundExtras=scale_raw.get("backgroundExtras", "medium"),
+                estimatedShootingDays=scale_raw.get("estimatedShootingDays", 30),
+            ),
+            equipment=Equipment(
+                cameraEquipment=equipment_raw.get("cameraEquipment", "arri"),
+                specialEquipment=equipment_raw.get("specialEquipment", []),
+                vfxRequirements=equipment_raw.get("vfxRequirements", "moderate"),
+            ),
+            metadata=Metadata(
+                genres=metadata_raw.get("genres", ["Drama"]),
+                format=metadata_raw.get("format", "feature"),
+                tone=metadata_raw.get("tone", "Unknown"),
+                targetAudience=metadata_raw.get("targetAudience", "General audiences"),
+            ),
+            challenges=Challenges(
+                weatherDependent=challenges_raw.get("weatherDependent", False),
+                historicalPeriod=challenges_raw.get("historicalPeriod", False),
+                specialPermits=challenges_raw.get("specialPermits", False),
+                stunts=challenges_raw.get("stunts", False),
+                animalWrangling=challenges_raw.get("animalWrangling", False),
+                waterWork=challenges_raw.get("waterWork", False),
+                nightShooting=challenges_raw.get("nightShooting", False),
+                notes=challenges_raw.get("notes", []),
+            ),
             rawResponse=data.get("rawResponse"),
         )
 
@@ -494,48 +821,48 @@ class ScriptAnalysisService:
         """Return fallback analysis when API fails."""
         return ScriptAnalysisResult(
             locations=[
-                {
-                    "name": "Los Angeles",
-                    "country": "United States",
-                    "territory": "California (USA)",
-                    "frequency": 10,
-                    "isMainLocation": True,
-                }
+                Location(
+                    name="Los Angeles",
+                    country="United States",
+                    territory="California (USA)",
+                    frequency=10,
+                    isMainLocation=True,
+                )
             ],
-            budgetEstimate={
-                "range": "medium",
-                "minUSD": 5_000_000,
-                "maxUSD": 30_000_000,
-                "confidence": 0.5,
-                "indicators": ["Estimated based on typical feature film budget"],
-            },
-            productionScale={
-                "crewSize": "medium",
-                "principalCast": "medium",
-                "supportingCast": "medium",
-                "backgroundExtras": "medium",
-                "estimatedShootingDays": 30,
-            },
-            equipment={
-                "cameraEquipment": "arri",
-                "specialEquipment": [],
-                "vfxRequirements": "moderate",
-            },
-            metadata={
-                "genres": ["Drama"],
-                "format": "feature",
-                "tone": "Unknown",
-                "targetAudience": "General audiences",
-            },
-            challenges={
-                "weatherDependent": False,
-                "historicalPeriod": False,
-                "specialPermits": False,
-                "stunts": False,
-                "animalWrangling": False,
-                "waterWork": False,
-                "nightShooting": False,
-                "notes": ["Analysis failed - using default estimates"],
-            },
+            budgetEstimate=BudgetEstimate(
+                range="medium",
+                minUSD=5_000_000,
+                maxUSD=30_000_000,
+                confidence=0.5,
+                indicators=["Estimated based on typical feature film budget"],
+            ),
+            productionScale=ProductionScale(
+                crewSize="medium",
+                principalCast="medium",
+                supportingCast="medium",
+                backgroundExtras="medium",
+                estimatedShootingDays=30,
+            ),
+            equipment=Equipment(
+                cameraEquipment="arri",
+                specialEquipment=[],
+                vfxRequirements="moderate",
+            ),
+            metadata=Metadata(
+                genres=["Drama"],
+                format="feature",
+                tone="Unknown",
+                targetAudience="General audiences",
+            ),
+            challenges=Challenges(
+                weatherDependent=False,
+                historicalPeriod=False,
+                specialPermits=False,
+                stunts=False,
+                animalWrangling=False,
+                waterWork=False,
+                nightShooting=False,
+                notes=["Analysis failed - using default estimates"],
+            ),
             rawResponse="Fallback analysis used due to API error",
         )

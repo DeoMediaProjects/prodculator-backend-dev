@@ -66,6 +66,7 @@ class PendingChangeResponse(BaseModel):
     status: str = "pending"
     createdAt: str | None = None
     resourceId: str | None = None
+    recordLabel: str | None = None
     resolvedAt: str | None = None
 
 
