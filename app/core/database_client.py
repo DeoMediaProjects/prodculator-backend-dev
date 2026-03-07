@@ -426,15 +426,15 @@ class DatabaseClient:
     def _table(self, table_name: str) -> Table:
         return Table(table_name, self.metadata, autoload_with=self.session.get_bind())
 
+    def close(self) -> None:
+        self.session.close()
+
 
 class _OwnedClient(DatabaseClient):
     def __init__(self, db_url: str):
         engine: Engine = create_engine(db_url, pool_pre_ping=True)
         self._session = Session(engine)
         super().__init__(self._session)
-
-    def close(self):
-        self.session.close()
 
 
 def create_client(db_url: str | None = None, _unused_key: str | None = None) -> DatabaseClient:

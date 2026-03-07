@@ -30,6 +30,8 @@ class User(SQLModel, table=True):
     user_type: str = Field(default="free")
     credits_remaining: int = 0
     plan: str = Field(default="free")
+    is_blocked: bool = Field(default=False)
+    blocked_at: datetime | None = None
     last_active: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
