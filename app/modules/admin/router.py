@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from app.core.database_client import DatabaseClient
@@ -17,6 +19,37 @@ from app.modules.reports.pdf_service import PDFService
 from app.modules.reports.service import ReportService
 
 logger = logging.getLogger(__name__)
+
+_COMP_CAMEL_TO_SNAKE: dict[str, str] = {
+    "budget": "budget_usd",
+    "territory": "primary_territory",
+    "incentiveUsed": "incentive_used",
+    "tmdbId": "tmdb_id",
+    "lastUpdated": "updated_at",
+}
+_COMP_SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _COMP_CAMEL_TO_SNAKE.items()}
+
+
+def _comp_payload_to_db(payload: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for k, v in payload.items():
+        db_key = _COMP_CAMEL_TO_SNAKE.get(k, k)
+        result[db_key] = v
+    result.pop("id", None)
+    if "updated_at" not in result:
+        result["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+def _comp_row_to_api(row: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for k, v in row.items():
+        api_key = _COMP_SNAKE_TO_CAMEL.get(k, k)
+        if k == "updated_at" and v is not None:
+            result["lastUpdated"] = str(v)[:10] if v else v
+            continue
+        result[api_key] = v
+    return result
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -99,7 +132,13 @@ async def list_comparables(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return _list_resource(service, table_name="comparable_productions", limit=limit, offset=offset)
+        items, total = service.list_table("comparable_productions", limit=limit, offset=offset)
+        return AdminListResponse(
+            items=[_comp_row_to_api(row) for row in items],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch comparables")
 
@@ -111,7 +150,9 @@ async def create_comparable(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return service.create_row("comparable_productions", body.payload)
+        db_payload = _comp_payload_to_db(body.payload)
+        row = service.create_row("comparable_productions", db_payload)
+        return _comp_row_to_api(row)
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to create comparables")
 
@@ -124,7 +165,9 @@ async def update_comparable(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return service.update_row("comparable_productions", item_id, body.payload)
+        db_payload = _comp_payload_to_db(body.payload)
+        row = service.update_row("comparable_productions", item_id, db_payload)
+        return _comp_row_to_api(row)
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to update comparables")
 
@@ -140,6 +183,27 @@ async def delete_comparable(
         return SuccessResponse(message="comparable item deleted")
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to delete comparables")
+
+
+@router.post("/comparables/sync-tmdb", response_model=dict)
+async def sync_comparables_from_tmdb(
+    _: AdminUser = Depends(get_current_admin),
+    supabase: DatabaseClient = Depends(get_supabase),
+):
+    from app.core.config import get_settings
+    from app.modules.admin.tmdb_service import TMDBService
+
+    settings = get_settings()
+    if not settings.TMDB_API_KEY:
+        raise HTTPException(status_code=400, detail="TMDB_API_KEY is not configured")
+
+    try:
+        tmdb = TMDBService(settings.TMDB_API_KEY)
+        result = tmdb.sync_popular(supabase)
+        return {"message": "Sync completed", **result}
+    except Exception:
+        logger.exception("TMDB sync failed")
+        raise HTTPException(status_code=500, detail="TMDB sync failed")
 
 
 @router.post("/reports/{report_id}/reissue-pdf", response_model=SuccessResponse)

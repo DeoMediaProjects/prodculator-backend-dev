@@ -93,5 +93,7 @@ class ComparableProduction(SQLModel, table=True):
     genre: list[str] | None = Field(default=None, sa_column=Column(JSON))
     production_company: str | None = None
     director: str | None = None
+    tmdb_id: str | None = Field(default=None, index=True)
+    source: str = Field(default="Manual")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
