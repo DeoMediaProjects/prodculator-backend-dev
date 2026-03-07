@@ -97,3 +97,24 @@ class ComparableProduction(SQLModel, table=True):
     source: str = Field(default="Manual")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DataSource(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "data_sources"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    name: str
+    slug: str = Field(unique=True, index=True)
+    category: str
+    description: str | None = None
+    endpoint: str | None = None
+    enabled: bool = Field(default=True)
+    status: str = Field(default="unknown")
+    credential_mode: str = Field(default="backend_env")
+    is_implemented: bool = Field(default=True)
+    last_tested_at: datetime | None = None
+    last_test_result: str | None = None
+    last_test_message: str | None = None
+    sync_schedule: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
