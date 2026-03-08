@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
-from app.core.dependencies import get_current_admin, get_supabase
+from app.core.dependencies import get_supabase
+from app.core.permissions import RequirePermission
 from app.modules.admin.schemas import AdminUser
 from app.modules.data_sources.rate_limit import check_test_rate_limit
 from app.modules.data_sources.schemas import (
@@ -35,7 +36,7 @@ def get_data_source_service(
 
 @router.get("/sync-schedule", response_model=SyncScheduleResponse)
 async def get_sync_schedule(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageDataSources")),
     service: DataSourceService = Depends(get_data_source_service),
 ):
     try:
@@ -48,7 +49,7 @@ async def get_sync_schedule(
 @router.put("/configuration", response_model=BulkConfigurationResponse)
 async def bulk_configure(
     body: BulkConfigurationRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageDataSources")),
     service: DataSourceService = Depends(get_data_source_service),
 ):
     try:
@@ -65,7 +66,7 @@ async def bulk_configure(
 async def list_data_sources(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageDataSources")),
     service: DataSourceService = Depends(get_data_source_service),
 ):
     try:
@@ -80,7 +81,7 @@ async def list_data_sources(
 @router.get("/{source_id}", response_model=DataSourceResponse)
 async def get_data_source(
     source_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageDataSources")),
     service: DataSourceService = Depends(get_data_source_service),
 ):
     try:
@@ -98,7 +99,7 @@ async def get_data_source(
 async def update_data_source(
     source_id: str,
     body: DataSourceUpdateRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageDataSources")),
     service: DataSourceService = Depends(get_data_source_service),
 ):
     try:
@@ -116,7 +117,7 @@ async def update_data_source(
 @router.post("/{source_id}/test", response_model=DataSourceTestResponse)
 async def test_data_source(
     source_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageDataSources")),
     service: DataSourceService = Depends(get_data_source_service),
 ):
     source = service.get_source(source_id)

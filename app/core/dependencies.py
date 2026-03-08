@@ -124,6 +124,7 @@ async def get_current_admin(
         id=result.data["id"],
         email=result.data["email"],
         name=result.data.get("name"),
+        role=result.data.get("role", "master_admin"),
     )
 
 

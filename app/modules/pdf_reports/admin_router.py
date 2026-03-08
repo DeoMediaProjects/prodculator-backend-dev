@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
-from app.core.dependencies import get_current_admin, get_supabase
+from app.core.dependencies import get_supabase
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import AdminUser
 from app.modules.email.service import EmailService
@@ -37,7 +38,7 @@ def _sanitize_filename(title: str) -> str:
 async def list_pdf_reports(
     limit: int = Query(25, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManagePDFReports")),
     service: PdfReportsService = Depends(get_pdf_reports_service),
     settings: Settings = Depends(get_settings),
 ):
@@ -63,7 +64,7 @@ async def list_pdf_reports(
 @router.get("/{report_id}/preview", response_model=PdfReportPreviewResponse)
 async def preview_pdf_report(
     report_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManagePDFReports")),
     service: PdfReportsService = Depends(get_pdf_reports_service),
 ):
     try:
@@ -81,7 +82,7 @@ async def preview_pdf_report(
 @router.get("/{report_id}/download")
 async def download_pdf_report(
     report_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManagePDFReports")),
     service: PdfReportsService = Depends(get_pdf_reports_service),
     settings: Settings = Depends(get_settings),
 ):
@@ -112,7 +113,7 @@ async def download_pdf_report(
 async def resend_pdf_report(
     report_id: str,
     body: ResendRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManagePDFReports")),
     service: PdfReportsService = Depends(get_pdf_reports_service),
     settings: Settings = Depends(get_settings),
 ):

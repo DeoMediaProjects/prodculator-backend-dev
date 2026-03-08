@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from app.core.database_client import DatabaseClient
 
 from app.core.dependencies import get_current_admin, get_supabase
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import (
     AdminListResponse,
@@ -96,7 +97,7 @@ async def list_reports(
 
 @router.get("/metrics", response_model=BusinessMetricsResponse)
 async def get_metrics(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canViewBusinessMetrics")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -110,7 +111,7 @@ async def get_production_signals(
     territory: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canViewPlatformEconomics")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -128,7 +129,7 @@ async def get_production_signals(
 async def list_comparables(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -146,7 +147,7 @@ async def list_comparables(
 @router.post("/comparables", response_model=dict)
 async def create_comparable(
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -161,7 +162,7 @@ async def create_comparable(
 async def update_comparable(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -175,7 +176,7 @@ async def update_comparable(
 @router.delete("/comparables/{item_id}", response_model=SuccessResponse)
 async def delete_comparable(
     item_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -187,7 +188,7 @@ async def delete_comparable(
 
 @router.post("/comparables/sync-tmdb", response_model=dict)
 async def sync_comparables_from_tmdb(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     supabase: DatabaseClient = Depends(get_supabase),
 ):
     from app.core.config import get_settings
@@ -210,7 +211,7 @@ async def sync_comparables_from_tmdb(
 async def reissue_report_pdf(
     report_id: str,
     background_tasks: BackgroundTasks,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(RequirePermission("canManagePDFReports")),
     supabase: DatabaseClient = Depends(get_supabase),
 ):
     """Re-generate and re-upload the PDF for a completed report."""

@@ -14,6 +14,7 @@ from app.modules.scraper.service import ScraperService
 logger = logging.getLogger(__name__)
 from app.modules.admin.router import router as admin_router
 from app.modules.admin.auth_router import router as admin_auth_router
+from app.modules.admin.admin_users_router import router as admin_users_router
 from app.modules.festivals.admin_router import router as festivals_admin_router
 from app.modules.incentives.admin_router import router as incentives_admin_router
 from app.modules.crew_costs.admin_router import router as crew_costs_admin_router
@@ -129,6 +130,7 @@ app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
+app.include_router(admin_users_router)
 app.include_router(festivals_admin_router)
 app.include_router(incentives_admin_router)
 app.include_router(crew_costs_admin_router)

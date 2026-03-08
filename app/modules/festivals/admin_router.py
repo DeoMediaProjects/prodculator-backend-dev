@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database_client import DatabaseClient
-from app.core.dependencies import get_current_admin, get_supabase
+from app.core.dependencies import get_supabase
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import (
     AdminListResponse,
@@ -25,7 +26,7 @@ def get_festivals_service(supabase: DatabaseClient = Depends(get_supabase)) -> F
 async def list_festivals_admin(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -37,7 +38,7 @@ async def list_festivals_admin(
 
 @router.post("/sync", response_model=dict)
 async def trigger_festivals_sync(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -48,7 +49,7 @@ async def trigger_festivals_sync(
 
 @router.get("/sync-status", response_model=SyncStatusResponse)
 async def get_sync_status(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -59,7 +60,7 @@ async def get_sync_status(
 
 @router.get("/pending-changes", response_model=list[PendingChangeResponse])
 async def get_pending_changes(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -71,7 +72,7 @@ async def get_pending_changes(
 @router.post("/pending-changes/{change_id}/approve", response_model=PendingChangeResponse)
 async def approve_pending_change(
     change_id: str,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -85,7 +86,7 @@ async def approve_pending_change(
 @router.post("/pending-changes/{change_id}/reject", response_model=PendingChangeResponse)
 async def reject_pending_change(
     change_id: str,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -98,7 +99,7 @@ async def reject_pending_change(
 
 @router.get("/sync-settings", response_model=SyncSettingsResponse)
 async def get_sync_settings(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -110,7 +111,7 @@ async def get_sync_settings(
 @router.patch("/sync-settings", response_model=SyncSettingsResponse)
 async def update_sync_settings(
     body: SyncSettingsUpdateRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -123,7 +124,7 @@ async def update_sync_settings(
 @router.post("", response_model=dict)
 async def create_festival_admin(
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -136,7 +137,7 @@ async def create_festival_admin(
 async def update_festival_admin(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:
@@ -148,7 +149,7 @@ async def update_festival_admin(
 @router.delete("/{item_id}", response_model=SuccessResponse)
 async def delete_festival_admin(
     item_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: FestivalsService = Depends(get_festivals_service),
 ):
     try:

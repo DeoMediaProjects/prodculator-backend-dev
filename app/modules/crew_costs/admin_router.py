@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database_client import DatabaseClient
-from app.core.dependencies import get_current_admin, get_supabase
+from app.core.dependencies import get_supabase
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import (
     AdminListResponse,
@@ -28,7 +29,7 @@ def get_crew_costs_service(supabase: DatabaseClient = Depends(get_supabase)) -> 
 async def list_crew_costs_admin(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -41,7 +42,7 @@ async def list_crew_costs_admin(
 @router.post("", response_model=dict)
 async def create_crew_cost_admin(
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -55,7 +56,7 @@ async def create_crew_cost_admin(
 
 @router.get("/sync-status", response_model=SyncStatusResponse)
 async def get_sync_status(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -69,7 +70,7 @@ async def get_sync_status(
 
 @router.get("/pending-changes", response_model=list[PendingChangeResponse])
 async def get_pending_changes(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -81,7 +82,7 @@ async def get_pending_changes(
 @router.post("/pending-changes/{change_id}/approve", response_model=PendingChangeResponse)
 async def approve_pending_change(
     change_id: str,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -95,7 +96,7 @@ async def approve_pending_change(
 @router.post("/pending-changes/{change_id}/reject", response_model=PendingChangeResponse)
 async def reject_pending_change(
     change_id: str,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -111,7 +112,7 @@ async def reject_pending_change(
 
 @router.post("/sync", response_model=dict)
 async def trigger_sync(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -125,7 +126,7 @@ async def trigger_sync(
 
 @router.get("/sync-settings", response_model=SyncSettingsResponse)
 async def get_sync_settings(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -137,7 +138,7 @@ async def get_sync_settings(
 @router.patch("/sync-settings", response_model=SyncSettingsResponse)
 async def update_sync_settings(
     body: SyncSettingsUpdateRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -154,7 +155,7 @@ async def update_sync_settings(
 async def update_crew_cost_admin(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:
@@ -166,7 +167,7 @@ async def update_crew_cost_admin(
 @router.delete("/{item_id}", response_model=SuccessResponse)
 async def delete_crew_cost_admin(
     item_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditCrewCosts")),
     service: CrewCostsService = Depends(get_crew_costs_service),
 ):
     try:

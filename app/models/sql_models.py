@@ -15,6 +15,8 @@ class Admin(SQLModel, table=True):
     email: str = Field(index=True, nullable=False, unique=True)
     password_hash: str
     name: str | None = None
+    role: str = Field(default="master_admin")
+    last_login: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

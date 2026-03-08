@@ -3,7 +3,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database_client import DatabaseClient
-from app.core.dependencies import get_current_admin, get_supabase
+from app.core.dependencies import get_supabase
+from app.core.permissions import RequirePermission
 from app.modules.admin.schemas import AdminUser
 from app.modules.email_gating.schemas import (
     EmailGatingListResponse,
@@ -37,7 +38,7 @@ async def list_email_gating_records(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     search: str = Query(""),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageEmailGating")),
     service: EmailGatingService = Depends(get_email_gating_service),
 ):
     try:
@@ -56,7 +57,7 @@ async def list_email_gating_records(
 @router.post("/{record_id}/block", response_model=EmailGatingResponse)
 async def block_email(
     record_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageEmailGating")),
     service: EmailGatingService = Depends(get_email_gating_service),
 ):
     try:
@@ -74,7 +75,7 @@ async def block_email(
 @router.post("/{record_id}/unblock", response_model=EmailGatingResponse)
 async def unblock_email(
     record_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageEmailGating")),
     service: EmailGatingService = Depends(get_email_gating_service),
 ):
     try:
