@@ -46,6 +46,9 @@ class CreateReportRequest(BaseModel):
     location_strategy: Literal["domestic", "open", "international"]
     production_priority: Literal["incentive", "full", "location"] = "full"
 
+    # Email gate (required for preview reports from unauthenticated users)
+    email: str | None = None
+
     # Conditional / optional metadata
     state_province: str | None = None
     territories_considering: list[str] | None = None

@@ -18,6 +18,7 @@ from app.modules.reports.schemas import (
 )
 from app.modules.reports.service import ReportService
 from app.modules.scripts.service import ScriptAnalysisService
+from app.modules.email_gating.service import EmailGatingService
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
@@ -27,12 +28,17 @@ def get_report_service(supabase: DatabaseClient = Depends(get_supabase)) -> Repo
     return ReportService(supabase)
 
 
+def get_email_gating_service(supabase: DatabaseClient = Depends(get_supabase)) -> EmailGatingService:
+    return EmailGatingService(supabase)
+
+
 @router.post("")
 async def create_report(
     body: CreateReportRequest,
     background_tasks: BackgroundTasks,
     user: AuthUser | None = Depends(get_optional_user),
     service: ReportService = Depends(get_report_service),
+    email_gating_service: EmailGatingService = Depends(get_email_gating_service),
     settings: Settings = Depends(get_settings),
 ):
     """Create a new report. Previews return synchronously; paid/b2b are async."""
@@ -43,6 +49,15 @@ async def create_report(
         bool(user),
     )
     if body.report_type == "preview":
+        # Email gating: check if blocked, then record usage
+        gate_email = body.email or (user.email if user else None)
+        if gate_email:
+            if email_gating_service.is_blocked(gate_email):
+                raise HTTPException(
+                    status_code=403,
+                    detail="This email address has been blocked from generating free reports",
+                )
+
         # Preview: synchronous, no DB row, no auth required
         started = perf_counter()
         try:
@@ -59,7 +74,17 @@ async def create_report(
                 elapsed_ms,
                 len(analysis.get("locationRankings", [])),
             )
+
+            # Record email gating usage after successful generation
+            if gate_email:
+                try:
+                    email_gating_service.create_record(gate_email, report_generated=True)
+                except Exception:
+                    logger.warning("Failed to record email gating for %s", gate_email)
+
             return PreviewReportResponse(analysis=analysis)
+        except HTTPException:
+            raise
         except Exception:
             logger.exception("Preview report generation failed: title=%s", body.script_title)
             raise HTTPException(status_code=500, detail="Failed to generate preview report")

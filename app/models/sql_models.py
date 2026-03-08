@@ -99,6 +99,16 @@ class ComparableProduction(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class EmailGatingRecord(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "email_gating_records"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    email: str = Field(index=True, nullable=False)
+    report_generated: bool = Field(default=False)
+    blocked: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class DataSource(SQLModel, table=True):
     __tablename__: ClassVar[str] = "data_sources"  # type: ignore[assignment]
 
