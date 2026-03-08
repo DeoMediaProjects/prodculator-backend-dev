@@ -68,6 +68,7 @@ class Report(SQLModel, table=True):
     request_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column("request_metadata", JSON))
     report_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     pdf_url: str | None = None
+    downloaded: bool = Field(default=False)
     completed_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
