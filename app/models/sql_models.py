@@ -15,6 +15,8 @@ class Admin(SQLModel, table=True):
     email: str = Field(index=True, nullable=False, unique=True)
     password_hash: str
     name: str | None = None
+    role: str = Field(default="master_admin")
+    last_login: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -30,6 +32,8 @@ class User(SQLModel, table=True):
     user_type: str = Field(default="free")
     credits_remaining: int = 0
     plan: str = Field(default="free")
+    is_blocked: bool = Field(default=False)
+    blocked_at: datetime | None = None
     last_active: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -66,6 +70,7 @@ class Report(SQLModel, table=True):
     request_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column("request_metadata", JSON))
     report_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     pdf_url: str | None = None
+    downloaded: bool = Field(default=False)
     completed_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -91,5 +96,38 @@ class ComparableProduction(SQLModel, table=True):
     genre: list[str] | None = Field(default=None, sa_column=Column(JSON))
     production_company: str | None = None
     director: str | None = None
+    tmdb_id: str | None = Field(default=None, index=True)
+    source: str = Field(default="Manual")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class EmailGatingRecord(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "email_gating_records"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    email: str = Field(index=True, nullable=False)
+    report_generated: bool = Field(default=False)
+    blocked: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class DataSource(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "data_sources"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    name: str
+    slug: str = Field(unique=True, index=True)
+    category: str
+    description: str | None = None
+    endpoint: str | None = None
+    enabled: bool = Field(default=True)
+    status: str = Field(default="unknown")
+    credential_mode: str = Field(default="backend_env")
+    is_implemented: bool = Field(default=True)
+    last_tested_at: datetime | None = None
+    last_test_result: str | None = None
+    last_test_message: str | None = None
+    sync_schedule: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

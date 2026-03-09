@@ -18,6 +18,7 @@ from app.modules.reports.schemas import (
 )
 from app.modules.reports.service import ReportService
 from app.modules.scripts.service import ScriptAnalysisService
+from app.modules.email_gating.service import EmailGatingService
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
@@ -27,12 +28,17 @@ def get_report_service(supabase: DatabaseClient = Depends(get_supabase)) -> Repo
     return ReportService(supabase)
 
 
+def get_email_gating_service(supabase: DatabaseClient = Depends(get_supabase)) -> EmailGatingService:
+    return EmailGatingService(supabase)
+
+
 @router.post("")
 async def create_report(
     body: CreateReportRequest,
     background_tasks: BackgroundTasks,
     user: AuthUser | None = Depends(get_optional_user),
     service: ReportService = Depends(get_report_service),
+    email_gating_service: EmailGatingService = Depends(get_email_gating_service),
     settings: Settings = Depends(get_settings),
 ):
     """Create a new report. Previews return synchronously; paid/b2b are async."""
@@ -43,6 +49,15 @@ async def create_report(
         bool(user),
     )
     if body.report_type == "preview":
+        # Email gating: check if blocked, then record usage
+        gate_email = body.email or (user.email if user else None)
+        if gate_email:
+            if email_gating_service.is_blocked(gate_email):
+                raise HTTPException(
+                    status_code=403,
+                    detail="This email address has been blocked from generating free reports",
+                )
+
         # Preview: synchronous, no DB row, no auth required
         started = perf_counter()
         try:
@@ -59,7 +74,17 @@ async def create_report(
                 elapsed_ms,
                 len(analysis.get("locationRankings", [])),
             )
+
+            # Record email gating usage after successful generation
+            if gate_email:
+                try:
+                    email_gating_service.create_record(gate_email, report_generated=True)
+                except Exception:
+                    logger.warning("Failed to record email gating for %s", gate_email)
+
             return PreviewReportResponse(analysis=analysis)
+        except HTTPException:
+            raise
         except Exception:
             logger.exception("Preview report generation failed: title=%s", body.script_title)
             raise HTTPException(status_code=500, detail="Failed to generate preview report")
@@ -230,6 +255,42 @@ def _format_report_response(report: dict) -> dict:
     }
 
 
+def _compact_script_analysis_meta(meta: dict | None) -> dict:
+    if not isinstance(meta, dict):
+        return {}
+
+    compact: dict = {}
+    for key in ("mode", "fallbackUsed", "reason", "chunkedFailed", "chunkedError", "fallbackToSinglePass"):
+        value = meta.get(key)
+        if value is not None:
+            if isinstance(value, str):
+                compact[key] = ReportService.redact_sensitive_text(value)
+            else:
+                compact[key] = value
+
+    chunk_telemetry = meta.get("chunkTelemetry")
+    if isinstance(chunk_telemetry, dict):
+        compact["chunkTelemetry"] = {
+            "totalChunks": chunk_telemetry.get("totalChunks"),
+            "generatedChunks": chunk_telemetry.get("generatedChunks"),
+            "usedChunks": chunk_telemetry.get("usedChunks"),
+            "failedChunks": chunk_telemetry.get("failedChunks"),
+            "droppedChunks": chunk_telemetry.get("droppedChunks"),
+            "successRatio": chunk_telemetry.get("successRatio"),
+            "stopReasons": chunk_telemetry.get("stopReasons"),
+        }
+
+    overall_confidence = meta.get("overallConfidence")
+    if isinstance(overall_confidence, (int, float)):
+        compact["overallConfidence"] = overall_confidence
+
+    section_confidence = meta.get("sectionConfidence")
+    if isinstance(section_confidence, dict):
+        compact["sectionConfidence"] = section_confidence
+
+    return compact
+
+
 def process_report_task(
     report_id: str,
     user_id: str,
@@ -241,6 +302,7 @@ def process_report_task(
         started = perf_counter()
         current_step = "init"
         report_row: dict | None = None
+        script_analysis_meta: dict = {}
         logger.info("Report background task started: report_id=%s user_id=%s", report_id, user_id)
 
         supabase = DatabaseClient(db, settings)
@@ -311,14 +373,25 @@ def process_report_task(
             # Step 2: Script analysis (Call 1 — existing method)
             current_step = "script_analysis"
             step_started = perf_counter()
-            analysis = script_service.analyze(script_text, script_title)
+            analysis, script_analysis_meta = script_service.analyze_with_meta(script_text, script_title)
+            compact_meta = _compact_script_analysis_meta(script_analysis_meta)
+            failed_chunks = ((compact_meta.get("chunkTelemetry") or {}).get("failedChunks") or 0)
             logger.info(
-                "Script analysis complete: report_id=%s locations=%s budget_range=%s elapsed_ms=%s",
+                "Script analysis complete: report_id=%s locations=%s budget_range=%s elapsed_ms=%s meta=%s",
                 report_id,
                 len(analysis.locations),
                 analysis.budgetEstimate.range,
                 int((perf_counter() - step_started) * 1000),
+                compact_meta,
             )
+            if compact_meta.get("fallbackUsed") or failed_chunks:
+                logger.warning(
+                    "Script analysis quality warning: report_id=%s fallback=%s failed_chunks=%s mode=%s",
+                    report_id,
+                    bool(compact_meta.get("fallbackUsed")),
+                    failed_chunks,
+                    compact_meta.get("mode"),
+                )
 
             # Step 3: Full production analysis (Call 2 — new method)
             current_step = "production_analysis"
@@ -407,7 +480,14 @@ def process_report_task(
                 current_step,
                 int((perf_counter() - started) * 1000),
             )
-            report_service.fail_report(report_id, str(exc))
+            report_service.fail_report(
+                report_id,
+                str(exc),
+                error_context={
+                    "step": current_step,
+                    "scriptAnalysisMeta": _compact_script_analysis_meta(script_analysis_meta),
+                },
+            )
             logger.info("Report marked failed: report_id=%s", report_id)
             try:
                 email_service.send(

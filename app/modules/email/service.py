@@ -17,6 +17,7 @@ EMAIL_SUBJECTS: dict[str, str] = {
     "processing_started": "We started processing your report",
     "grant_alert": "New grant opportunity for your watchlist",
     "festival_deadline": "Festival deadline reminder",
+    "admin_invite": "You've been invited to Prodculator Admin",
 }
 
 

@@ -124,10 +124,15 @@ class AuthService:
         if not result.data:
             raise ValueError("Invalid email or password")
 
+        self.supabase.table("admins").update(
+            {"last_login": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", auth_response.user.id).execute()
+
         admin = AdminUser(
             id=result.data["id"],
             email=result.data["email"],
             name=result.data.get("name"),
+            role=result.data.get("role", "master_admin"),
         )
 
         return AdminTokenResponse(
@@ -163,6 +168,7 @@ class AuthService:
             id=result.data["id"],
             email=result.data["email"],
             name=result.data.get("name"),
+            role=result.data.get("role", "master_admin"),
         )
 
         return AdminTokenResponse(

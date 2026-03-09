@@ -1,9 +1,12 @@
 import logging
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from app.core.database_client import DatabaseClient
 
 from app.core.dependencies import get_current_admin, get_supabase
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import (
     AdminListResponse,
@@ -17,6 +20,37 @@ from app.modules.reports.pdf_service import PDFService
 from app.modules.reports.service import ReportService
 
 logger = logging.getLogger(__name__)
+
+_COMP_CAMEL_TO_SNAKE: dict[str, str] = {
+    "budget": "budget_usd",
+    "territory": "primary_territory",
+    "incentiveUsed": "incentive_used",
+    "tmdbId": "tmdb_id",
+    "lastUpdated": "updated_at",
+}
+_COMP_SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _COMP_CAMEL_TO_SNAKE.items()}
+
+
+def _comp_payload_to_db(payload: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for k, v in payload.items():
+        db_key = _COMP_CAMEL_TO_SNAKE.get(k, k)
+        result[db_key] = v
+    result.pop("id", None)
+    if "updated_at" not in result:
+        result["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+def _comp_row_to_api(row: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for k, v in row.items():
+        api_key = _COMP_SNAKE_TO_CAMEL.get(k, k)
+        if k == "updated_at" and v is not None:
+            result["lastUpdated"] = str(v)[:10] if v else v
+            continue
+        result[api_key] = v
+    return result
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -63,7 +97,7 @@ async def list_reports(
 
 @router.get("/metrics", response_model=BusinessMetricsResponse)
 async def get_metrics(
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canViewBusinessMetrics")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -77,7 +111,7 @@ async def get_production_signals(
     territory: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canViewPlatformEconomics")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -95,11 +129,17 @@ async def get_production_signals(
 async def list_comparables(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return _list_resource(service, table_name="comparable_productions", limit=limit, offset=offset)
+        items, total = service.list_table("comparable_productions", limit=limit, offset=offset)
+        return AdminListResponse(
+            items=[_comp_row_to_api(row) for row in items],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch comparables")
 
@@ -107,11 +147,13 @@ async def list_comparables(
 @router.post("/comparables", response_model=dict)
 async def create_comparable(
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return service.create_row("comparable_productions", body.payload)
+        db_payload = _comp_payload_to_db(body.payload)
+        row = service.create_row("comparable_productions", db_payload)
+        return _comp_row_to_api(row)
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to create comparables")
 
@@ -120,11 +162,13 @@ async def create_comparable(
 async def update_comparable(
     item_id: str,
     body: AdminUpsertRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return service.update_row("comparable_productions", item_id, body.payload)
+        db_payload = _comp_payload_to_db(body.payload)
+        row = service.update_row("comparable_productions", item_id, db_payload)
+        return _comp_row_to_api(row)
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to update comparables")
 
@@ -132,7 +176,7 @@ async def update_comparable(
 @router.delete("/comparables/{item_id}", response_model=SuccessResponse)
 async def delete_comparable(
     item_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
@@ -142,11 +186,32 @@ async def delete_comparable(
         raise HTTPException(status_code=400, detail="Failed to delete comparables")
 
 
+@router.post("/comparables/sync-tmdb", response_model=dict)
+async def sync_comparables_from_tmdb(
+    _: AdminUser = Depends(RequirePermission("canEditComparables")),
+    supabase: DatabaseClient = Depends(get_supabase),
+):
+    from app.core.config import get_settings
+    from app.modules.admin.tmdb_service import TMDBService
+
+    settings = get_settings()
+    if not settings.TMDB_API_KEY:
+        raise HTTPException(status_code=400, detail="TMDB_API_KEY is not configured")
+
+    try:
+        tmdb = TMDBService(settings.TMDB_API_KEY)
+        result = tmdb.sync_popular(supabase)
+        return {"message": "Sync completed", **result}
+    except Exception:
+        logger.exception("TMDB sync failed")
+        raise HTTPException(status_code=500, detail="TMDB sync failed")
+
+
 @router.post("/reports/{report_id}/reissue-pdf", response_model=SuccessResponse)
 async def reissue_report_pdf(
     report_id: str,
     background_tasks: BackgroundTasks,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(RequirePermission("canManagePDFReports")),
     supabase: DatabaseClient = Depends(get_supabase),
 ):
     """Re-generate and re-upload the PDF for a completed report."""

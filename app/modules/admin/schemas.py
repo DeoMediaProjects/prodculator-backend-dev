@@ -1,12 +1,13 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class AdminUser(BaseModel):
     id: str
     email: str
     name: str | None = None
+    role: str = "master_admin"
 
 
 class AdminTokenResponse(BaseModel):
@@ -80,4 +81,38 @@ class SyncSettingsResponse(BaseModel):
 class SyncSettingsUpdateRequest(BaseModel):
     schedule: str | None = None
     enabled: bool | None = None
+
+
+class AdminUserDetail(BaseModel):
+    id: str
+    email: str
+    name: str | None = None
+    role: str
+    last_login: str | None = None
+    created_at: str
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserDetail]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUserCreateRequest(BaseModel):
+    name: str | None = None
+    email: EmailStr
+    role: str
+
+
+class AdminUserUpdateRequest(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
+    role: str | None = None
+    password: str | None = None
+
+
+class AdminUserCreateResponse(BaseModel):
+    admin: AdminUserDetail
+    temporary_password: str
 

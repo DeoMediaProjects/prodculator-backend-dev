@@ -14,10 +14,15 @@ from app.modules.scraper.service import ScraperService
 logger = logging.getLogger(__name__)
 from app.modules.admin.router import router as admin_router
 from app.modules.admin.auth_router import router as admin_auth_router
+from app.modules.admin.admin_users_router import router as admin_users_router
 from app.modules.festivals.admin_router import router as festivals_admin_router
 from app.modules.incentives.admin_router import router as incentives_admin_router
 from app.modules.crew_costs.admin_router import router as crew_costs_admin_router
 from app.modules.grants.admin_router import router as grants_admin_router
+from app.modules.subscribers.admin_router import router as subscribers_admin_router
+from app.modules.data_sources.admin_router import router as data_sources_admin_router
+from app.modules.email_gating.admin_router import router as email_gating_admin_router
+from app.modules.pdf_reports.admin_router import router as pdf_reports_admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.email.router import router as admin_email_router
 from app.modules.health.router import router as health_router
@@ -125,8 +130,13 @@ app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
+app.include_router(admin_users_router)
 app.include_router(festivals_admin_router)
 app.include_router(incentives_admin_router)
 app.include_router(crew_costs_admin_router)
 app.include_router(grants_admin_router)
 app.include_router(admin_email_router)
+app.include_router(subscribers_admin_router)
+app.include_router(data_sources_admin_router)
+app.include_router(email_gating_admin_router)
+app.include_router(pdf_reports_admin_router)

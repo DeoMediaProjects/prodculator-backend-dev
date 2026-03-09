@@ -67,6 +67,9 @@ async def get_current_user(
     if not result.data:
         raise HTTPException(status_code=401, detail="User profile not found")
 
+    if result.data.get("is_blocked"):
+        raise HTTPException(status_code=403, detail="Account has been blocked")
+
     return AuthUser(
         id=result.data["id"],
         email=result.data["email"],
@@ -121,6 +124,7 @@ async def get_current_admin(
         id=result.data["id"],
         email=result.data["email"],
         name=result.data.get("name"),
+        role=result.data.get("role", "master_admin"),
     )
 
 
