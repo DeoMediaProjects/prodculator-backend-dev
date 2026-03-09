@@ -82,6 +82,13 @@ class LocationRanking(BaseModel):
     currencyAdvantage: int  # 0-100
     reasoning: list[str]  # 3-5 bullet points
     isAssessmentOnly: bool | None = None
+    rebatePercent: str | None = None
+    rebateAmount: str | None = None
+    culturalTestLikelihood: str | None = None
+    adminComplexity: str | None = None
+    paymentSpeed: str | None = None
+    keyAdvantages: list[str] | None = None
+    keyRisks: list[str] | None = None
 
 
 class IncentiveEstimate(BaseModel):
@@ -114,6 +121,8 @@ class ComparableProductionEntry(BaseModel):
     location: str
     year: int
     source: str
+    relevanceDescription: str | None = None
+    budgetUSD: int | None = None
 
 
 class WeatherLogistic(BaseModel):
@@ -138,6 +147,51 @@ class FundingOpportunity(BaseModel):
     tier: str | None = None
 
 
+class ExecutiveSummary(BaseModel):
+    keyInsights: str
+    recommendedTerritory: str
+    recommendedTerritoryScore: int
+    recommendedTerritoryRebate: str | None = None
+    recommendedTerritoryInfrastructure: str | None = None
+    recommendedTerritoryPaymentSpeed: str | None = None
+    shootDays: int | None = None
+    budget: str | None = None
+    budgetRange: str | None = None
+    primaryLocations: list[str] | None = None
+
+
+class FinancialScenario(BaseModel):
+    territory: str
+    localSpend: str
+    rebateRate: str
+    grossRebate: str
+    netBudget: str
+
+
+class CrewCostRow(BaseModel):
+    role: str
+    territories: dict[str, str]  # territory_name -> salary range string
+
+
+class FinancialAnalysis(BaseModel):
+    budgetScenarios: list[FinancialScenario]
+    crewCostComparison: list[CrewCostRow]
+
+
+class TerritoryDeepDive(BaseModel):
+    name: str
+    country: str
+    score: int
+    rebate: str
+    infrastructure: str
+    paymentSpeed: str
+    keyAdvantages: list[str]
+    keyRisks: list[str]
+    culturalTestLikelihood: str
+    adminComplexity: str
+    estimatedRebate: str
+
+
 class ScriptAnalysis(BaseModel):
     genre: str
     tone: str
@@ -149,6 +203,10 @@ class ScriptAnalysis(BaseModel):
     comparables: list[ComparableProductionEntry]
     weatherLogistics: list[WeatherLogistic]
     fundingOpportunities: list[FundingOpportunity]
+    executiveSummary: ExecutiveSummary | None = None
+    financialAnalysis: FinancialAnalysis | None = None
+    territoryDeepDives: list[TerritoryDeepDive] | None = None
+    alternativeStrategy: str | None = None
 
 
 class ProductionIntelligence(BaseModel):

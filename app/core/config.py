@@ -40,8 +40,20 @@ class Settings(BaseSettings):
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
-    ANTHROPIC_MAX_TOKENS: int = 8000
+    ANTHROPIC_MAX_TOKENS: int = 12000
     ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
+    ANTHROPIC_MAX_TOKENS_SCRIPT_CHUNK: int | None = None
+    ANTHROPIC_MAX_TOKENS_SCRIPT_AGGREGATE: int | None = None
+    ANTHROPIC_MAX_TOKENS_REPORT: int | None = None
+    ANTHROPIC_TIMEOUT_SCRIPT_CHUNK: int | None = None
+    ANTHROPIC_TIMEOUT_SCRIPT_AGGREGATE: int | None = None
+    ANTHROPIC_TIMEOUT_REPORT: int | None = None
+
+    # Script analysis chunking controls
+    SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False
+    SCRIPT_CHUNK_TARGET_TOKENS: int = 1800
+    SCRIPT_CHUNK_OVERLAP_TOKENS: int = 200
+    SCRIPT_MAX_CHUNKS: int = 80
 
     # SendGrid
     SENDGRID_API_KEY: str = ""

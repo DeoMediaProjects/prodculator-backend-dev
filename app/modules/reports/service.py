@@ -1,5 +1,7 @@
 import logging
+import re
 from datetime import date, datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.exc import NoSuchTableError
@@ -9,6 +11,34 @@ from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
 
 logger = logging.getLogger(__name__)
+
+MAX_ERROR_MESSAGE_CHARS = 500
+MAX_STEP_CHARS = 80
+MAX_META_TEXT_CHARS = 180
+MAX_CHUNK_COUNT = 500
+_ALLOWED_STEPS = {
+    "init",
+    "load_report_row",
+    "email_processing_started",
+    "download_script",
+    "extract_script_text",
+    "script_analysis",
+    "production_analysis",
+    "pdf_render",
+    "pdf_generate",
+    "pdf_upload",
+    "persist_report",
+    "email_report_ready",
+}
+
+_SECTION_CONFIDENCE_KEYS = (
+    "locations",
+    "budget",
+    "productionScale",
+    "equipment",
+    "metadata",
+    "challenges",
+)
 
 
 class ReportService:
@@ -63,11 +93,154 @@ class ReportService:
             "id", report_id
         ).execute()
 
-    def fail_report(self, report_id: str, error_message: str) -> None:
+    def fail_report(
+        self,
+        report_id: str,
+        error_message: str,
+        error_context: dict | None = None,
+    ) -> None:
         """Mark report as failed."""
+        report_data: dict = {"error": self._sanitize_error_message(error_message)}
+        sanitized_context = self._sanitize_error_context(error_context)
+        if sanitized_context:
+            report_data["errorContext"] = sanitized_context
         self.supabase.table("reports").update(
-            {"status": "failed", "report_data": {"error": error_message}}
+            {"status": "failed", "report_data": report_data}
         ).eq("id", report_id).execute()
+
+    @staticmethod
+    def _sanitize_error_message(error_message: str) -> str:
+        redacted = ReportService.redact_sensitive_text(str(error_message))
+        return redacted[:MAX_ERROR_MESSAGE_CHARS]
+
+    @staticmethod
+    def _sanitize_error_context(error_context: dict | None) -> dict | None:
+        if not isinstance(error_context, dict):
+            return None
+
+        out: dict[str, Any] = {}
+        raw_step = str(error_context.get("step", "")).strip()
+        if raw_step:
+            step = ReportService.redact_sensitive_text(raw_step)[:MAX_STEP_CHARS]
+            out["step"] = step if step in _ALLOWED_STEPS else "unknown"
+
+        raw_meta = error_context.get("scriptAnalysisMeta")
+        meta = ReportService._sanitize_script_analysis_meta(raw_meta)
+        if meta:
+            out["scriptAnalysisMeta"] = meta
+
+        return out or None
+
+    @staticmethod
+    def _sanitize_script_analysis_meta(raw_meta: Any) -> dict | None:
+        if not isinstance(raw_meta, dict):
+            return None
+
+        out: dict[str, Any] = {}
+        mode = raw_meta.get("mode")
+        if mode is not None:
+            out["mode"] = ReportService.redact_sensitive_text(str(mode))[:MAX_META_TEXT_CHARS]
+
+        for bool_key in ("fallbackUsed", "chunkedFailed", "fallbackToSinglePass"):
+            if isinstance(raw_meta.get(bool_key), bool):
+                out[bool_key] = raw_meta[bool_key]
+
+        for text_key in ("reason", "chunkedError"):
+            value = raw_meta.get(text_key)
+            if value is not None:
+                out[text_key] = ReportService.redact_sensitive_text(str(value))[:MAX_META_TEXT_CHARS]
+
+        chunk_telemetry_raw = raw_meta.get("chunkTelemetry")
+        if isinstance(chunk_telemetry_raw, dict):
+            chunk_telemetry: dict[str, Any] = {}
+            total = ReportService._coerce_int(chunk_telemetry_raw.get("totalChunks"))
+            generated = ReportService._coerce_int(chunk_telemetry_raw.get("generatedChunks"))
+            used = ReportService._coerce_int(chunk_telemetry_raw.get("usedChunks"))
+            failed = ReportService._coerce_int(chunk_telemetry_raw.get("failedChunks"))
+            dropped = ReportService._coerce_int(chunk_telemetry_raw.get("droppedChunks"))
+            ratio = ReportService._coerce_float(chunk_telemetry_raw.get("successRatio"))
+
+            if total is not None:
+                chunk_telemetry["totalChunks"] = min(max(total, 0), MAX_CHUNK_COUNT)
+            if generated is not None:
+                chunk_telemetry["generatedChunks"] = min(max(generated, 0), MAX_CHUNK_COUNT)
+            if used is not None:
+                chunk_telemetry["usedChunks"] = min(max(used, 0), MAX_CHUNK_COUNT)
+            if failed is not None:
+                chunk_telemetry["failedChunks"] = min(max(failed, 0), MAX_CHUNK_COUNT)
+            if dropped is not None:
+                chunk_telemetry["droppedChunks"] = min(max(dropped, 0), MAX_CHUNK_COUNT)
+            if ratio is not None:
+                chunk_telemetry["successRatio"] = max(0.0, min(1.0, round(ratio, 4)))
+            stop_reasons_raw = chunk_telemetry_raw.get("stopReasons")
+            if isinstance(stop_reasons_raw, dict):
+                stop_reasons: dict[str, int] = {}
+                for key in ("max_tokens", "timeout", "rate_limit", "parse_error", "unknown"):
+                    count = ReportService._coerce_int(stop_reasons_raw.get(key))
+                    if count is not None and count > 0:
+                        stop_reasons[key] = min(count, MAX_CHUNK_COUNT)
+                if stop_reasons:
+                    chunk_telemetry["stopReasons"] = stop_reasons
+
+            if chunk_telemetry:
+                out["chunkTelemetry"] = chunk_telemetry
+
+        overall_confidence = ReportService._coerce_float(raw_meta.get("overallConfidence"))
+        if overall_confidence is not None:
+            out["overallConfidence"] = max(0.0, min(1.0, round(overall_confidence, 4)))
+
+        section_conf_raw = raw_meta.get("sectionConfidence")
+        if isinstance(section_conf_raw, dict):
+            section_conf: dict[str, float] = {}
+            for key in _SECTION_CONFIDENCE_KEYS:
+                value = ReportService._coerce_float(section_conf_raw.get(key))
+                if value is not None:
+                    section_conf[key] = max(0.0, min(1.0, round(value, 4)))
+            if section_conf:
+                out["sectionConfidence"] = section_conf
+
+        return out or None
+
+    @staticmethod
+    def _coerce_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _coerce_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _redact_sensitive_text(text: str) -> str:
+        redacted = text
+        patterns = [
+            r"sk-[A-Za-z0-9\-_]{10,}",
+            r"Bearer\s+[A-Za-z0-9\._\-]{8,}",
+            r"(?i)api[_-]?key\s*[:=]\s*['\"]?[A-Za-z0-9\-_]{8,}",
+            r"(?i)authorization\s*[:=]\s*['\"]?[A-Za-z0-9\._\-]{8,}",
+            r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}",
+        ]
+        for pattern in patterns:
+            redacted = re.sub(pattern, "[REDACTED]", redacted)
+        return redacted
+
+    @staticmethod
+    def redact_sensitive_text(text: str) -> str:
+        """Public helper for redacting sensitive-looking text in logs/payloads."""
+        return ReportService._redact_sensitive_text(text)
 
     def get_report(self, report_id: str) -> dict | None:
         """Get a single report by ID."""
