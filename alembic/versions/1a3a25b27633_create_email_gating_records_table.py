@@ -15,17 +15,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table('email_gating_records',
-        sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column('email', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column('report_generated', sa.Boolean(), nullable=False, server_default=sa.text('false')),
-        sa.Column('blocked', sa.Boolean(), nullable=False, server_default=sa.text('false')),
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_email_gating_records_email'), 'email_gating_records', ['email'], unique=False)
+    # Check if table exists before creating it
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    
+    if "email_gating_records" not in inspector.get_table_names():
+        op.create_table('email_gating_records',
+            sa.Column('id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+            sa.Column('email', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+            sa.Column('report_generated', sa.Boolean(), nullable=False, server_default=sa.text('false')),
+            sa.Column('blocked', sa.Boolean(), nullable=False, server_default=sa.text('false')),
+            sa.Column('created_at', sa.DateTime(), nullable=False),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_email_gating_records_email'), 'email_gating_records', ['email'], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_email_gating_records_email'), table_name='email_gating_records')
-    op.drop_table('email_gating_records')
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    
+    if "email_gating_records" in inspector.get_table_names():
+        op.drop_index(op.f('ix_email_gating_records_email'), table_name='email_gating_records')
+        op.drop_table('email_gating_records')
