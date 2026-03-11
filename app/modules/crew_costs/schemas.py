@@ -15,3 +15,10 @@ class CrewRate(BaseModel):
     source: str | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
+
+    # Enriched fields for data integrity
+    currency: str | None = None
+    sourceUrl: str | None = None
+    budgetBand: str | None = None
+    rateNotes: str | None = None
+    lastVerifiedAt: str | None = None

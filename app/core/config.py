@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # BLS
     BLS_API_KEY: str = ""
 
+    # FRED
+    FRED_API_KEY: str = ""
+
     # Grantify
     GRANTIFY_API_KEY: str = ""
     GRANTIFY_AFFILIATE_ID: str = ""

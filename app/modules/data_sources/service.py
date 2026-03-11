@@ -11,6 +11,7 @@ from app.modules.data_sources.test_connections import (
     test_anthropic,
     test_bls,
     test_database,
+    test_exchange_rate,
     test_not_implemented,
     test_redis,
     test_sendgrid,
@@ -130,6 +131,8 @@ class DataSourceService:
             success, message = test_sendgrid(self.settings)
         elif slug == "redis":
             success, message = test_redis(self.settings)
+        elif slug == "exchange_rate":
+            success, message = test_exchange_rate(self.settings)
         else:
             success, message = test_not_implemented(slug)
 

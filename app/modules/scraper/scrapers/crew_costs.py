@@ -8,6 +8,7 @@ from app.core.database_client import DatabaseClient
 from app.modules.scraper.differ import diff_and_queue
 from app.modules.scraper.extractor import extract
 from app.modules.scraper.fetcher import fetch_and_strip, fetch_pdf_links, fetch_pdf_text
+from app.modules.scraper.scrapers.api_sources import fetch_api_source
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,16 @@ def _fetch_bls(settings: Settings) -> list[dict]:
 
 
 def run(source_row: dict[str, Any], db: DatabaseClient, settings: Settings) -> int:
+    # REST API branch — structured data, no AI extraction needed
+    if source_row.get("use_rest_api"):
+        api_slug = source_row.get("api_slug", "")
+        records = fetch_api_source(api_slug, settings)
+        if not records:
+            return 0
+        return diff_and_queue(
+            "crew_costs", records, source_row["url"], db, confidence="high",
+        )
+
     # BLS API branch — structured data, no AI extraction needed
     if source_row.get("use_bls_api"):
         records = _fetch_bls(settings)

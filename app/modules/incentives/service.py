@@ -18,6 +18,26 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "lastAutoCheck": "last_auto_check",
     "createdAt": "created_at",
     "updatedAt": "updated_at",
+    # Enriched territory data fields
+    "rateGross": "rate_gross",
+    "rateNet": "rate_net",
+    "rateType": "rate_type",
+    "rateTierJson": "rate_tier_json",
+    "capAmount": "cap_amount",
+    "capCurrency": "cap_currency",
+    "capPerPerson": "cap_per_person",
+    "capPerPersonCurrency": "cap_per_person_currency",
+    "qualifyingSpendMin": "qualifying_spend_min",
+    "qualifyingSpendCapPct": "qualifying_spend_cap_pct",
+    "qualifyingSpendCurrency": "qualifying_spend_currency",
+    "paymentTimelineDaysMin": "payment_timeline_days_min",
+    "paymentTimelineDaysMax": "payment_timeline_days_max",
+    "paymentTimelineNotes": "payment_timeline_notes",
+    "eligibilityRulesJson": "eligibility_rules_json",
+    "expiryDate": "expiry_date",
+    "warningsJson": "warnings_json",
+    "lastVerifiedAt": "last_verified_at",
+    "sourceName": "source_name",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 

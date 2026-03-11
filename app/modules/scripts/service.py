@@ -9,6 +9,7 @@ import pdfplumber
 from anthropic import Anthropic
 
 from app.core.config import Settings
+from app.modules.reports.validator import ReportValidator
 from app.modules.scripts.schemas import (
     BudgetEstimate,
     Challenges,
@@ -131,6 +132,11 @@ SCRIPT_CHUNK_OUTPUT_SCHEMA = {
                 "waterWork": {"type": "boolean"},
                 "nightShooting": {"type": "boolean"},
                 "notes": {"type": "array", "items": {"type": "string"}},
+                "extSceneCount": {"type": "integer"},
+                "intSceneCount": {"type": "integer"},
+                "nightSceneCount": {"type": "integer"},
+                "waterSceneCount": {"type": "integer"},
+                "vfxHeavySceneCount": {"type": "integer"},
             },
             "required": [
                 "weatherDependent",
@@ -173,6 +179,19 @@ CRITICAL RULES:
 - For paid reports: limit locationRankings to 5 territories (not 15), territoryDeepDives to top 3, crewCostComparison to 4 key roles
 - Write like a senior production consultant — authoritative, data-driven, and actionable
 
+DATA INTEGRITY RULES — READ CAREFULLY:
+- For rebatePercent, rate, cap: COPY THESE EXACTLY from the INCENTIVE PROGRAMS dataset fields rate_gross, rate_net, rate_type, and cap_amount. Do NOT use your training knowledge for these figures.
+- For paymentSpeed: COPY EXACTLY from payment_timeline_notes in the incentive dataset. If payment_timeline_notes is absent or null, write "Data not available" — NEVER invent a timeline.
+- For qualifyingSpend: COPY EXACTLY from qualifying_spend_min in the incentive dataset. If absent, write "See programme terms".
+- For eligibilityRules in incentiveEstimates.requirements: COPY EXACTLY from eligibility_rules_json in the dataset. Do not paraphrase or supplement with training knowledge.
+- UK IFTC two-tier rule: if the dataset shows rate_tier_json for the UK IFTC programme, use those tiers verbatim. The IFTC offers 40% on first £15M of qualifying spend and 20% above that threshold — ONLY state this if it appears in the dataset.
+- Nigeria guard: if rate_gross = 0 or rate_net = 0 for a Nigerian programme, set incentiveStrength = 0 and do NOT invent a rebate amount.
+- Hungary guard: report the exact rate from rate_gross. Do not substitute a generic "30%" if the dataset shows a different value.
+- Malta guard: report the exact MFTI rate from the dataset. Do not use training data for this figure.
+- Source attribution: for each incentiveEstimate, set dataSource to the source_name field from the dataset. If source_name is null, use "Prodculator admin database".
+- Data freshness: if data_freshness_days > 365 for an incentive, add a warning to the relevant keyRisks: "Incentive data may be outdated — verify before committing".
+- Crew costs: use day_rate_gbp and week_rate_gbp fields (already FX-converted) for all GBP comparisons. If these are null, use day_rate_cents / 100 and note the original currency from the currency field.
+
 SCORING RULES for locationRankings:
 - Each territory gets sub-scores (0-100) for: costEfficiency, crewDepth, infrastructure, incentiveStrength, currencyAdvantage
 - The overall `score` (0-100) is a weighted average of sub-scores, based on the user's production_priority:
@@ -181,6 +200,13 @@ SCORING RULES for locationRankings:
   - "full": all five sub-scores weighted equally (20% each)
 - Use territories_considering to bias selection toward named territories; if empty or contains "Open to all", choose globally optimal set
 - Use filming_start_date and filming_duration to affect seasonal scoring where relevant
+
+SCRIPT SIGNAL → TERRITORY SCORING RULES:
+- If challenges.waterSceneCount >= 5: boost Malta's score by up to +8 points and note "Authentic Mediterranean water locations" in keyAdvantages. Also flag Ireland as a secondary option.
+- If challenges.vfxHeavySceneCount >= 10: add a keyAdvantage for United Kingdom noting UK VFX Uplift (5% additional relief on VFX spend). Only mention if the VFX Uplift programme appears in the incentive dataset.
+- If challenges.extIntRatio >= 0.7 (70%+ exterior scenes): boost infrastructure score for territories with proven outdoor infrastructure (South Africa, Malta, Spain).
+- If challenges.nightSceneCount >= 8: add a keyRisk for any territory with high seasonal light variation (Iceland, Scandinavia) and a note about shooting window.
+- If challenges.historicalPeriod = true: note period-appropriate infrastructure for UK, Hungary, Czech Republic where applicable.
 
 BUDGET RANGE MIDPOINTS (GBP) for estimating rebate amounts:
 - "<500k": £250,000
@@ -203,7 +229,7 @@ RESPONSE JSON SCHEMA:
     "recommendedTerritoryScore": 0-100,
     "recommendedTerritoryRebate": "e.g. 25% / £1,625,000",
     "recommendedTerritoryInfrastructure": "e.g. Excellent, World-class, Good",
-    "recommendedTerritoryPaymentSpeed": "e.g. Fast (60-90 days), Slow (12-18 months)",
+    "recommendedTerritoryPaymentSpeed": "COPY from payment_timeline_notes in dataset. Write 'Data not available' if absent.",
     "shootDays": "integer — estimated shooting days from script analysis or null",
     "budget": "estimated budget string e.g. £6.5M based on budget range midpoint",
     "budgetRange": "budget range from metadata e.g. 5m-15m",
@@ -222,11 +248,11 @@ RESPONSE JSON SCHEMA:
       "currencyAdvantage": 0-100,
       "reasoning": ["specific bullet 1", "specific bullet 2", "specific bullet 3"],
       "isAssessmentOnly": false,
-      "rebatePercent": "e.g. 25%",
-      "rebateAmount": "e.g. £1,625,000",
+      "rebatePercent": "COPY from rate_gross/rate_net in dataset, e.g. 25%",
+      "rebateAmount": "GBP estimate based on budget range midpoint",
       "culturalTestLikelihood": "High (85%) | Medium (65%) | Low (35%) | N/A",
       "adminComplexity": "Low | Medium | High",
-      "paymentSpeed": "e.g. Fast (60-90 days)",
+      "paymentSpeed": "COPY from payment_timeline_notes. Write 'Data not available' if absent.",
       "keyAdvantages": ["advantage 1", "advantage 2", "advantage 3", "advantage 4"],
       "keyRisks": ["risk 1", "risk 2", "risk 3"]
     }
@@ -237,7 +263,7 @@ RESPONSE JSON SCHEMA:
       {
         "territory": "territory name",
         "localSpend": "e.g. £6,500,000",
-        "rebateRate": "e.g. 25%",
+        "rebateRate": "COPY from rate_gross in dataset e.g. 25%",
         "grossRebate": "e.g. £1,625,000",
         "netBudget": "e.g. £4,875,000 (localSpend minus grossRebate)"
       }
@@ -245,7 +271,7 @@ RESPONSE JSON SCHEMA:
     "crewCostComparison": [
       {
         "role": "e.g. Director of Photography",
-        "territories": {"UK": "£75,000 - £125,000", "Malta": "£50,000 - £85,000"}
+        "territories": {"UK": "£75,000 - £125,000 /week", "Malta": "£50,000 - £85,000 /week"}
       }
     ]
   },
@@ -255,9 +281,9 @@ RESPONSE JSON SCHEMA:
       "name": "territory name",
       "country": "parent country",
       "score": 0-100,
-      "rebate": "e.g. 25% / £1,625,000",
+      "rebate": "COPY rate from dataset e.g. 25% / £1,625,000",
       "infrastructure": "quality description e.g. Excellent",
-      "paymentSpeed": "e.g. Fast (60-90 days)",
+      "paymentSpeed": "COPY from payment_timeline_notes. Write 'Data not available' if absent.",
       "keyAdvantages": ["advantage 1", "advantage 2", "advantage 3", "advantage 4"],
       "keyRisks": ["risk 1", "risk 2", "risk 3"],
       "culturalTestLikelihood": "High (85%)",
@@ -269,22 +295,22 @@ RESPONSE JSON SCHEMA:
   "incentiveEstimates": [
     {
       "territory": "string",
-      "program": "exact program name from dataset",
-      "rate": "e.g. 25%",
-      "cap": "e.g. No cap or €500,000",
-      "qualifyingSpend": "minimum spend requirement",
+      "program": "exact program_name from dataset",
+      "rate": "COPY from rate_gross/rate_net in dataset",
+      "cap": "COPY from cap_amount / cap_currency in dataset, or 'No cap'",
+      "qualifyingSpend": "COPY from qualifying_spend_min in dataset, or 'See programme terms'",
       "estimatedRebate": "GBP estimate based on budget range midpoint",
-      "requirements": ["requirement 1", "requirement 2", "requirement 3"],
+      "requirements": ["COPY from eligibility_rules_json in dataset"],
       "disclaimer": "Estimate only. Final eligibility depends on official approval.",
-      "dataSource": "Prodculator backend datasets",
-      "lastUpdated": "ISO timestamp from dataset"
+      "dataSource": "COPY from source_name in dataset, or 'Prodculator admin database'",
+      "lastUpdated": "ISO timestamp from last_updated or last_verified_at in dataset"
     }
   ],
   "crewInsights": [
     {
       "territory": "string",
       "availability": "High | Medium | Low",
-      "costVsUSD": "e.g. £3,200/day",
+      "costVsUSD": "use day_rate_gbp or week_rate_gbp from dataset (already FX-converted to GBP)",
       "qualityRating": 1-5,
       "specialties": ["up to 5 crew roles"],
       "tradeoff": "one sentence summary of key trade-off"
@@ -832,6 +858,12 @@ class ScriptAnalysisService:
             "nightShooting": False,
         }
         challenge_true_counts = {key: 0 for key in challenge_flags.keys()}
+        # Signal count accumulators
+        ext_scene_total = 0
+        int_scene_total = 0
+        night_scene_total = 0
+        water_scene_total = 0
+        vfx_heavy_scene_total = 0
         section_signal_counts = {
             "locations": 0,
             "budget": 0,
@@ -939,6 +971,26 @@ class ScriptAnalysisService:
             if isinstance(notes, list):
                 challenge_notes.extend([str(n).strip() for n in notes if str(n).strip()])
                 has_challenge_signal = has_challenge_signal or bool(notes)
+            # Accumulate scene-signal counts
+            for total_var, key in (
+                (ext_scene_total, "extSceneCount"),
+                (int_scene_total, "intSceneCount"),
+                (night_scene_total, "nightSceneCount"),
+                (water_scene_total, "waterSceneCount"),
+                (vfx_heavy_scene_total, "vfxHeavySceneCount"),
+            ):
+                val = challenges.get(key)
+                if isinstance(val, int) and val > 0:
+                    if key == "extSceneCount":
+                        ext_scene_total += val
+                    elif key == "intSceneCount":
+                        int_scene_total += val
+                    elif key == "nightSceneCount":
+                        night_scene_total += val
+                    elif key == "waterSceneCount":
+                        water_scene_total += val
+                    elif key == "vfxHeavySceneCount":
+                        vfx_heavy_scene_total += val
             if has_challenge_signal:
                 section_signal_counts["challenges"] += 1
 
@@ -1016,6 +1068,14 @@ class ScriptAnalysisService:
             "challenges": {
                 **challenge_flags,
                 "notes": self._unique_non_empty(challenge_notes)[:12],
+                "extIntRatio": (
+                    round(ext_scene_total / (ext_scene_total + int_scene_total), 3)
+                    if (ext_scene_total + int_scene_total) > 0
+                    else None
+                ),
+                "nightSceneCount": night_scene_total if night_scene_total > 0 else None,
+                "waterSceneCount": water_scene_total if water_scene_total > 0 else None,
+                "vfxHeavySceneCount": vfx_heavy_scene_total if vfx_heavy_scene_total > 0 else None,
             },
             "rawResponse": json.dumps(
                 {
@@ -1268,6 +1328,7 @@ class ScriptAnalysisService:
         try:
             data = self._parse_json_payload(raw)
             sanitized = self._sanitize_analysis(data, is_preview)
+            sanitized, _val_warnings = ReportValidator.validate(sanitized, datasets)
             logger.info(
                 "Production analysis completed: preview=%s location_rankings=%s incentives=%s elapsed_ms=%s",
                 is_preview,
@@ -1286,6 +1347,7 @@ class ScriptAnalysisService:
                 recovered = self._recover_truncated_json(raw)
                 if recovered is not None:
                     sanitized = self._sanitize_analysis(recovered, is_preview)
+                    sanitized, _val_warnings = ReportValidator.validate(sanitized, datasets)
                     logger.info(
                         "Truncated JSON recovery succeeded: preview=%s "
                         "location_rankings=%s elapsed_ms=%s",
@@ -1340,10 +1402,29 @@ class ScriptAnalysisService:
                 "program_name",
                 "program_type",
                 "rate",
+                "rate_gross",
+                "rate_net",
+                "rate_type",
+                "rate_tier_json",
                 "cap",
+                "cap_amount",
+                "cap_currency",
                 "qualifying_spend",
+                "qualifying_spend_min",
+                "qualifying_spend_cap_pct",
+                "qualifying_spend_currency",
+                "payment_timeline_days_min",
+                "payment_timeline_days_max",
+                "payment_timeline_notes",
+                "eligibility_rules_json",
+                "currency",
+                "warnings_json",
+                "expiry_date",
                 "stackable",
+                "source_name",
+                "last_verified_at",
                 "last_updated",
+                "data_freshness_days",
             ],
             "crew_costs": [
                 "territory",
@@ -1351,8 +1432,18 @@ class ScriptAnalysisService:
                 "category",
                 "day_rate",
                 "week_rate",
+                "day_rate_cents",
+                "week_rate_cents",
+                "day_rate_gbp",
+                "week_rate_gbp",
                 "currency",
+                "fx_rate",
+                "fx_date",
+                "budget_band",
+                "rate_notes",
                 "source",
+                "source_url",
+                "last_verified_at",
                 "last_updated",
             ],
             "comparables": [

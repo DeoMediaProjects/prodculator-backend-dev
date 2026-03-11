@@ -47,6 +47,11 @@ class Challenges(BaseModel):
     waterWork: bool
     nightShooting: bool
     notes: list[str]
+    # Signal counts (aggregated from chunk analysis)
+    extIntRatio: float | None = None        # 0.0–1.0  (exterior scenes / total scenes)
+    nightSceneCount: int | None = None      # total night-shoot scenes
+    waterSceneCount: int | None = None      # scenes requiring water work
+    vfxHeavySceneCount: int | None = None   # scenes requiring significant VFX
 
 
 class ScriptAnalysisResult(BaseModel):
