@@ -17,6 +17,11 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "lastUpdated": "last_updated",
     "createdAt": "created_at",
     "updatedAt": "updated_at",
+    # Enriched fields for data integrity
+    "sourceUrl": "source_url",
+    "budgetBand": "budget_band",
+    "rateNotes": "rate_notes",
+    "lastVerifiedAt": "last_verified_at",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 

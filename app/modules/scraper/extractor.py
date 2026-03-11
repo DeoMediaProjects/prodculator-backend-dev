@@ -13,7 +13,18 @@ Return a JSON object with key "programs", a list of objects, each with:
   territory (string — use the full country name, e.g. "United Kingdom" not "UK"),
   program (string — the official program name),
   rate (string — standardise as a percentage like "25%" or a range like "25-30%"; distinguish tax credit, rebate, and offset types by prefixing, e.g. "Tax Credit: 25%"),
+  rate_gross (number or null — gross percentage as a number, e.g. 25.0),
+  rate_net (number or null — net percentage after local corporate tax, e.g. 18.75),
+  rate_type (string or null — one of "tax_credit", "cash_rebate", "tax_relief", "none"),
+  currency (string or null — ISO currency code for the incentive calculation, e.g. "GBP", "EUR"),
   cap (string or null — maximum qualifying spend or rebate cap if mentioned),
+  cap_amount (number or null — numeric cap in local currency),
+  cap_currency (string or null — ISO currency code for the cap),
+  payment_timeline (string or null — human-readable payment timeline, e.g. "6-8 weeks from claim submission"),
+  payment_timeline_days_min (integer or null — minimum days to payment),
+  payment_timeline_days_max (integer or null — maximum days to payment),
+  eligibility_rules (list of strings — key eligibility criteria, e.g. ["Must pass BFI cultural test", "Minimum 10% UK spend"]),
+  expiry_date (string ISO date YYYY-MM-DD or null — if the programme has a sunset/expiry date),
   status ("Active"|"Inactive"),
   source_url (string or null)
 Only include programs clearly described in the text. If none found, return {"programs": []}.
@@ -27,7 +38,9 @@ Return a JSON object with key "crew_costs", a list of objects, each with:
   category (string — "Above-the-Line" or "Below-the-Line"),
   day_rate (number or null — daily rate in the local currency; convert hourly to daily by multiplying by 10),
   week_rate (number or null — weekly rate in the local currency; convert daily to weekly by multiplying by 5 if not stated),
-  union (string or null — union/guild name if applicable, e.g. "BECTU", "IATSE Local 891", "MEAA")
+  currency (string or null — ISO currency code for the rates, e.g. "GBP", "ZAR", "USD"; infer from context if not stated),
+  union (string or null — union/guild name if applicable, e.g. "BECTU", "IATSE Local 891", "MEAA"),
+  budget_band (string or null — budget tier this rate applies to, e.g. "Motion Picture £5-30M", "Low Budget" — if stated in the rate card)
 Only include figures explicitly stated or directly calculable. Return {"crew_costs": []} if none found.
 Respond ONLY with valid JSON."""
 
@@ -81,7 +94,18 @@ def _output_schema_for(resource_type: str) -> dict:
                 "territory": {"type": "string"},
                 "program": {"type": "string"},
                 "rate": {"type": "string"},
+                "rate_gross": {"type": ["number", "null"]},
+                "rate_net": {"type": ["number", "null"]},
+                "rate_type": {"type": ["string", "null"]},
+                "currency": {"type": ["string", "null"]},
                 "cap": {"type": ["string", "null"]},
+                "cap_amount": {"type": ["number", "null"]},
+                "cap_currency": {"type": ["string", "null"]},
+                "payment_timeline": {"type": ["string", "null"]},
+                "payment_timeline_days_min": {"type": ["integer", "null"]},
+                "payment_timeline_days_max": {"type": ["integer", "null"]},
+                "eligibility_rules": {"type": "array", "items": {"type": "string"}},
+                "expiry_date": {"type": ["string", "null"]},
                 "status": {"type": "string"},
                 "source_url": {"type": ["string", "null"]},
             },
@@ -96,7 +120,9 @@ def _output_schema_for(resource_type: str) -> dict:
                 "category": {"type": "string"},
                 "day_rate": {"type": ["number", "null"]},
                 "week_rate": {"type": ["number", "null"]},
+                "currency": {"type": ["string", "null"]},
                 "union": {"type": ["string", "null"]},
+                "budget_band": {"type": ["string", "null"]},
             },
             "required": ["territory", "role", "category"],
         },

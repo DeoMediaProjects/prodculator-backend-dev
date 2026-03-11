@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy.exc import NoSuchTableError
 
 from app.core.database_client import DatabaseClient
+from app.modules.fx.service import FXService
 from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
 
@@ -348,13 +349,29 @@ class ReportService:
         else:
             incentives = all_incentives
 
-        # Crew costs
+        # Annotate incentives with data freshness (days since last_verified_at)
+        today = date.today()
+        for inc in incentives:
+            lv = inc.get("last_verified_at")
+            if lv:
+                try:
+                    verified_date = date.fromisoformat(str(lv)[:10])
+                    inc["data_freshness_days"] = (today - verified_date).days
+                except ValueError:
+                    inc["data_freshness_days"] = None
+            else:
+                inc["data_freshness_days"] = None
+
+        # Crew costs — load with FX enrichment
         all_crew = self._safe_query("crew_costs", lambda q: q.select("*"))
         if territories_hint:
             filtered = [c for c in all_crew if c.get("territory") in territories_hint]
             crew_costs = filtered if filtered else all_crew
         else:
             crew_costs = all_crew
+
+        # FX-enrich each crew cost row: add day_rate_gbp, week_rate_gbp, fx_rate, fx_date
+        crew_costs = self._fx_enrich_crew_costs(crew_costs)
 
         # Comparable productions (small dataset, load all)
         comparables = self._safe_query("comparable_productions", lambda q: q.select("*"))
@@ -385,6 +402,54 @@ class ReportService:
             "grants": grants,
             "festivals": festivals,
         }
+
+    def _fx_enrich_crew_costs(self, crew_costs: list[dict]) -> list[dict]:
+        """Add day_rate_gbp, week_rate_gbp, fx_rate, fx_date to each crew cost row."""
+        if not crew_costs:
+            return crew_costs
+        # Collect unique non-GBP currencies
+        currencies = {
+            c["currency"]
+            for c in crew_costs
+            if c.get("currency") and c["currency"].upper() != "GBP"
+        }
+        if not currencies:
+            # All GBP — annotate and return
+            for c in crew_costs:
+                c["day_rate_gbp"] = c.get("day_rate_cents")
+                c["week_rate_gbp"] = c.get("week_rate_cents")
+                c["fx_rate"] = 1.0
+                c["fx_date"] = today_str = date.today().isoformat()
+            return crew_costs
+
+        try:
+            fx = FXService(self.supabase.settings)
+            rates = fx.get_rates_batch("GBP", list(currencies))
+        except Exception:
+            logger.warning("FX enrichment failed — crew costs will lack GBP conversions", exc_info=True)
+            rates = {}
+
+        for c in crew_costs:
+            currency = (c.get("currency") or "").upper()
+            if currency == "GBP":
+                c["day_rate_gbp"] = c.get("day_rate_cents")
+                c["week_rate_gbp"] = c.get("week_rate_cents")
+                c["fx_rate"] = 1.0
+                c["fx_date"] = date.today().isoformat()
+            elif currency in rates:
+                rate, fx_date = rates[currency]
+                day_cents = c.get("day_rate_cents")
+                week_cents = c.get("week_rate_cents")
+                c["day_rate_gbp"] = round(day_cents / rate) if day_cents else None
+                c["week_rate_gbp"] = round(week_cents / rate) if week_cents else None
+                c["fx_rate"] = round(rate, 4)
+                c["fx_date"] = fx_date.isoformat() if hasattr(fx_date, "isoformat") else str(fx_date)
+            else:
+                c["day_rate_gbp"] = None
+                c["week_rate_gbp"] = None
+                c["fx_rate"] = None
+                c["fx_date"] = None
+        return crew_costs
 
     @staticmethod
     def _parse_iso_date(value: object) -> date | None:

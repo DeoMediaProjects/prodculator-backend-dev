@@ -14,6 +14,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.core.config import Settings
+from app.core.database_client import DatabaseClient
+from pydantic_settings import SettingsConfigDict
 from app.modules.scraper.fetcher import fetch_and_strip, fetch_pdf_text, fetch_pdf_links
 from app.modules.scraper.extractor import extract
 from app.modules.scraper.differ import diff_and_queue, normalize_territory
@@ -120,9 +123,10 @@ class FakeQuery:
         ]
 
 
-class FakeSupabase:
+class FakeSupabase(DatabaseClient):
     def __init__(self, store=None):
-        self.store = store or {
+        # Bypass DatabaseClient.__init__ — we don't need a real DB session
+        self.store: dict[str, list[dict]] = store or {
             "incentive_programs": [
                 {
                     "id": "i1",
@@ -155,24 +159,35 @@ class FakeSupabase:
             "scrape_sources": [],
             "scrape_runs": [],
         }
+        self.session = MagicMock()
+        self.settings = FakeSettings()
+        self.metadata = MagicMock()
+        self.storage = MagicMock()
+        self.auth = MagicMock()
 
-    def table(self, name: str) -> FakeQuery:
+    def table(self, name: str) -> FakeQuery:  # type: ignore[override]
         return FakeQuery(name, self.store)
 
-    def close(self):
+    def close(self) -> None:
         pass
 
 
-class FakeSettings:
-    ANTHROPIC_API_KEY = "test-key"
-    ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
-    ANTHROPIC_MAX_TOKENS = 8000
-    ANTHROPIC_ANALYSIS_TIMEOUT = 120
-    SCRAPER_ENABLED = True
-    SCRAPER_REQUEST_TIMEOUT = 10
-    SCRAPER_MAX_TEXT_CHARS = 5000
-    BLS_API_KEY = ""
-    DB_URL = "sqlite:///:memory:"
+class FakeSettings(Settings):
+    ANTHROPIC_API_KEY: str = "test-key"
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
+    ANTHROPIC_MAX_TOKENS: int = 8000
+    ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
+    SCRAPER_ENABLED: bool = True
+    SCRAPER_REQUEST_TIMEOUT: int = 10
+    SCRAPER_MAX_TEXT_CHARS: int = 5000
+    BLS_API_KEY: str = ""
+    DB_URL: str = "sqlite:///:memory:"
+
+    model_config = SettingsConfigDict(
+        env_file=None,
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 # ── Fetcher tests ────────────────────────────────────────────────────────────
@@ -208,6 +223,7 @@ class TestFetcher:
 
             result = fetch_and_strip("https://example.com", FakeSettings())
 
+        assert result is not None
         assert "var x=1" not in result
         assert ".a{}" not in result
         assert "Visible" in result
@@ -226,6 +242,7 @@ class TestFetcher:
 
             result = fetch_and_strip("https://example.com", settings)
 
+        assert result is not None
         assert "[Content truncated]" in result
 
     @patch("app.modules.scraper.fetcher._check_robots_txt", return_value=True)
@@ -858,7 +875,9 @@ class TestSources:
     def test_pdf_sources_are_flagged(self):
         pdf_sources = [s for s in DEFAULT_SOURCES if s.get("is_pdf")]
         assert len(pdf_sources) >= 3  # BECTU, IATSE, MEAA
-        assert all(s["resource_type"] == "crew_costs" for s in pdf_sources)
+        # Most PDFs are crew_costs; incentive PDFs (e.g. Screen Malta) are allowed
+        crew_pdf = [s for s in pdf_sources if s["resource_type"] == "crew_costs"]
+        assert len(crew_pdf) >= 3  # BECTU rate cards + IATSE + MEAA at minimum
 
     def test_no_filmfreeway_source(self):
         urls = {s["url"] for s in DEFAULT_SOURCES}

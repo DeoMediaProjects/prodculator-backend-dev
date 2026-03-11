@@ -132,5 +132,25 @@ def test_redis(settings: Settings) -> tuple[bool, str]:
         return False, str(e)
 
 
+def test_exchange_rate(settings: Settings) -> tuple[bool, str]:
+    key = settings.EXCHANGE_RATE_API_KEY
+    if not key:
+        return False, "EXCHANGE_RATE_API_KEY not configured"
+    try:
+        resp = httpx.get(
+            f"https://v6.exchangerate-api.com/v6/{key}/pair/GBP/USD",
+            timeout=_TIMEOUT,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("result") == "success":
+                rate = data.get("conversion_rate", "?")
+                return True, f"Connection successful — GBP/USD = {rate}"
+            return False, data.get("error-type", "Unknown error")
+        return False, f"HTTP {resp.status_code}"
+    except Exception as e:
+        return False, str(e)
+
+
 def test_not_implemented(slug: str) -> tuple[bool, str]:
     return False, f"Integration '{slug}' is not yet implemented"

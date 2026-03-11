@@ -89,6 +89,10 @@ class LocationRanking(BaseModel):
     paymentSpeed: str | None = None
     keyAdvantages: list[str] | None = None
     keyRisks: list[str] | None = None
+    # Enriched data-integrity fields (populated by ReportValidator)
+    paymentTimelineSource: str | None = None  # source_name from incentive dataset
+    incentiveSource: str | None = None        # source_name from incentive dataset
+    dataFreshnessDays: int | None = None      # days since last_verified_at
 
 
 class IncentiveEstimate(BaseModel):
@@ -100,8 +104,17 @@ class IncentiveEstimate(BaseModel):
     estimatedRebate: str
     requirements: list[str]
     disclaimer: str = "Estimate only. Final eligibility depends on official approval."
-    dataSource: str = "Prodculator backend datasets"
+    dataSource: str = "Prodculator admin database"
     lastUpdated: str
+    # Enriched data-integrity fields
+    paymentSpeed: str | None = None           # payment_timeline_notes from dataset
+    rateType: str | None = None               # e.g. "cash_rebate", "tax_credit"
+    rateTiers: str | None = None              # human-readable tier summary
+    eligibilityRules: list[str] | None = None # eligibility_rules_json from dataset
+    expiryDate: str | None = None             # expiry_date from dataset
+    dataFreshness: str | None = None          # e.g. "Verified 45 days ago"
+    warnings: list[str] | None = None         # warnings_json + staleness warnings
+    stalenessWarning: str | None = None       # set by validator if data_freshness_days > 365
 
 
 class CrewInsight(BaseModel):
@@ -111,6 +124,11 @@ class CrewInsight(BaseModel):
     qualityRating: int  # 1-5
     specialties: list[str]  # up to 5 roles
     tradeoff: str
+    # Enriched FX fields (populated by ReportValidator)
+    currency: str | None = None    # source currency of underlying data
+    fxRate: float | None = None    # rate used for GBP conversion
+    fxDate: str | None = None      # date of FX rate used
+    dataSource: str | None = None  # source attribution for crew rates
 
 
 class ComparableProductionEntry(BaseModel):
