@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: str = ""
     SENDGRID_FROM_EMAIL: str = "noreply@prodculator.com"
 
+    # Firebase / Google Auth
+    FIREBASE_PROJECT_ID: str = ""
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""  # path to JSON file or inline JSON string
+
     # Google Maps
     GOOGLE_MAPS_API_KEY: str = ""
 
