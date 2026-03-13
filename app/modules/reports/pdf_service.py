@@ -53,6 +53,8 @@ class PDFService:
             from weasyprint import HTML  # type: ignore
 
             pdf = HTML(string=html).write_pdf()
+            if pdf is None:
+                raise RuntimeError("WeasyPrint returned None")
             logger.info(
                 "PDF generation successful: bytes=%s elapsed_ms=%s",
                 len(pdf),
@@ -75,10 +77,17 @@ class PDFService:
         report_id: str,
         pdf_bytes: bytes,
     ) -> str | None:
+        """Upload the PDF to storage and return the S3 object key (or local path).
+
+        The key is stored in the ``pdf_url`` DB column.
+        A presigned URL is generated fresh at serve time by ``_resolve_pdf_url``
+        in the reports router — so the DB value never goes stale.
+        """
         started = perf_counter()
         storage_path = f"{user_id}/{report_id}.pdf"
         logger.info("Uploading report PDF: report_id=%s storage_path=%s", report_id, storage_path)
-        supabase.storage.from_("reports").upload(
+        bucket = supabase.storage.from_("reports")
+        bucket.upload(
             storage_path,
             pdf_bytes,
             {
@@ -87,30 +96,15 @@ class PDFService:
             },
         )
 
-        public_url = supabase.storage.from_("reports").get_public_url(storage_path)
-        if isinstance(public_url, str):
-            logger.info(
-                "Uploaded report PDF: report_id=%s public_url_set=%s elapsed_ms=%s",
-                report_id,
-                bool(public_url),
-                int((perf_counter() - started) * 1000),
-            )
-            return public_url
-        if isinstance(public_url, dict):
-            resolved = public_url.get("publicUrl") or public_url.get("public_url")
-            logger.info(
-                "Uploaded report PDF: report_id=%s public_url_set=%s elapsed_ms=%s",
-                report_id,
-                bool(resolved),
-                int((perf_counter() - started) * 1000),
-            )
-            return resolved
-        logger.warning(
-            "Report PDF uploaded but public URL missing: report_id=%s elapsed_ms=%s",
+        # Return the canonical key/path — not a presigned URL
+        s3_key = bucket.get_s3_key(storage_path)
+        logger.info(
+            "Uploaded report PDF: report_id=%s s3_key=%s elapsed_ms=%s",
             report_id,
+            s3_key,
             int((perf_counter() - started) * 1000),
         )
-        return None
+        return s3_key
 
     def fallback_report_text(self, report_data: dict[str, Any]) -> str:
         return json.dumps(report_data, indent=2)

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.core.database_client import DatabaseClient
-from app.core.storage import StorageClient
+from app.core.storage import StorageClient, S3StorageBucket
 
 TABLE = "reports"
 
@@ -89,11 +88,13 @@ class PdfReportsService:
         self.db.table(TABLE).update({"downloaded": True}).eq("id", report_id).execute()
 
     def get_file_size(self, user_id: str, report_id: str, settings: Settings) -> str | None:
-        path = Path(settings.STORAGE_ROOT) / "reports" / user_id / f"{report_id}.pdf"
-        try:
-            return _format_size(path.stat().st_size)
-        except FileNotFoundError:
+        """Return a human-readable file size by querying S3 (or local disk in dev)."""
+        storage = StorageClient(settings)
+        bucket = storage.from_("reports")
+        size = bucket.get_file_size(f"{user_id}/{report_id}.pdf")
+        if size is None:
             return None
+        return _format_size(size)
 
     def download_pdf(self, user_id: str, report_id: str, settings: Settings) -> bytes:
         storage = StorageClient(settings)

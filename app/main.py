@@ -34,7 +34,6 @@ from app.modules.grants.router import router as grants_router
 from app.modules.festivals.router import router as festivals_router
 from app.modules.reports.router import router as reports_router
 from app.modules.scripts.router import router as scripts_router
-from app.modules.storage.router import router as storage_router
 from app.modules.subscriptions.router import router as subscriptions_router
 from app.modules.watchlist.router import router as watchlist_router
 
@@ -120,7 +119,6 @@ app.openapi = custom_openapi
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(scripts_router)
-app.include_router(storage_router)
 app.include_router(reports_router)
 app.include_router(payments_router)
 app.include_router(payments_webhook_router)

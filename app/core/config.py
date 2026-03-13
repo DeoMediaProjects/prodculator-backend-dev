@@ -25,8 +25,16 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # Local object storage
+    # Local object storage (dev fallback when AWS creds are not set)
     STORAGE_ROOT: str = "./storage"
+
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_REGION: str = "eu-west-1"
+    AWS_S3_BUCKET_NAME: str = ""
+    AWS_S3_REPORTS_PREFIX: str = "reports"
+    AWS_S3_PRESIGNED_URL_EXPIRY: int = 900  # 15 minutes — generated fresh on every request
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

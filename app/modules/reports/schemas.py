@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 
 # --- Input Schemas ---
@@ -9,6 +9,8 @@ from pydantic import BaseModel, model_validator
 class CreateReportRequest(BaseModel):
     script_title: str
     report_type: Literal["preview", "paid", "b2b"] = "paid"
+    # script_file_path is no longer used — the script file is uploaded as multipart
+    # and text is extracted in-memory, never stored.
     script_file_path: str | None = None
 
     # Project metadata (required)
@@ -60,12 +62,6 @@ class CreateReportRequest(BaseModel):
     supporting_cast: int | None = None
     target_audience: str | None = None
     language: str | None = None
-
-    @model_validator(mode="after")
-    def validate_constraints(self):
-        if self.report_type in ("paid", "b2b") and not self.script_file_path:
-            raise ValueError("script_file_path is required for paid and b2b reports")
-        return self
 
 
 # --- Output Schemas (ScriptAnalysis interface) ---

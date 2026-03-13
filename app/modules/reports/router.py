@@ -1,17 +1,18 @@
+import json
 import logging
 from time import perf_counter
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.db import get_db_context
 from app.core.dependencies import get_supabase, get_current_user, get_optional_user
+from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
 from app.modules.email.service import EmailService
 from app.modules.reports.pdf_service import PDFService
 from app.modules.reports.schemas import (
-    CreateReportRequest,
     PreviewReportResponse,
     ReportResponse,
     ReportStatusResponse,
@@ -32,25 +33,71 @@ def get_email_gating_service(supabase: DatabaseClient = Depends(get_supabase)) -
     return EmailGatingService(supabase)
 
 
+def _resolve_pdf_url(s3_key: str | None, settings: Settings) -> str | None:
+    """
+    Given an S3 key stored in the DB, generate a fresh presigned URL.
+    Falls back to the raw value if S3 is not configured (local dev).
+    Returns None if no key is stored.
+    """
+    if not s3_key:
+        return None
+    storage_client = StorageClient(settings)
+    if not storage_client._use_s3:
+        # Local dev: the stored value is already a usable URL/path — return as-is
+        return s3_key
+    try:
+        bucket = storage_client.from_("reports")
+        if not isinstance(bucket, S3StorageBucket):
+            return s3_key
+        url = bucket._s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.AWS_S3_BUCKET_NAME, "Key": s3_key},
+            ExpiresIn=settings.AWS_S3_PRESIGNED_URL_EXPIRY,
+        )
+        return url
+    except Exception:
+        logger.warning("Failed to generate presigned URL for key=%s", s3_key)
+        return None
+
+
 @router.post("")
 async def create_report(
-    body: CreateReportRequest,
     background_tasks: BackgroundTasks,
+    # Script file — required for paid/b2b, omitted for preview
+    script_file: UploadFile | None = File(default=None),
+    # All report metadata sent as a JSON string in a form field
+    body: str = Form(...),
     user: AuthUser | None = Depends(get_optional_user),
     service: ReportService = Depends(get_report_service),
     email_gating_service: EmailGatingService = Depends(get_email_gating_service),
     settings: Settings = Depends(get_settings),
 ):
-    """Create a new report. Previews return synchronously; paid/b2b are async."""
+    """Create a new report. Previews return synchronously; paid/b2b are async.
+
+    The request must be submitted as **multipart/form-data** with:
+    - ``body``: JSON string of report metadata (see CreateReportRequest schema).
+    - ``script_file``: the script file (PDF/txt/fountain/fdx) — required for paid/b2b.
+
+    Scripts are **never persisted** to storage; they are read into memory, analysed,
+    then discarded.
+    """
+    # Parse the JSON body from the form field
+    try:
+        from app.modules.reports.schemas import CreateReportRequest
+        body_data = CreateReportRequest.model_validate(json.loads(body))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+
     logger.info(
         "Create report request received: report_type=%s title=%s has_user=%s",
-        body.report_type,
-        body.script_title,
+        body_data.report_type,
+        body_data.script_title,
         bool(user),
     )
-    if body.report_type == "preview":
+
+    if body_data.report_type == "preview":
         # Email gating: check if blocked, then record usage
-        gate_email = body.email or (user.email if user else None)
+        gate_email = body_data.email or (user.email if user else None)
         if gate_email:
             if email_gating_service.is_blocked(gate_email):
                 raise HTTPException(
@@ -62,7 +109,7 @@ async def create_report(
         started = perf_counter()
         try:
             script_service = ScriptAnalysisService(settings)
-            metadata = body.model_dump(exclude={"script_file_path"})
+            metadata = body_data.model_dump(exclude={"script_file_path"})
             analysis = service.generate_preview_report(
                 request_metadata=metadata,
                 script_service=script_service,
@@ -70,7 +117,7 @@ async def create_report(
             elapsed_ms = int((perf_counter() - started) * 1000)
             logger.info(
                 "Preview report generated: title=%s elapsed_ms=%s location_rankings=%s",
-                body.script_title,
+                body_data.script_title,
                 elapsed_ms,
                 len(analysis.get("locationRankings", [])),
             )
@@ -86,24 +133,47 @@ async def create_report(
         except HTTPException:
             raise
         except Exception:
-            logger.exception("Preview report generation failed: title=%s", body.script_title)
+            logger.exception("Preview report generation failed: title=%s", body_data.script_title)
             raise HTTPException(status_code=500, detail="Failed to generate preview report")
 
-    # Paid/B2B: requires auth
+    # --- Paid / B2B flow ---
+
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required for paid reports")
 
-    if not body.script_file_path:
-        raise HTTPException(status_code=400, detail="script_file_path is required for paid reports")
+    if not script_file:
+        raise HTTPException(status_code=400, detail="script_file is required for paid/b2b reports")
+
+    # Validate and read the file into memory — it will NOT be stored anywhere
+    script_service = ScriptAnalysisService(settings)
+    filename = script_file.filename or "script.txt"
+    file_size = script_file.size or 0
+    valid, error = script_service.validate_file(filename, file_size)
+    if not valid:
+        raise HTTPException(status_code=400, detail=error)
+
+    file_bytes = await script_file.read()
+
+    # Extract text immediately so the background task receives plain text only
+    try:
+        script_text = script_service.extract_text(filename, file_bytes)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to extract text from script file")
+
+    if not script_text.strip():
+        raise HTTPException(status_code=400, detail="Script file appears to be empty")
+
+    # Explicitly delete the bytes so they are not referenced beyond this scope
+    del file_bytes
 
     try:
         started = perf_counter()
-        metadata = body.model_dump()
+        metadata = body_data.model_dump(exclude={"script_file_path"})
         report_id = service.create_report(
             user_id=user.id,
-            script_title=body.script_title,
-            report_type=body.report_type,
-            script_file_path=body.script_file_path,
+            script_title=body_data.script_title,
+            report_type=body_data.report_type,
+            script_file_path=None,  # never stored
             request_metadata=metadata,
         )
         background_tasks.add_task(
@@ -111,6 +181,8 @@ async def create_report(
             report_id,
             user.id,
             user.email,
+            script_text,
+            filename,
             settings,
         )
         elapsed_ms = int((perf_counter() - started) * 1000)
@@ -118,7 +190,7 @@ async def create_report(
             "Queued paid report processing: report_id=%s user_id=%s report_type=%s elapsed_ms=%s",
             report_id,
             user.id,
-            body.report_type,
+            body_data.report_type,
             elapsed_ms,
         )
         return ReportStatusResponse(
@@ -130,8 +202,8 @@ async def create_report(
         logger.exception(
             "Failed to create report: user_id=%s report_type=%s title=%s",
             user.id,
-            body.report_type,
-            body.script_title,
+            body_data.report_type,
+            body_data.script_title,
         )
         raise HTTPException(status_code=500, detail="Failed to create report")
 
@@ -140,10 +212,11 @@ async def create_report(
 async def list_reports(
     user: AuthUser = Depends(get_current_user),
     service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
 ):
     """List all reports for the current user (excludes previews)."""
     reports = service.get_user_reports(user.id)
-    return [_format_report_response(r) for r in reports]
+    return [_format_report_response(r, settings) for r in reports]
 
 
 @router.get("/{report_id}", response_model=ReportResponse)
@@ -151,6 +224,7 @@ async def get_report(
     report_id: str,
     user: AuthUser = Depends(get_current_user),
     service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
 ):
     """Get a single report by ID."""
     report = service.get_report(report_id)
@@ -158,19 +232,20 @@ async def get_report(
         raise HTTPException(status_code=404, detail="Report not found")
     if report["user_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return _format_report_response(report)
+    return _format_report_response(report, settings)
 
 
 @router.get("/shared/{share_token}", response_model=ReportResponse)
 async def get_shared_report(
     share_token: str,
     service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
 ):
     """Get a publicly shared report (no auth required)."""
     report = service.get_report_by_share_token(share_token)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    return _format_report_response(report)
+    return _format_report_response(report, settings)
 
 
 @router.get("/{report_id}/status", response_model=ReportStatusResponse)
@@ -213,16 +288,20 @@ async def download_pdf(
     user: AuthUser = Depends(get_current_user),
     service: ReportService = Depends(get_report_service),
     supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
 ):
-    """Download the PDF file for a report as raw bytes."""
+    """Stream the PDF for a report directly from S3 as raw bytes."""
     report = service.get_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     if report["user_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    if not report.get("pdf_url"):
+
+    s3_key = report.get("pdf_url")
+    if not s3_key:
         raise HTTPException(status_code=404, detail="PDF not found")
 
+    # pdf_url stores the S3 key — download the bytes directly from S3
     storage_path = f"{report['user_id']}/{report_id}.pdf"
     try:
         pdf_bytes = supabase.storage.from_("reports").download(storage_path)
@@ -243,15 +322,19 @@ async def download_pdf(
     )
 
 
-def _format_report_response(report: dict) -> dict:
-    """Format a DB report row into the API response shape."""
+def _format_report_response(report: dict, settings: Settings) -> dict:
+    """Format a DB report row into the API response shape.
+
+    ``pdf_url`` in the DB holds the raw S3 object key.  A fresh presigned URL is
+    generated here so the frontend always receives a non-expired link.
+    """
     return {
         "id": report["id"],
         "title": report.get("script_title", ""),
         "reportType": report.get("report_type", "paid"),
         "createdAt": str(report.get("created_at", "")),
         "analysis": report.get("report_data"),
-        "pdfUrl": report.get("pdf_url"),
+        "pdfUrl": _resolve_pdf_url(report.get("pdf_url"), settings),
     }
 
 
@@ -295,9 +378,15 @@ def process_report_task(
     report_id: str,
     user_id: str,
     user_email: str,
+    script_text: str,
+    script_filename: str,
     settings: Settings,
 ) -> None:
-    """Background task: load script -> analyze -> generate report -> persist."""
+    """Background task: analyse pre-extracted script text -> generate report -> upload PDF to S3.
+
+    The script file is **never written to disk or S3**. The caller extracts text in the
+    request handler and passes only the plain-text string here.
+    """
     with get_db_context() as db:
         started = perf_counter()
         current_step = "init"
@@ -321,13 +410,11 @@ def process_report_task(
 
             script_title = report_row["script_title"]
             report_type = report_row["report_type"]
-            script_file_path = report_row.get("script_file_path")
             request_metadata = report_row.get("request_metadata") or {}
             logger.info(
-                "Loaded report row: report_id=%s report_type=%s script_path=%s metadata_keys=%s",
+                "Loaded report row: report_id=%s report_type=%s metadata_keys=%s",
                 report_id,
                 report_type,
-                script_file_path,
                 sorted(request_metadata.keys()),
             )
 
@@ -342,35 +429,18 @@ def process_report_task(
             except Exception:
                 logger.warning("Unable to send processing_started email for report_id=%s", report_id)
 
-            # Step 1: Download and parse script
-            current_step = "download_script"
-            if not script_file_path:
-                raise ValueError("Report is missing script_file_path")
-            step_started = perf_counter()
-            logger.info("Downloading script file: report_id=%s path=%s", report_id, script_file_path)
-            file_bytes = supabase.storage.from_("scripts").download(script_file_path)
-            logger.info(
-                "Downloaded script file: report_id=%s bytes=%s elapsed_ms=%s",
-                report_id,
-                len(file_bytes),
-                int((perf_counter() - step_started) * 1000),
-            )
-            filename = script_file_path.rsplit("/", 1)[-1]
-
+            # Step 1: Script text was already extracted in the request handler — log and validate
             current_step = "extract_script_text"
-            step_started = perf_counter()
-            script_text = script_service.extract_text(filename, file_bytes)
             logger.info(
-                "Extracted script text: report_id=%s filename=%s chars=%s elapsed_ms=%s",
+                "Script text received in background task: report_id=%s filename=%s chars=%s",
                 report_id,
-                filename,
+                script_filename,
                 len(script_text),
-                int((perf_counter() - step_started) * 1000),
             )
             if not script_text.strip():
                 raise ValueError("Script file appears to be empty")
 
-            # Step 2: Script analysis (Call 1 — existing method)
+            # Step 2: Script analysis
             current_step = "script_analysis"
             step_started = perf_counter()
             analysis, script_analysis_meta = script_service.analyze_with_meta(script_text, script_title)
@@ -393,7 +463,7 @@ def process_report_task(
                     compact_meta.get("mode"),
                 )
 
-            # Step 3: Full production analysis (Call 2 — new method)
+            # Step 3: Full production analysis
             current_step = "production_analysis"
             step_started = perf_counter()
             is_b2b = report_type == "b2b"
@@ -414,7 +484,7 @@ def process_report_task(
 
             # Step 4: PDF generation
             current_step = "pdf_render"
-            pdf_url = ""
+            pdf_s3_key = ""
             step_started = perf_counter()
             html = pdf_service.render_report_html(
                 report_data,
@@ -441,22 +511,24 @@ def process_report_task(
             if pdf_bytes:
                 current_step = "pdf_upload"
                 step_started = perf_counter()
-                uploaded_pdf_url = pdf_service.upload_pdf(
+                # upload_pdf now returns the raw S3 key (not a presigned URL)
+                uploaded_key = pdf_service.upload_pdf(
                     supabase,
                     user_id=user_id,
                     report_id=report_id,
                     pdf_bytes=pdf_bytes,
                 )
-                pdf_url = uploaded_pdf_url or ""
+                pdf_s3_key = uploaded_key or ""
                 logger.info(
-                    "PDF upload complete: report_id=%s pdf_url_set=%s elapsed_ms=%s",
+                    "PDF upload complete: report_id=%s s3_key_set=%s elapsed_ms=%s",
                     report_id,
-                    bool(pdf_url),
+                    bool(pdf_s3_key),
                     int((perf_counter() - step_started) * 1000),
                 )
 
+            # pdf_url column stores the S3 key — presigned URL generated at serve time
             current_step = "persist_report"
-            report_service.complete_report(report_id, report_data, pdf_url=pdf_url)
+            report_service.complete_report(report_id, report_data, pdf_url=pdf_s3_key)
             logger.info(
                 "Report marked completed: report_id=%s total_elapsed_ms=%s",
                 report_id,
@@ -468,7 +540,7 @@ def process_report_task(
                 email_service.send(
                     user_email,
                     "report_ready",
-                    {"script_title": script_title, "report_id": report_id, "pdf_url": pdf_url},
+                    {"script_title": script_title, "report_id": report_id},
                 )
                 logger.debug("Sent report_ready email: report_id=%s to=%s", report_id, user_email)
             except Exception:
@@ -502,3 +574,4 @@ def process_report_task(
                 logger.debug("Sent failure email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send failure email for report_id=%s", report_id)
+
