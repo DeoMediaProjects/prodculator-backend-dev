@@ -1,94 +1,101 @@
 """Default scrape sources, seeded into the scrape_sources table on first run.
 
-Covers 18 territories: US, CA, GB, IE, FR, DE, ES, IT, CZ, HU, AU, NZ, ZA, NG, MT, IS + multi-country.
+Covers 18 territories: US (GA, NY, CA), CA, GB, IE, FR, DE, ES, IT, CZ, HU,
+AU, NZ, ZA, NG, MT, IS + multi-territory (EU).
 
-source_authority values:
-  "government_incentive"  — official film commission / government
-  "union_agreement"       — ratified or published union/guild CBA or rate card (confidence 75–100)
-  "legal_minimum"         — binding statutory / convention collective (confidence 75–90)
-  "film_commission_guide" — film commission production guide (confidence 60–74)
-  "industry_survey"       — industry body survey data (confidence 45–59)
-  "service_company"       — crew agency / service company published rates (confidence 30–44)
-  "national_statistics"   — national statistics bureau — indicative, NOT film-specific (confidence 15–30)
-  "film_specific"         — film-industry-specific benchmark (non-union)
+source_authority values
+-----------------------
+  "government"           — direct government department (gov.uk, revenue.ie, …)
+  "government_agency"    — government-funded screen agency / film commission
+                           (BFI, CNC, Screen Australia, FFA, …)
+  "national_statistics"  — national statistics bureau (BLS, ONS, INSEE, …)
+
+NOTE: Union/CBA sources (SAG-AFTRA, ACTRA, Equity, MEAA, BECTU, etc.) have
+been removed from crew_costs. Their rate schedules are copyrighted and using
+them commercially without a data licence creates IP exposure. Crew/cast rate
+data now uses ONLY government statistical agency sources published under
+open licences.
+
+NOTE: All third-party aggregators (Vitrina, Olffi, EP, etc.) have been removed
+from incentives, grants, and festivals. Every source below is either a direct
+government site or an officially mandated film agency / commission.
 """
 
 DEFAULT_SOURCES: list[dict] = [
-    # ── Incentives ────────────────────────────────────────────────────────────
-    # Aggregators (multi-country)
+
+    # ═════════════════════════════════════════════════════════════
+    # INCENTIVES — Government / Official Film Commission Only
+    # ═════════════════════════════════════════════════════════════
+
+    # ── United States (state-level — no federal film incentive exists) ────
     {
         "resource_type": "incentives",
-        "url": "https://vitrina.ai/blog/film-production-tax-incentives-by-country",
-        "label": "Vitrina.ai Global Incentives Tracker",
-        "territory": None,
+        "url": "https://www.georgia.org/industries/film-entertainment/georgia-film-tv-production/production-incentives",
+        "label": "Georgia Film Tax Credit (20–30 %)",
+        "territory": "United States",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
     {
         "resource_type": "incentives",
-        "url": "https://www.olffi.com/",
-        "label": "Olffi Film Financing Database",
-        "territory": None,
+        "url": "https://esd.ny.gov/new-york-state-film-tax-credit-program-production",
+        "label": "New York State Film Tax Credit (Production)",
+        "territory": "United States",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    # United Kingdom — incentives
+    # NOTE: California film.ca.gov returns 403 to automated requests.
+    # Keeping the source for manual sync / future scraper bypass.
+    {
+        "resource_type": "incentives",
+        "url": "https://film.ca.gov/tax-credit/",
+        "label": "California Film & TV Tax Credit Program",
+        "territory": "United States",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── United Kingdom ────────────────────────────────────────────────────
+    {
+        "resource_type": "incentives",
+        "url": "https://www.gov.uk/guidance/claim-audio-visual-expenditure-credits-for-corporation-tax",
+        "label": "UK Audio-Visual Expenditure Credit (AVEC)",
+        "territory": "United Kingdom",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government",
+    },
     {
         "resource_type": "incentives",
         "url": "https://www.bfi.org.uk/apply-british-certification-tax-relief",
-        "label": "BFI UK Film Tax Relief",
+        "label": "BFI Cultural Test & Certification",
         "territory": "United Kingdom",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Canada ────────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
-        "url": "https://www.gov.uk/government/publications/uk-independent-film-tax-credit",
-        "label": "GOV.UK IFTC Policy Note",
-        "territory": "United Kingdom",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "incentives",
-        "url": "https://ep.com/blog/uk-independent-film-tax-credit-approved-key-updates-for-producers/",
-        "label": "Entertainment Partners IFTC Guide",
-        "territory": "United Kingdom",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "incentives",
-        "url": "https://britishfilmcommission.org.uk/plan-your-production/accessing-uk-tax-reliefs/",
-        "label": "British Film Commission Tax Reliefs",
-        "territory": "United Kingdom",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    # Canada
-    {
-        "resource_type": "incentives",
-        "url": "https://www.canada.ca/en/canadian-heritage/services/funding/cavco-tax-credits/canadian-film-video-production.html",
-        "label": "CAVCO Canadian Film Tax Credits",
+        "url": "https://www.canada.ca/en/canadian-heritage/services/funding/cavco-tax-credits.html",
+        "label": "Canadian Film or Video Production Tax Credit (CAVCO)",
         "territory": "Canada",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
-    # Australia
+
+    # ── Australia ─────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
         "url": "https://www.screenaustralia.gov.au/funding-and-support/producer-offset",
@@ -97,40 +104,20 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
     {
         "resource_type": "incentives",
-        "url": "https://www.ausfilm.com.au/incentives/",
-        "label": "Ausfilm Incentives",
+        "url": "https://www.screenaustralia.gov.au/funding-and-support/producer-offset/location-and-pdv-offsets",
+        "label": "Screen Australia Location & PDV Offsets (International)",
         "territory": "Australia",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    # Malta
-    {
-        "resource_type": "incentives",
-        "url": "https://www.maltafilmcommission.com/incentives/",
-        "label": "Malta Film Commission Incentives",
-        "territory": "Malta",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "incentives",
-        "url": "https://screenmalta.com",
-        "label": "Screen Malta Incentives Guidelines 2024",
-        "territory": "Malta",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    # Ireland
+
+    # ── Ireland ───────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
         "url": "https://www.revenue.ie/en/personal-tax-credits-reliefs-and-exemptions/investment/film-relief/index.aspx",
@@ -139,105 +126,143 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
-    # France
+
+    # ── France ────────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
         "url": "https://www.cnc.fr/web/en/tax-rebate/the-tax-rebate-for-international-productions-trip_190742",
-        "label": "CNC TRIP (France)",
+        "label": "France TRIP Tax Rebate (CNC)",
         "territory": "France",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    {
-        "resource_type": "incentives",
-        "url": "https://www.filmfrance.net/en/tax-rebate/tax-rebate-for-international-productions/",
-        "label": "Film France Tax Rebate",
-        "territory": "France",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    # Germany
+
+    # ── Germany ───────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
         "url": "https://dfff-ffa.de/en.html",
-        "label": "FFA DFFF (Germany)",
+        "label": "German Federal Film Fund (DFFF / FFA)",
         "territory": "Germany",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    # Spain
+
+    # ── Spain ─────────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
-        "url": "https://spainfilmcommission.com/en/blog/spain-film-tax-rebate/",
-        "label": "Spain Film Commission Tax Rebate",
+        "url": "https://www.cultura.gob.es/cultura/areas/cine/ayudas.html",
+        "label": "Spain ICAA Film Tax Incentives",
         "territory": "Spain",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
-    # Czech Republic
+
+    # ── Italy ─────────────────────────────────────────────────────────────
+    {
+        "resource_type": "incentives",
+        "url": "https://cinema.cultura.gov.it/tax-credit/",
+        "label": "Italy MiC Film Tax Credit",
+        "territory": "Italy",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government",
+    },
+
+    # ── Czech Republic ────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
         "url": "https://www.filmcommission.cz/en/production-incentives/",
-        "label": "Czech Film Commission Incentives",
+        "label": "Czech Film Commission Production Incentive",
         "territory": "Czech Republic",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    # Hungary
+
+    # ── Hungary ───────────────────────────────────────────────────────────
+    # NOTE: nfi.hu/en/filming-in-hungary/hungarian-film-incentive is blocked
+    # by robots.txt and returns only Hungarian content. Already disabled via
+    # _DEPRECATED_SOURCE_URLS.
     {
         "resource_type": "incentives",
         "url": "https://nfi.hu/en/filming-in-hungary/hungarian-film-incentive",
-        "label": "NFI Hungary Film Incentive",
+        "label": "NFI Hungarian Film Incentive (30 %)",
         "territory": "Hungary",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Malta ─────────────────────────────────────────────────────────────
     {
         "resource_type": "incentives",
-        "url": "https://hungariantaxcredit.com",
-        "label": "Hungarian Tax Credit Guide",
-        "territory": "Hungary",
+        "url": "https://www.maltafilmcommission.com/incentives/",
+        "label": "Malta Film Commission Cash Rebate",
+        "territory": "Malta",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Iceland ───────────────────────────────────────────────────────────
+    # NOTE: icelandicfilmcentre.is restructured — old /support/production-incentive/
+    # path is dead. Disabled via _DEPRECATED_SOURCE_URLS until a working URL
+    # is found.
     {
         "resource_type": "incentives",
-        "url": "https://focal.ch/prodvalue",
-        "label": "Focal PV Hungary Working Conditions",
-        "territory": "Hungary",
+        "url": "https://www.icelandicfilmcentre.is/support/production-incentive/",
+        "label": "Iceland Film Reimbursement Scheme (35 %)",
+        "territory": "Iceland",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    # South Africa — NEW territory
+
+    # ── New Zealand ───────────────────────────────────────────────────────
+    # NOTE: nzfilm.co.nz restructured — old /incentives/ paths are dead.
+    # Disabled via _DEPRECATED_SOURCE_URLS until a working URL is found.
     {
         "resource_type": "incentives",
-        "url": "https://www.thedtic.gov.za",
-        "label": "DTIC Foreign Film Incentive (South Africa)",
+        "url": "https://www.nzfilm.co.nz/incentives/new-zealand-screen-production-rebate",
+        "label": "New Zealand Screen Production Rebate (NZSPG)",
+        "territory": "New Zealand",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── South Africa ──────────────────────────────────────────────────────
+    # NOTE: DTIC restructured their site — old specific incentive paths
+    # return 404. Using the film incentive landing page.
+    {
+        "resource_type": "incentives",
+        "url": "https://www.thedtic.gov.za/financial-and-non-financial-support/incentives/film-incentive/",
+        "label": "South Africa DTIC Film & TV Production Incentive",
         "territory": "South Africa",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
-    # Nigeria
+
+    # ── Nigeria ───────────────────────────────────────────────────────────
+    # NOTE: Nigeria does not currently operate a formal production rebate.
+    # The NFC site is thin on structured incentive data but kept for
+    # completeness — the scraper extracts whatever is available.
     {
         "resource_type": "incentives",
         "url": "https://www.nfc.gov.ng",
@@ -246,73 +271,15 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    # New Zealand
-    {
-        "resource_type": "incentives",
-        "url": "https://www.nzfilm.co.nz/incentives/new-zealand-screen-production-rebate",
-        "label": "NZFC Screen Production Rebate",
-        "territory": "New Zealand",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "incentives",
-        "url": "https://screenauckland.com/incentives-taxes/",
-        "label": "Screen Auckland — Fringes, Incentives & Tax Guide",
-        "territory": "New Zealand",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    # Iceland
-    {
-        "resource_type": "incentives",
-        "url": "https://www.icelandicfilmcentre.is/support/production-incentive/",
-        "label": "Icelandic Film Centre — 35% Reimbursement Scheme",
-        "territory": "Iceland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "incentives",
-        "url": "https://filminiceland.com/incentives/",
-        "label": "Film in Iceland — Production Incentive Guide",
-        "territory": "Iceland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    # Italy
-    {
-        "resource_type": "incentives",
-        "url": "https://www.anica.it/en/tax-credit/",
-        "label": "ANICA Italy Tax Credit",
-        "territory": "Italy",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "incentives",
-        "url": "https://www.italyfilmcommission.it/en/incentives/",
-        "label": "Italy Film Commission Incentives",
-        "territory": "Italy",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
 
-    # ── Grants ────────────────────────────────────────────────────────────────
+
+    # ═════════════════════════════════════════════════════════════
+    # GRANTS — Government Cultural Funds & Official Screen Agencies
+    # ═════════════════════════════════════════════════════════════
+
+    # ── Multi-territory / Supranational ───────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://culture.ec.europa.eu/creative-europe/creative-europe-media-strand",
@@ -321,78 +288,78 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
     {
         "resource_type": "grants",
-        "url": "https://www.coe.int/en/web/eurimages/coproduction",
-        "label": "Eurimages Co-production Fund",
+        "url": "https://www.coe.int/en/web/eurimages",
+        "label": "Eurimages — Council of Europe Co-production Fund",
         "territory": None,
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
-    {
-        "resource_type": "grants",
-        "url": "https://www.bfi.org.uk/get-funding-support",
-        "label": "BFI Funding",
-        "territory": "United Kingdom",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
+
+    # ── United States ─────────────────────────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://www.arts.gov/grants",
-        "label": "NEA Film Grants",
+        "label": "US National Endowment for the Arts Grants",
         "territory": "United States",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government",
     },
+
+    # ── United Kingdom ────────────────────────────────────────────────────
+    {
+        "resource_type": "grants",
+        "url": "https://www.bfi.org.uk/get-funding-support",
+        "label": "BFI Film Funding",
+        "territory": "United Kingdom",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── Canada ────────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://telefilm.ca/en/we-finance-and-support/our-programs",
-        "label": "Telefilm Canada Programs",
+        "label": "Telefilm Canada Funding Programs",
         "territory": "Canada",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
     {
         "resource_type": "grants",
         "url": "https://cmf-fmc.ca/our-programs/",
-        "label": "Canada Media Fund",
+        "label": "Canada Media Fund (CMF)",
         "territory": "Canada",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Australia ─────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://www.screenaustralia.gov.au/funding-and-support",
-        "label": "Screen Australia Funding",
+        "label": "Screen Australia Funding & Support",
         "territory": "Australia",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    {
-        "resource_type": "grants",
-        "url": "https://artscouncilmalta.gov.mt/en/film-distribution-grants-programme/",
-        "label": "Arts Council Malta Film Grants",
-        "territory": "Malta",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
+
+    # ── Ireland ───────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://www.screenireland.ie/funding",
@@ -401,18 +368,70 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── France ────────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
-        "url": "https://www.ffa.de/funding.html",
-        "label": "FFA Funding Programs (Germany)",
+        "url": "https://www.cnc.fr/professionnels/aides-et-financements",
+        "label": "CNC Aides & Financements (France)",
+        "territory": "France",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── Germany ───────────────────────────────────────────────────────────
+    {
+        "resource_type": "grants",
+        "url": "https://www.ffa.de/foerderungen.html",
+        "label": "FFA Förderungen (Germany)",
         "territory": "Germany",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Spain ─────────────────────────────────────────────────────────────
+    {
+        "resource_type": "grants",
+        "url": "https://www.cultura.gob.es/cultura/areas/cine/ayudas.html",
+        "label": "Spain ICAA Film Grants (Ayudas)",
+        "territory": "Spain",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government",
+    },
+
+    # ── Italy ─────────────────────────────────────────────────────────────
+    {
+        "resource_type": "grants",
+        "url": "https://cinema.cultura.gov.it/contributi/",
+        "label": "Italy MiC Film Contributions & Grants",
+        "territory": "Italy",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government",
+    },
+
+    # ── Czech Republic ────────────────────────────────────────────────────
+    {
+        "resource_type": "grants",
+        "url": "https://fondkinematografie.cz/en/grants/",
+        "label": "Czech Film Fund (SFK) Grants",
+        "territory": "Czech Republic",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── Hungary ───────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://nfi.hu/en/national-film-institute/funding",
@@ -421,18 +440,34 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Malta ─────────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
-        "url": "https://www.nzfc.govt.nz/funding-and-support/",
-        "label": "NZFC Funding and Support",
+        "url": "https://www.maltafilmcommission.com/funding/",
+        "label": "Malta Film Commission Funding",
+        "territory": "Malta",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── New Zealand ───────────────────────────────────────────────────────
+    {
+        "resource_type": "grants",
+        "url": "https://www.nzfilm.co.nz/funding-and-support",
+        "label": "New Zealand Film Commission Funding",
         "territory": "New Zealand",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Iceland ───────────────────────────────────────────────────────────
     {
         "resource_type": "grants",
         "url": "https://www.icelandicfilmcentre.is/support/",
@@ -441,30 +476,63 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── South Africa ──────────────────────────────────────────────────────
     {
         "resource_type": "grants",
-        "url": "https://www.nfvf.co.za/grants/",
-        "label": "NFVF South Africa Grants",
+        "url": "https://www.nfvf.co.za/funding/",
+        "label": "NFVF South Africa Funding",
         "territory": "South Africa",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
 
-    # ── Festivals ─────────────────────────────────────────────────────────────
+
+    # ═════════════════════════════════════════════════════════════
+    # FESTIVALS — Official Festival Websites Only
+    # ═════════════════════════════════════════════════════════════
+    # Each festival's own website is the authoritative source for
+    # submission deadlines, dates, and programme information.
+
+    # ── Multi-territory / Accreditation ───────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://fiapf.org/festivals/accredited-festivals/competitive-feature-film-festivals/",
-        "label": "FIAPF Accredited Festivals",
+        "label": "FIAPF Accredited A-List Festivals",
         "territory": None,
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── United States ─────────────────────────────────────────────────────
+    {
+        "resource_type": "festivals",
+        "url": "https://www.sundance.org/festivals/sundance-film-festival/",
+        "label": "Sundance Film Festival",
+        "territory": "United States",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+    {
+        "resource_type": "festivals",
+        "url": "https://tribecafilm.com/festival",
+        "label": "Tribeca Film Festival",
+        "territory": "United States",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── United Kingdom ────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.bfi.org.uk/bfi-london-film-festival",
@@ -473,7 +541,7 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
     {
         "resource_type": "festivals",
@@ -483,48 +551,22 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Canada ────────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
-        "url": "https://www.sundance.org/festivals/sundance-film-festival/about/",
-        "label": "Sundance Film Festival",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "festivals",
-        "url": "https://tribecafilm.com/",
-        "label": "Tribeca Film Festival",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "festivals",
-        "url": "https://www.tiff.net/about",
-        "label": "Toronto International Film Festival",
+        "url": "https://www.tiff.net/",
+        "label": "Toronto International Film Festival (TIFF)",
         "territory": "Canada",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    {
-        "resource_type": "festivals",
-        "url": "https://viff.org/",
-        "label": "Vancouver International Film Festival",
-        "territory": "Canada",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
+
+    # ── France ────────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.festival-cannes.com/en/",
@@ -533,18 +575,46 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Germany ───────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.berlinale.de/en/home.html",
-        "label": "Berlin International Film Festival",
+        "label": "Berlin International Film Festival (Berlinale)",
         "territory": "Germany",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Italy ─────────────────────────────────────────────────────────────
+    {
+        "resource_type": "festivals",
+        "url": "https://www.labiennale.org/en/cinema",
+        "label": "Venice International Film Festival",
+        "territory": "Italy",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── Spain ─────────────────────────────────────────────────────────────
+    {
+        "resource_type": "festivals",
+        "url": "https://www.sansebastianfestival.com/",
+        "label": "San Sebastián International Film Festival",
+        "territory": "Spain",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": False,
+        "source_authority": "government_agency",
+    },
+
+    # ── Australia ─────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.sff.org.au/",
@@ -553,18 +623,20 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
     {
         "resource_type": "festivals",
         "url": "https://miff.com.au/",
-        "label": "Melbourne International Film Festival",
+        "label": "Melbourne International Film Festival (MIFF)",
         "territory": "Australia",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Ireland ───────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://galwayfilmfleadh.com/",
@@ -573,7 +645,7 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
     {
         "resource_type": "festivals",
@@ -583,28 +655,10 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
-    {
-        "resource_type": "festivals",
-        "url": "https://www.sansebastianfestival.com/",
-        "label": "San Sebastian International Film Festival",
-        "territory": "Spain",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "festivals",
-        "url": "https://sitgesfilmfestival.com/",
-        "label": "Sitges Film Festival",
-        "territory": "Spain",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
+
+    # ── Czech Republic ────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.kviff.com/en/",
@@ -613,8 +667,10 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Hungary ───────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://biff.hu/",
@@ -623,8 +679,10 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Malta ─────────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://vallettafilmfestival.com/",
@@ -633,8 +691,10 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── New Zealand ───────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.nziff.co.nz/",
@@ -643,47 +703,47 @@ DEFAULT_SOURCES: list[dict] = [
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
+
+    # ── Iceland ───────────────────────────────────────────────────────────
     {
         "resource_type": "festivals",
         "url": "https://www.riff.is/",
-        "label": "Reykjavik International Film Festival",
+        "label": "Reykjavík International Film Festival (RIFF)",
         "territory": "Iceland",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "festivals",
-        "url": "https://www.labiennale.org/en/cinema",
-        "label": "Venice International Film Festival",
-        "territory": "Italy",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
-    },
-    {
-        "resource_type": "festivals",
-        "url": "https://www.romacinemafest.it/en/",
-        "label": "Rome Film Fest",
-        "territory": "Italy",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "government_incentive",
+        "source_authority": "government_agency",
     },
 
-    # ── Crew Costs ────────────────────────────────────────────────────────────
-    # Multi-country REST API sources (structured, no AI extraction)
-    # NOTE: Eurostat LCI, OECD ULC, FRED ECIWAG removed — they return index numbers
-    # with day_rate=None and no role breakdown; useless for crew cost benchmarking.
+
+    # ═════════════════════════════════════════════════════════════
+    # CREW & CAST COSTS — Government Statistical Agencies Only
+    # ═════════════════════════════════════════════════════════════
+    # Union collective bargaining agreements (SAG-AFTRA, ACTRA,
+    # Equity, MEAA, BECTU, etc.) are copyrighted. Using their rate
+    # schedules commercially without a data licence creates IP
+    # exposure. All sources below are open-licence government
+    # statistical agencies.
+    #
+    # USA — BLS OEWS (public domain, 17 USC §105)
+    {
+        "resource_type": "crew_costs",
+        "url": "https://api.bls.gov/publicAPI/v2/timeseries/data/",
+        "label": "BLS Occupational Employment & Wage Statistics (OEWS) — NAICS 5121",
+        "territory": "United States",
+        "is_pdf": False,
+        "use_bls_api": True,
+        "use_rest_api": False,
+        "source_authority": "national_statistics",
+    },
+    # Canada — Statistics Canada (Open Government Licence Canada)
     {
         "resource_type": "crew_costs",
         "url": "https://www150.statcan.gc.ca/n1/en/type/data",
-        "label": "Statistics Canada Wages — National statistics, indicative, not film-specific",
+        "label": "Statistics Canada Labour Force Survey — NOC occupational wages",
         "territory": "Canada",
         "is_pdf": False,
         "use_bls_api": False,
@@ -691,136 +751,11 @@ DEFAULT_SOURCES: list[dict] = [
         "api_slug": "statcan",
         "source_authority": "national_statistics",
     },
-    # USA — BLS API (structured, film-specific benchmark)
-    {
-        "resource_type": "crew_costs",
-        "url": "https://api.bls.gov/publicAPI/v2/timeseries/data/",
-        "label": "BLS Occupational Wage Survey (API)",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": True,
-        "use_rest_api": False,
-        "source_authority": "film_specific",
-    },
-    # USA — union guild agreements
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.sagaftra.org/production-center",
-        "label": "SAG-AFTRA Theatrical Agreements 2024–26 (US) — Cast minimums by budget tier",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.iatse.net/agreements",
-        "label": "IATSE 2024–27 Basic & Area Standards Agreement (US) — Crew minimums",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.dga.org/Contracts/",
-        "label": "DGA Basic Agreement 2023–2026 (US) — Director/AD minimums",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.wga.org/contracts/contracts/mba",
-        "label": "WGA Minimum Basic Agreement (US) — Writer minimums",
-        "territory": "United States",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    # USA/UK — multi-country benchmark
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.freelancevideocollective.com/filmmaker-resources/production-crew-rates/",
-        "label": "Freelance Video Collective Crew Rates — Film industry benchmark",
-        "territory": None,
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_specific",
-    },
-    # UK — union agreements + BECTU PDF rate cards
-    # NOTE: CMA investigation active — UK Art Dept rates are 'recommended guidance only'
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.pact.co.uk/resource-hub",
-        "label": "PACT/Equity Cinema Film Agreement (UK) — Actor minimums (CMA note applies)",
-        "territory": "United Kingdom",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.directors.uk.com/resources",
-        "label": "Directors UK Fee Tables 2024–25 (UK)",
-        "territory": "United Kingdom",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://bectu.org.uk/get-involved-in-the-union/ratecards/",
-        "label": "BECTU Rate Cards (UK) — Film industry rate card",
-        "territory": "United Kingdom",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://bectuartdepartment.co.uk/Rate-Card",
-        "label": "BECTU Art Department Rate Card 2025-26 — Film industry rate card",
-        "territory": "United Kingdom",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://camerabranch.org.uk/rates/",
-        "label": "BECTU Camera Branch Rate Card 2025 — Film industry rate card",
-        "territory": "United Kingdom",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://bectu.org.uk/get-involved-in-the-union/ratecards/",
-        "label": "BECTU/PACT Construction Rate Card 2025-26 (UK) — Ratified CBA",
-        "territory": "United Kingdom",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    # UK — ONS API
+    # UK — ONS ASHE (Open Government Licence v3)
     {
         "resource_type": "crew_costs",
         "url": "https://api.ons.gov.uk/v1/datasets/ashe-table-7/editions/time-series/versions/2/observations",
-        "label": "ONS Annual Survey of Hours and Earnings — National statistics, indicative, not film-specific",
+        "label": "ONS Annual Survey of Hours & Earnings (ASHE) — UK occupational wages",
         "territory": "United Kingdom",
         "is_pdf": False,
         "use_bls_api": False,
@@ -828,453 +763,177 @@ DEFAULT_SOURCES: list[dict] = [
         "api_slug": "ons",
         "source_authority": "national_statistics",
     },
-    # Canada — union guild agreements
+    # Ireland — CSO (public use, attribution required)
     {
         "resource_type": "crew_costs",
-        "url": "https://www.actra.ca/agreements/ipa/",
-        "label": "ACTRA IPA 2025–2027 (Canada) — Performer minimums",
-        "territory": "Canada",
+        "url": "https://data.cso.ie/",
+        "label": "CSO Ireland — Earnings and Labour Costs Survey",
+        "territory": "Ireland",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://ubcpactra.ca/agreements/",
-        "label": "UBCP/ACTRA BCMPA (Canada BC) — BC performer minimums",
-        "territory": "Canada",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.bccfu.com/agreements/",
-        "label": "BCCFU 2024–2025 Crew Rates (Canada BC) — Film crew minimums",
-        "territory": "Canada",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.dgc.ca/industry/agreements/",
-        "label": "DGC Standard Agreement — Directors/ADs/PMs (Canada)",
-        "territory": "Canada",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    # Canada — PDF rate cards
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.iatse.com/producers/current_production_rates.aspx",
-        "label": "IATSE Production Rates (Canada/US) — Film industry rate card",
-        "territory": "Canada",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    # Australia — union agreements + statutory floor
-    # NOTE: 11.5% mandatory superannuation applies on all eligible earnings
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.meaa.org/download/mppa-rates-and-allowances-jan-1-2025/",
-        "label": "MEAA MPPA Crew Rates Jan 2025 (Australia) — Ratified CBA",
-        "territory": "Australia",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.meaa.org/downloads/equity-minimums-and-summaries/",
-        "label": "MEAA AFFCA Cast Minimums July 2024 (Australia) — Actor minimums",
-        "territory": "Australia",
-        "is_pdf": True,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.screenproducers.org.au/awards-agreements/",
-        "label": "Screen Producers Australia / BRECA Award Rates — Statutory minimum floor",
-        "territory": "Australia",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "legal_minimum",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.fairwork.gov.au/pay-and-wages",
-        "label": "Fair Work Commission Pay Rates (Australia) — National statistics, indicative, not film-specific",
-        "territory": "Australia",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
+        "use_rest_api": True,
+        "api_slug": "cso_ie",
         "source_authority": "national_statistics",
     },
-    # South Africa — NEW territory
+    # France — INSEE (Licence Ouverte v2.0)
     {
         "resource_type": "crew_costs",
-        "url": "https://callacrew.co.za/crew-rates",
-        "label": "CallaCrew SA Crew Rates — Film industry rate card",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_specific",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://callacrew.co.za/cpa-working-guidelines",
-        "label": "CPA Working Guidelines (South Africa) — Film industry rate card",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_specific",
-    },
-    # Ireland — crew costs
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.equity.ie/agreements/",
-        "label": "Equity Ireland Minimum Agreements — Actor minimums",
-        "territory": "Ireland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.siptu.ie/sector/film-tv/",
-        "label": "SIPTU Film & TV Section Agreements (Ireland) — Crew rates",
-        "territory": "Ireland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/ireland",
-        "label": "FOCAL Working Conditions Guide — Ireland",
-        "territory": "Ireland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.screenireland.ie/filming-in-ireland",
-        "label": "Screen Ireland Production Guidelines — Crew benchmarks",
-        "territory": "Ireland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # Malta — crew costs
-    {
-        "resource_type": "crew_costs",
-        "url": "https://pcpmalta.com/rebate.html",
-        "label": "PCP Malta Production Notes — Film industry benchmark",
-        "territory": "Malta",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "service_company",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/malta",
-        "label": "FOCAL Working Conditions Guide — Malta",
-        "territory": "Malta",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.pegasusmalta.com/production-services/",
-        "label": "Pegasus Productions Malta — Local rate guidance",
-        "territory": "Malta",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "service_company",
-    },
-    # France — legal minimums + FOCAL
-    # CRITICAL: French employer social charges 42–45% — must be extracted alongside rates
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.legifrance.gouv.fr/conv_coll/id/KALICONT000005635188/",
-        "label": "Convention collective nationale — Production cinematographique (France)",
+        "url": "https://www.insee.fr/fr/statistiques",
+        "label": "INSEE Enquête Emploi — French occupational wages",
         "territory": "France",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "legal_minimum",
+        "use_rest_api": True,
+        "api_slug": "insee",
+        "source_authority": "national_statistics",
     },
+    # Germany — Destatis (Data Licence Germany v2.0)
     {
         "resource_type": "crew_costs",
-        "url": "https://www.audiens.org/",
-        "label": "Audiens — French intermittent social charges guide (42–45% employer)",
-        "territory": "France",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "legal_minimum",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/france",
-        "label": "FOCAL Working Conditions Guide — France",
-        "territory": "France",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # Germany — legal minimums + FOCAL
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.verdi.de/themen/branchen/+id+film-tv",
-        "label": "ver.di Film/TV Tarifvertraege (Germany) — Binding crew wage agreements",
+        "url": "https://www.destatis.de/EN/Themes/Labour/Earnings/_node.html",
+        "label": "Destatis — German earnings by occupation",
         "territory": "Germany",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "legal_minimum",
+        "use_rest_api": True,
+        "api_slug": "destatis",
+        "source_authority": "national_statistics",
     },
+    # Spain — INE (open access, attribution required)
     {
         "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/germany",
-        "label": "FOCAL Working Conditions Guide — Germany",
-        "territory": "Germany",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # Spain — legal minimums + FOCAL
-    # CRITICAL: Spanish employer social security ~30% — among highest in EU
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-3544",
-        "label": "Convenio colectivo audiovisual (Spain) — Binding minimum rates",
+        "url": "https://www.ine.es/jaxiT3/Tabla.htm?t=28188",
+        "label": "INE Encuesta Anual de Estructura Salarial — Spanish occupational wages",
         "territory": "Spain",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "legal_minimum",
+        "use_rest_api": True,
+        "api_slug": "ine_es",
+        "source_authority": "national_statistics",
     },
+    # Italy — ISTAT (public access)
     {
         "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/spain",
-        "label": "FOCAL Working Conditions Guide — Spain",
-        "territory": "Spain",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # Italy — legal minimums + FOCAL
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.anica.it/it/contratti-collettivi/",
-        "label": "ANICA CCNL Cinema/TV (Italy) — Binding collective agreement rates",
+        "url": "https://www.istat.it/en/archivio/wages",
+        "label": "ISTAT — Italian occupational wage statistics",
         "territory": "Italy",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "legal_minimum",
+        "use_rest_api": True,
+        "api_slug": "istat",
+        "source_authority": "national_statistics",
     },
+    # Australia — ABS Labour Force (CC BY 4.0)
     {
         "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/italy",
-        "label": "FOCAL Working Conditions Guide — Italy",
-        "territory": "Italy",
+        "url": "https://www.abs.gov.au/statistics/labour/earnings-and-working-conditions",
+        "label": "ABS Employee Earnings and Hours — Australian occupational wages",
+        "territory": "Australia",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
+        "use_rest_api": True,
+        "api_slug": "abs",
+        "source_authority": "national_statistics",
     },
-    # Czech Republic — film commission + FOCAL + FITES
+    # New Zealand — Stats NZ LEED (CC BY 4.0)
     {
         "resource_type": "crew_costs",
-        "url": "https://www.filmcommission.cz/en/working-in-the-czech-republic/",
-        "label": "Czech Film Commission Production & Crew Guide",
+        "url": "https://www.stats.govt.nz/topics/income",
+        "label": "Stats NZ Linked Employer-Employee Data — NZ occupational wages",
+        "territory": "New Zealand",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": True,
+        "api_slug": "stats_nz",
+        "source_authority": "national_statistics",
+    },
+    # South Africa — Stats SA QLFS (open access)
+    {
+        "resource_type": "crew_costs",
+        "url": "https://www.statssa.gov.za/?page_id=1854&PPN=P0211",
+        "label": "Stats SA Quarterly Labour Force Survey — SA occupational wages",
+        "territory": "South Africa",
+        "is_pdf": False,
+        "use_bls_api": False,
+        "use_rest_api": True,
+        "api_slug": "stats_sa",
+        "source_authority": "national_statistics",
+    },
+    # Czech Republic — CZSO (free public use)
+    {
+        "resource_type": "crew_costs",
+        "url": "https://www.czso.cz/csu/czso/labour-and-earnings-statistics",
+        "label": "CZSO — Czech occupational earnings statistics",
         "territory": "Czech Republic",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
+        "use_rest_api": True,
+        "api_slug": "czso",
+        "source_authority": "national_statistics",
     },
+    # Hungary — KSH (free public use)
     {
         "resource_type": "crew_costs",
-        "url": "https://www.fites.cz/",
-        "label": "FITES Czech Film & TV Federation — Crew union",
-        "territory": "Czech Republic",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/czech-republic",
-        "label": "FOCAL Working Conditions Guide — Czech Republic",
-        "territory": "Czech Republic",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # Hungary — FOCAL + HSA
-    {
-        "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/hungary",
-        "label": "FOCAL Working Conditions Guide — Hungary",
+        "url": "https://www.ksh.hu/stadat_eng",
+        "label": "KSH — Hungarian earnings by economic activity",
         "territory": "Hungary",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
+        "use_rest_api": True,
+        "api_slug": "ksh",
+        "source_authority": "national_statistics",
     },
+    # Iceland — Hagstofa (open access)
     {
         "resource_type": "crew_costs",
-        "url": "https://hsa.hu/en/rates/",
-        "label": "HSA Hungarian Screen Association Rate Benchmarks",
-        "territory": "Hungary",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # South Africa — CPA guidelines + service company + industry bodies
-    {
-        "resource_type": "crew_costs",
-        "url": "https://cpasa.tv/crew-working-guidelines/",
-        "label": "CPA Crew Working Guidelines (South Africa) — Industry standard",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://callacrew.co.za/crew-rates",
-        "label": "CallaCrew SA Crew Rates — Published market rate card",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "service_company",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://callacrew.co.za/cpa-working-guidelines",
-        "label": "CPA Working Guidelines (South Africa) — Film industry reference",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.sasfed.org/industry-data/",
-        "label": "SASFED SA Screen Federation Industry Data",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "industry_survey",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.nfvf.co.za/research/",
-        "label": "NFVF Annual Industry Report (South Africa)",
-        "territory": "South Africa",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "industry_survey",
-    },
-    # New Zealand — union/guild codes
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.siganz.co.nz/blue-book/",
-        "label": "SIGANZ Blue Book 2023 (New Zealand) — Crew code of practice",
-        "territory": "New Zealand",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://www.equity.org.nz/agreements/",
-        "label": "SPADA/Equity NZ Individual Performance Agreement — Actor minimums",
-        "territory": "New Zealand",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://screenauckland.com/production-costs/",
-        "label": "Screen Auckland Crew Cost Guide — NZ market benchmarks",
-        "territory": "New Zealand",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    # Iceland — actor agreement + film commission + FOCAL
-    {
-        "resource_type": "crew_costs",
-        "url": "https://kvikmyndaframleidsla.is/",
-        "label": "SIK/FIL Actor Agreement (Iceland) — Category I & II rates in ISK",
+        "url": "https://www.statice.is/statistics/society/wages-and-income/",
+        "label": "Hagstofa Íslands — Icelandic wage statistics",
         "territory": "Iceland",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "union_agreement",
+        "use_rest_api": True,
+        "api_slug": "hagstofa",
+        "source_authority": "national_statistics",
     },
+    # Malta — NSO Malta (open access)
     {
         "resource_type": "crew_costs",
-        "url": "https://filminiceland.com/production-services/",
-        "label": "Film in Iceland Production Services Guide — Crew cost benchmarks",
-        "territory": "Iceland",
+        "url": "https://nso.gov.mt/labour-market/",
+        "label": "NSO Malta — Maltese earnings and labour market statistics",
+        "territory": "Malta",
         "is_pdf": False,
         "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
-    },
-    {
-        "resource_type": "crew_costs",
-        "url": "https://focal.ch/prodvalue/working_conditions/iceland.html",
-        "label": "FOCAL Working Conditions Guide — Iceland",
-        "territory": "Iceland",
-        "is_pdf": False,
-        "use_bls_api": False,
-        "use_rest_api": False,
-        "source_authority": "film_commission_guide",
+        "use_rest_api": True,
+        "api_slug": "nso_mt",
+        "source_authority": "national_statistics",
     },
 ]
+
+
+def _validate_source_territories() -> None:
+    """Assert every territory in DEFAULT_SOURCES is a canonical Territory label.
+
+    Called at import-time to catch typos / drift early. ``None`` is allowed
+    for multi-territory / supranational sources.
+    """
+    from app.core.territories import resolve_territory
+
+    for src in DEFAULT_SOURCES:
+        t = src.get("territory")
+        if t is None:
+            continue
+        resolved = resolve_territory(t)
+        if resolved is None:
+            raise ValueError(
+                f"Scrape source '{src.get('label')}' has unrecognised territory "
+                f"'{t}'. Add it to app.core.territories.Territory or fix the typo."
+            )
+        if resolved.label != t:
+            raise ValueError(
+                f"Scrape source '{src.get('label')}' uses non-canonical territory "
+                f"'{t}'. Use the canonical label '{resolved.label}' instead."
+            )
+
+
+_validate_source_territories()
 

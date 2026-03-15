@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator
+
+from app.core.territories import Territory, resolve_territory
 
 
 # --- Input Schemas ---
@@ -9,6 +11,8 @@ from pydantic import BaseModel, model_validator
 class CreateReportRequest(BaseModel):
     script_title: str
     report_type: Literal["preview", "paid", "b2b"] = "paid"
+    # script_file_path is no longer used — the script file is uploaded as multipart
+    # and text is extracted in-memory, never stored.
     script_file_path: str | None = None
 
     # Project metadata (required)
@@ -29,20 +33,7 @@ class CreateReportRequest(BaseModel):
         "Interactive",
         "VR",
     ]
-    country: Literal[
-        "UK",
-        "Canada",
-        "USA",
-        "Australia",
-        "Malta",
-        "Ireland",
-        "France",
-        "Germany",
-        "Spain",
-        "Czech Republic",
-        "Hungary",
-        "Other",
-    ]
+    country: str  # Validated & normalised to canonical label by validator below
     location_strategy: Literal["domestic", "open", "international"]
     production_priority: Literal["incentive", "full", "location"] = "full"
 
@@ -61,11 +52,44 @@ class CreateReportRequest(BaseModel):
     target_audience: str | None = None
     language: str | None = None
 
-    @model_validator(mode="after")
-    def validate_constraints(self):
-        if self.report_type in ("paid", "b2b") and not self.script_file_path:
-            raise ValueError("script_file_path is required for paid and b2b reports")
-        return self
+    # Producer eligibility (for nationality / co-production checks)
+    producer_country: str | None = None  # Jurisdiction of production company (ISO code, e.g. "GB")
+    co_production_status: Literal[
+        "sole_producer",
+        "co_production_treaty",
+        "co_production_informal",
+        "undecided",
+    ] | None = None
+
+    @field_validator("country", mode="before")
+    @classmethod
+    def normalise_country(cls, v: str) -> str:
+        """Accept frontend short-forms (UK, USA, Canada) and normalise to
+        the canonical Territory label used throughout the backend."""
+        if not v:
+            return v
+        t = resolve_territory(v)
+        if t is not None:
+            # If sub-territory, return the parent country label
+            if t.is_sub_territory and t.parent is not None:
+                return t.parent.label
+            return t.label
+        # Allow "Other" pass-through for the catch-all option
+        if v.strip().lower() == "other":
+            return "Other"
+        return v  # fall through — let it go; AI can still work with freeform
+
+    @field_validator("territories_considering", mode="before")
+    @classmethod
+    def normalise_territories(cls, v: list[str] | None) -> list[str] | None:
+        """Normalise each territory string to the canonical label."""
+        if not v:
+            return v
+        result: list[str] = []
+        for raw in v:
+            t = resolve_territory(raw)
+            result.append(t.label if t else raw)
+        return result
 
 
 # --- Output Schemas (ScriptAnalysis interface) ---
@@ -89,6 +113,8 @@ class LocationRanking(BaseModel):
     paymentSpeed: str | None = None
     keyAdvantages: list[str] | None = None
     keyRisks: list[str] | None = None
+    # Weather-schedule integration (populated by ReportValidator)
+    weatherRiskImpact: int | None = None  # negative score deduction from weather risk
     # Enriched data-integrity fields (populated by ReportValidator)
     paymentTimelineSource: str | None = None  # source_name from incentive dataset
     incentiveSource: str | None = None        # source_name from incentive dataset
@@ -106,6 +132,16 @@ class IncentiveEstimate(BaseModel):
     disclaimer: str = "Estimate only. Final eligibility depends on official approval."
     dataSource: str = "Prodculator admin database"
     lastUpdated: str
+    # Regional stacking fields
+    scope: Literal["national", "regional", "municipal"] | None = None
+    parentTerritory: str | None = None
+    stackableWith: list[str] | None = None
+    stackingNote: str | None = None
+    # Producer eligibility fields
+    eligibilityStatus: Literal[
+        "qualified", "requires_co_production", "requires_spv", "ineligible", "unknown"
+    ] | None = None
+    eligibilityNote: str | None = None
     # Enriched data-integrity fields
     paymentSpeed: str | None = None           # payment_timeline_notes from dataset
     rateType: str | None = None               # e.g. "cash_rebate", "tax_credit"
@@ -131,6 +167,24 @@ class CrewInsight(BaseModel):
     dataSource: str | None = None  # source attribution for crew rates
 
 
+class CastInsight(BaseModel):
+    territory: str
+    roleCategory: str  # CAST-Lead, CAST-Supporting, CAST-DayPlayer, etc.
+    estimatedRange: str  # e.g. "$700-$1,800/day"
+    rateCurrency: str | None = None
+    ratePeriod: str | None = None  # day, week, session
+    fringeNote: str | None = None
+    sourceNote: str | None = None
+    # Enriched FX fields (populated by ReportValidator)
+    fxRate: float | None = None
+    fxDate: str | None = None
+
+
+class Attribution(BaseModel):
+    territory: str
+    text: str
+
+
 class ComparableProductionEntry(BaseModel):
     title: str
     genre: str
@@ -153,6 +207,12 @@ class WeatherLogistic(BaseModel):
     avgRainfall: str | None = None
     daylightHours: str | None = None
     seasonalConsiderations: str | None = None
+    # Shoot-window integration fields (populated when filming_start_date provided)
+    shootWindowOverlap: bool | None = None     # True if shoot months fall in risky period
+    shootWindowRisk: str | None = None         # "Your Feb-Mar shoot overlaps with rainy season"
+    exteriorExposure: str | None = None        # "High (72% exterior scenes)"
+    estimatedDelayDays: int | None = None      # Estimated weather delay days
+    contingencyBudget: str | None = None       # "£15,000–£25,000 recommended"
 
 
 class FundingOpportunity(BaseModel):
@@ -163,6 +223,30 @@ class FundingOpportunity(BaseModel):
     notes: str
     website: str | None = None
     tier: str | None = None
+
+
+class ScoringDimension(BaseModel):
+    name: str           # Human-readable label, e.g. "Cost Efficiency"
+    key: str            # Machine key matching LocationRanking fields
+    description: str    # One-line explanation shown to the user
+
+
+class ScoringColorKey(BaseModel):
+    green: str   # e.g. "Score ≥ 70 — strong fit"
+    gold: str    # e.g. "Score 40–69 — moderate fit, review trade-offs"
+    red: str     # e.g. "Score ≤ 39 — potential challenges, proceed with caution"
+
+
+class ScoringMethodology(BaseModel):
+    overview: str                        # Brief paragraph on scoring approach
+    dimensions: list[ScoringDimension]   # The five scoring dimensions
+    weightingNote: str                   # How weights change per priority mode
+    colorKey: ScoringColorKey            # Legend for colour bands
+
+
+class ShootWindow(BaseModel):
+    months: list[str]
+    weatherNote: str | None = None
 
 
 class ExecutiveSummary(BaseModel):
@@ -176,6 +260,7 @@ class ExecutiveSummary(BaseModel):
     budget: str | None = None
     budgetRange: str | None = None
     primaryLocations: list[str] | None = None
+    shootWindow: ShootWindow | None = None
 
 
 class FinancialScenario(BaseModel):
@@ -218,6 +303,7 @@ class ScriptAnalysis(BaseModel):
     locationRankings: list[LocationRanking]
     incentiveEstimates: list[IncentiveEstimate]
     crewInsights: list[CrewInsight]
+    castInsights: list[CastInsight] | None = None
     comparables: list[ComparableProductionEntry]
     weatherLogistics: list[WeatherLogistic]
     fundingOpportunities: list[FundingOpportunity]
@@ -225,6 +311,9 @@ class ScriptAnalysis(BaseModel):
     financialAnalysis: FinancialAnalysis | None = None
     territoryDeepDives: list[TerritoryDeepDive] | None = None
     alternativeStrategy: str | None = None
+    scoringMethodology: ScoringMethodology | None = None
+    attributions: list[Attribution] | None = None
+    crewCostDisclaimer: str | None = None
 
 
 class ProductionIntelligence(BaseModel):

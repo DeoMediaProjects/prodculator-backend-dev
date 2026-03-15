@@ -3,6 +3,7 @@ from app.core.database_client import DatabaseClient
 
 from app.core.dependencies import get_current_user, get_supabase
 from app.core.schemas import SuccessResponse
+from app.core.territories import resolve_territory
 from app.modules.auth.schemas import AuthUser
 from app.modules.watchlist.schemas import WatchlistAddRequest, WatchlistResponse
 from app.modules.watchlist.service import WatchlistService
@@ -49,6 +50,9 @@ async def remove_from_watchlist(
 ):
     """Remove a territory from the current user's watchlist."""
     try:
+        t = resolve_territory(territory)
+        if t:
+            territory = t.label
         service.remove_territory(user.id, territory)
         return SuccessResponse(message="Territory removed from watchlist")
     except Exception:

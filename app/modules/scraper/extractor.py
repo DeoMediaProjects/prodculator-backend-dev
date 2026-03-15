@@ -1,8 +1,9 @@
 import json
 import logging
 import re
+import time
 
-from anthropic import Anthropic
+from anthropic import Anthropic, InternalServerError, RateLimitError
 
 from app.core.config import Settings
 
@@ -30,18 +31,19 @@ Return a JSON object with key "programs", a list of objects, each with:
 Only include programs clearly described in the text. If none found, return {"programs": []}.
 Respond ONLY with valid JSON, no markdown."""
 
-CREW_COSTS_PROMPT = """Extract film/TV crew day rates and/or week rates from this text.
-The text may come from a union rate card PDF with tabular data (tab-separated columns).
+CREW_COSTS_PROMPT = """Extract film/TV crew and cast occupational wage data from this government statistics text.
 Return a JSON object with key "crew_costs", a list of objects, each with:
-  territory (string — use full country name, e.g. "United Kingdom" not "UK"),
-  role (string — the crew role/position title),
-  category (string — "Above-the-Line" or "Below-the-Line"),
-  day_rate (number or null — daily rate in the local currency; convert hourly to daily by multiplying by 10),
-  week_rate (number or null — weekly rate in the local currency; convert daily to weekly by multiplying by 5 if not stated),
-  currency (string or null — ISO currency code for the rates, e.g. "GBP", "ZAR", "USD"; infer from context if not stated),
-  union (string or null — union/guild name if applicable, e.g. "BECTU", "IATSE Local 891", "MEAA"),
-  budget_band (string or null — budget tier this rate applies to, e.g. "Motion Picture £5-30M", "Low Budget" — if stated in the rate card)
-Only include figures explicitly stated or directly calculable. Return {"crew_costs": []} if none found.
+  country (string — ISO 2-letter code, e.g. "US", "GB", "CA"),
+  role (string — the crew/cast role or occupational title),
+  role_category (string — e.g. "HOD-Production", "HOD-Camera", "CAST-Lead", "BTL-General"),
+  department (string — rate period: "day", "week", or "session"),
+  union_rate_cents (integer or null — low-end rate estimate in cents of the local currency),
+  non_union_rate_cents (integer or null — high-end rate estimate in cents of the local currency),
+  rate_currency (string or null — ISO currency code, e.g. "USD", "GBP", "CAD"),
+  source_name (string or null — the specific government source, e.g. "BLS OEWS / SOC 27-4031"),
+  confidence_score (integer or null — 0-100 confidence in the estimate)
+Only include figures explicitly stated or directly calculable from government data.
+Return {"crew_costs": []} if none found.
 Respond ONLY with valid JSON."""
 
 GRANTS_PROMPT = """Extract film grant and funding opportunities from this text.
@@ -85,7 +87,20 @@ _RESULT_KEYS = {
 }
 
 
+def _nullable(type_name: str) -> dict:
+    """Return an anyOf schema that allows *type_name* or null.
+
+    Anthropic's structured-output ``json_schema`` format does **not** accept
+    the draft-04 shorthand ``"type": ["string", "null"]``.  It requires the
+    ``anyOf`` form instead.
+    """
+    return {"anyOf": [{"type": type_name}, {"type": "null"}]}
+
+
 def _output_schema_for(resource_type: str) -> dict:
+    # NOTE: Anthropic's structured-output ``json_schema`` requires that every
+    # property is listed in ``required`` when ``additionalProperties`` is false.
+    # Nullable fields use ``anyOf`` so the model can still return ``null``.
     item_schemas: dict[str, dict] = {
         "incentives": {
             "type": "object",
@@ -94,66 +109,81 @@ def _output_schema_for(resource_type: str) -> dict:
                 "territory": {"type": "string"},
                 "program": {"type": "string"},
                 "rate": {"type": "string"},
-                "rate_gross": {"type": ["number", "null"]},
-                "rate_net": {"type": ["number", "null"]},
-                "rate_type": {"type": ["string", "null"]},
-                "currency": {"type": ["string", "null"]},
-                "cap": {"type": ["string", "null"]},
-                "cap_amount": {"type": ["number", "null"]},
-                "cap_currency": {"type": ["string", "null"]},
-                "payment_timeline": {"type": ["string", "null"]},
-                "payment_timeline_days_min": {"type": ["integer", "null"]},
-                "payment_timeline_days_max": {"type": ["integer", "null"]},
+                "rate_gross": _nullable("number"),
+                "rate_net": _nullable("number"),
+                "rate_type": _nullable("string"),
+                "currency": _nullable("string"),
+                "cap": _nullable("string"),
+                "cap_amount": _nullable("number"),
+                "cap_currency": _nullable("string"),
+                "payment_timeline": _nullable("string"),
+                "payment_timeline_days_min": _nullable("integer"),
+                "payment_timeline_days_max": _nullable("integer"),
                 "eligibility_rules": {"type": "array", "items": {"type": "string"}},
-                "expiry_date": {"type": ["string", "null"]},
+                "expiry_date": _nullable("string"),
                 "status": {"type": "string"},
-                "source_url": {"type": ["string", "null"]},
+                "source_url": _nullable("string"),
             },
-            "required": ["territory", "program", "rate", "status"],
+            "required": [
+                "territory", "program", "rate", "rate_gross", "rate_net",
+                "rate_type", "currency", "cap", "cap_amount", "cap_currency",
+                "payment_timeline", "payment_timeline_days_min",
+                "payment_timeline_days_max", "eligibility_rules",
+                "expiry_date", "status", "source_url",
+            ],
         },
         "crew_costs": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "territory": {"type": "string"},
+                "country": {"type": "string"},
                 "role": {"type": "string"},
-                "category": {"type": "string"},
-                "day_rate": {"type": ["number", "null"]},
-                "week_rate": {"type": ["number", "null"]},
-                "currency": {"type": ["string", "null"]},
-                "union": {"type": ["string", "null"]},
-                "budget_band": {"type": ["string", "null"]},
+                "role_category": {"type": "string"},
+                "department": _nullable("string"),
+                "union_rate_cents": _nullable("integer"),
+                "non_union_rate_cents": _nullable("integer"),
+                "rate_currency": _nullable("string"),
+                "source_name": _nullable("string"),
+                "confidence_score": _nullable("integer"),
             },
-            "required": ["territory", "role", "category"],
+            "required": [
+                "country", "role", "role_category", "department",
+                "union_rate_cents", "non_union_rate_cents", "rate_currency",
+                "source_name", "confidence_score",
+            ],
         },
         "grants": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
                 "title": {"type": "string"},
-                "territory": {"type": ["string", "null"]},
-                "funding_body": {"type": ["string", "null"]},
-                "max_amount": {"type": ["string", "null"]},
-                "currency": {"type": ["string", "null"]},
-                "application_deadline": {"type": ["string", "null"]},
+                "territory": _nullable("string"),
+                "funding_body": _nullable("string"),
+                "max_amount": _nullable("string"),
+                "currency": _nullable("string"),
+                "application_deadline": _nullable("string"),
                 "eligibility": {"type": "array", "items": {"type": "string"}},
-                "website_url": {"type": ["string", "null"]},
+                "website_url": _nullable("string"),
                 "status": {"type": "string"},
             },
-            "required": ["title", "status", "eligibility"],
+            "required": [
+                "title", "territory", "funding_body", "max_amount",
+                "currency", "application_deadline", "eligibility",
+                "website_url", "status",
+            ],
         },
         "festivals": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
                 "name": {"type": "string"},
-                "year": {"type": ["integer", "null"]},
-                "location": {"type": ["string", "null"]},
-                "tier": {"type": ["string", "null"]},
+                "year": _nullable("integer"),
+                "location": _nullable("string"),
+                "tier": _nullable("string"),
                 "genres": {"type": "array", "items": {"type": "string"}},
-                "premiere_requirement": {"type": ["string", "null"]},
-                "acceptance_rate": {"type": ["string", "null"]},
-                "website_url": {"type": ["string", "null"]},
+                "premiere_requirement": _nullable("string"),
+                "acceptance_rate": _nullable("string"),
+                "website_url": _nullable("string"),
                 "deadlines": {
                     "type": "array",
                     "items": {
@@ -167,7 +197,11 @@ def _output_schema_for(resource_type: str) -> dict:
                     },
                 },
             },
-            "required": ["name", "genres", "deadlines"],
+            "required": [
+                "name", "year", "location", "tier", "genres",
+                "premiere_requirement", "acceptance_rate", "website_url",
+                "deadlines",
+            ],
         },
     }
     result_key = _RESULT_KEYS[resource_type]
@@ -205,36 +239,59 @@ def extract(
         api_key=settings.ANTHROPIC_API_KEY,
         timeout=settings.ANTHROPIC_ANALYSIS_TIMEOUT,
     )
-    try:
-        response = client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            system=prompt,
-            messages=[
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.1,
-            max_tokens=min(settings.ANTHROPIC_MAX_TOKENS, 4000),
-            output_config={
-                "format": {
-                    "type": "json_schema",
-                    "schema": _output_schema_for(resource_type),
-                }
-            },
-        )
-        raw = _extract_text_response(response)
+
+    _RETRYABLE = (InternalServerError, RateLimitError)
+    max_attempts = 3
+    base_delay = 5.0  # seconds
+
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
         try:
-            data = _parse_json_payload(raw)
-        except Exception as parse_exc:
-            if getattr(response, "stop_reason", None) == "max_tokens":
-                raise ValueError(
-                    "Anthropic output was truncated at max_tokens. Increase ANTHROPIC_MAX_TOKENS."
-                ) from parse_exc
-            raise
-        result_key = _RESULT_KEYS[resource_type]
-        return data.get(result_key, [])
-    except Exception as exc:
-        logger.error("Anthropic extraction failed for %s: %s", resource_type, exc)
-        raise RuntimeError(f"Anthropic extraction failed for {resource_type}") from exc
+            response = client.messages.create(
+                model=settings.ANTHROPIC_MODEL,
+                system=prompt,
+                messages=[
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.1,
+                max_tokens=min(settings.ANTHROPIC_MAX_TOKENS, 4000),
+                output_config={
+                    "format": {
+                        "type": "json_schema",
+                        "schema": _output_schema_for(resource_type),
+                    }
+                },
+            )
+            raw = _extract_text_response(response)
+            try:
+                data = _parse_json_payload(raw)
+            except Exception as parse_exc:
+                if getattr(response, "stop_reason", None) == "max_tokens":
+                    raise ValueError(
+                        "Anthropic output was truncated at max_tokens. Increase ANTHROPIC_MAX_TOKENS."
+                    ) from parse_exc
+                raise
+            result_key = _RESULT_KEYS[resource_type]
+            return data.get(result_key, [])
+        except _RETRYABLE as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning(
+                    "Anthropic transient error for %s (attempt %d/%d), retrying in %.0fs: %s",
+                    resource_type, attempt, max_attempts, delay, exc,
+                )
+                time.sleep(delay)
+            else:
+                logger.error(
+                    "Anthropic extraction failed for %s after %d attempts: %s",
+                    resource_type, max_attempts, exc,
+                )
+        except Exception as exc:
+            logger.error("Anthropic extraction failed for %s: %s", resource_type, exc)
+            raise RuntimeError(f"Anthropic extraction failed for {resource_type}") from exc
+
+    raise RuntimeError(f"Anthropic extraction failed for {resource_type}") from last_exc
 
 
 def _extract_text_response(response) -> str:

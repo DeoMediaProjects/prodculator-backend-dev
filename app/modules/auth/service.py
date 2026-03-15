@@ -153,10 +153,15 @@ class AuthService:
         if redis_client and auth_response.claims:
             await revoke_token(refresh_token, redis_client, self.supabase.settings)
 
+        if not auth_response.user:
+            raise ValueError("Failed to refresh session")
+
+        admin_id = auth_response.user.id
+
         result = (
             self.supabase.table("admins")
             .select("*")
-            .eq("id", auth_response.user.id)
+            .eq("id", admin_id)
             .single()
             .execute()
         )
@@ -223,6 +228,63 @@ class AuthService:
             user_type=result.data.get("user_type", "free"),
             credits_remaining=result.data.get("credits_remaining", 0),
             plan=result.data.get("plan", "free"),
+        )
+
+    def sign_in_with_google(self, firebase_claims: dict) -> TokenResponse:
+        """Sign in or register a user via a verified Firebase Google ID token.
+
+        ``firebase_claims`` must be the dict returned by ``verify_firebase_token()``.
+        The user is upserted by email; no password is required.
+        """
+        email: str = firebase_claims.get("email", "").strip().lower()
+        if not email:
+            raise ValueError("Google account has no email address")
+
+        google_uid: str = firebase_claims.get("uid", "")
+        name: str | None = firebase_claims.get("name") or None
+
+        auth_response = self.supabase.auth.sign_in_with_google(
+            email=email,
+            google_uid=google_uid,
+            name=name,
+        )
+
+        if not auth_response.user or not auth_response.session:
+            raise ValueError("Failed to authenticate with Google")
+
+        user_id = auth_response.user.id
+
+        self.supabase.table("users").update(
+            {"last_active": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", user_id).execute()
+
+        result = (
+            self.supabase.table("users")
+            .select("*")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+
+        if not result.data:
+            raise ValueError("User profile not found")
+
+        user = AuthUser(
+            id=result.data["id"],
+            email=result.data["email"],
+            name=result.data.get("name"),
+            company=result.data.get("company"),
+            role=result.data.get("role"),
+            user_type=result.data.get("user_type", "free"),
+            credits_remaining=result.data.get("credits_remaining", 0),
+            plan=result.data.get("plan", "free"),
+        )
+
+        return TokenResponse(
+            access_token=auth_response.session.access_token,
+            refresh_token=auth_response.session.refresh_token,
+            expires_in=auth_response.session.expires_in,
+            user=user,
         )
 
     def reset_password(self, email: str, redirect_url: str) -> None:

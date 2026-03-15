@@ -8,6 +8,7 @@ from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_current_admin, get_supabase
 from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
+from app.core.territories import resolve_territory
 from app.modules.admin.schemas import (
     AdminListResponse,
     AdminUpsertRequest,
@@ -39,6 +40,12 @@ def _comp_payload_to_db(payload: dict[str, Any]) -> dict[str, Any]:
     result.pop("id", None)
     if "updated_at" not in result:
         result["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Normalise territory to canonical label
+    pt = result.get("primary_territory")
+    if pt:
+        t = resolve_territory(pt)
+        if t:
+            result["primary_territory"] = t.label
     return result
 
 
@@ -115,6 +122,11 @@ async def get_production_signals(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
+        # Normalise territory alias (e.g. "UK" → "United Kingdom")
+        if territory:
+            t = resolve_territory(territory)
+            if t:
+                territory = t.label
         items, total = service.get_production_signals(
             territory=territory,
             start_date=start_date,
@@ -239,9 +251,10 @@ def _reissue_pdf_task(*, report_id: str, report: dict) -> None:
     from app.core.db import get_db_context
 
     try:
-        with get_db_context() as supabase:
+        with get_db_context() as session:
+            db = DatabaseClient(session)
             pdf_service = PDFService()
-            report_service = ReportService(supabase)
+            report_service = ReportService(db)
 
             html = pdf_service.render_report_html(
                 report["report_data"],
@@ -255,7 +268,7 @@ def _reissue_pdf_task(*, report_id: str, report: dict) -> None:
                 return
 
             uploaded_url = pdf_service.upload_pdf(
-                supabase,
+                db,
                 user_id=report["user_id"],
                 report_id=report_id,
                 pdf_bytes=pdf_bytes,

@@ -28,33 +28,6 @@ async def validate_script(
     return ValidateFileResponse(valid=valid, error=error)
 
 
-@router.post("/upload")
-async def upload_script(
-    file: UploadFile = File(...),
-    user: AuthUser = Depends(get_current_user),
-    supabase: DatabaseClient = Depends(get_supabase),
-    service: ScriptAnalysisService = Depends(get_script_service),
-):
-    """Upload a script file to Supabase Storage."""
-    valid, error = service.validate_file(file.filename or "", file.size or 0)
-    if not valid:
-        raise HTTPException(status_code=400, detail=error)
-
-    file_bytes = await file.read()
-    ext = (file.filename or "script.txt").rsplit(".", 1)[-1].lower()
-    import time
-
-    storage_path = f"{user.id}/{int(time.time())}.{ext}"
-
-    supabase.storage.from_("scripts").upload(
-        storage_path,
-        file_bytes,
-        {"content-type": file.content_type or "application/octet-stream"},
-    )
-
-    return {"path": storage_path, "filename": file.filename}
-
-
 @router.post("/analyze", response_model=ScriptAnalysisResult)
 async def analyze_script(
     file: UploadFile = File(...),

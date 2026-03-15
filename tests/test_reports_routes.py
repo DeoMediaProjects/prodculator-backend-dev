@@ -1,3 +1,5 @@
+import json
+
 from app.core.dependencies import get_current_user, get_optional_user
 from app.modules.reports import router as reports_router
 from app.modules.reports.router import get_report_service
@@ -69,7 +71,8 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     create_response = client.post(
         "/api/reports",
         headers={"Authorization": "Bearer token"},
-        json=VALID_REPORT_PAYLOAD,
+        data={"body": json.dumps(VALID_REPORT_PAYLOAD)},
+        files={"script_file": ("script.txt", b"INT. HOUSE - DAY\nHello world.", "text/plain")},
     )
     assert create_response.status_code == 200
     report_id = create_response.json()["report_id"]

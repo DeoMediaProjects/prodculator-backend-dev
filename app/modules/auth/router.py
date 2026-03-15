@@ -6,6 +6,7 @@ from app.core.cache import get_redis_client
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase, get_current_user
+from app.core.firebase import verify_firebase_token
 from app.core.schemas import SuccessResponse
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ from app.modules.auth.schemas import (
     ResendVerificationRequest,
     UpdatePasswordRequest,
     RefreshTokenRequest,
+    GoogleAuthRequest,
 )
 from app.modules.auth.service import AuthService
 
@@ -65,6 +67,37 @@ async def signin(
         raise HTTPException(status_code=401, detail=str(e))
     except Exception:
         raise HTTPException(status_code=500, detail="Sign in failed")
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_auth(
+    body: GoogleAuthRequest,
+    settings: Settings = Depends(get_settings),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Exchange a Firebase Google ID token for a backend JWT pair.
+
+    The frontend should obtain the ID token from Firebase after a
+    ``signInWithPopup`` / ``signInWithRedirect`` call, then POST it here.
+    The response is identical to ``/signin`` — store the tokens and use
+    ``access_token`` as the ``Authorization: Bearer`` header.
+    """
+    try:
+        claims = verify_firebase_token(body.id_token, settings)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except RuntimeError as e:
+        # Firebase not configured
+        logger.error("Firebase not configured: %s", e)
+        raise HTTPException(status_code=503, detail="Google auth is not available")
+
+    try:
+        return auth_service.sign_in_with_google(claims)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Google sign-in failed")
+        raise HTTPException(status_code=500, detail="Google sign-in failed")
 
 
 @router.post("/signout", response_model=SuccessResponse)

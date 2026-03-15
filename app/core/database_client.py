@@ -198,6 +198,53 @@ class AuthClient:
         response.claims = claims
         return response
 
+    def sign_in_with_google(
+        self,
+        email: str,
+        google_uid: str,
+        name: str | None = None,
+    ) -> AuthResponse:
+        """Upsert a user by email (for Google/OAuth sign-in) and issue tokens.
+
+        - If a user with the email already exists, update ``google_uid`` and return tokens.
+        - If no user exists, create one with no password hash and ``user_type="free"``.
+        """
+        email = email.strip().lower()
+        users = self.client._table("users")
+
+        row = self.client.session.execute(
+            select(users).where(func.lower(users.c.email) == email)
+        ).first()
+
+        if row:
+            user = dict(row._mapping)
+            # Backfill google_uid if not yet set
+            if not user.get("google_uid"):
+                self.client.session.execute(
+                    update(users)
+                    .where(users.c.id == user["id"])
+                    .values(google_uid=google_uid)
+                )
+                self.client.session.commit()
+            return self._issue_tokens(user["id"], user["email"], user.get("user_type", "free"))
+
+        # New user — create account without a password
+        user_id = str(uuid4())
+        insert_payload = {
+            "id": user_id,
+            "email": email,
+            "password_hash": None,
+            "name": name or None,
+            "google_uid": google_uid,
+            "user_type": "free",
+            "credits_remaining": 0,
+            "plan": "free",
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.client.session.execute(insert(users).values(**insert_payload))
+        self.client.session.commit()
+        return self._issue_tokens(user_id, email, "free")
+
     def _issue_tokens(self, user_id: str, email: str, user_type: str = "free") -> AuthResponse:
         access_token, expires_in = create_access_token(user_id, user_type, self.client.settings)
         refresh_token = create_refresh_token(user_id, user_type, self.client.settings)

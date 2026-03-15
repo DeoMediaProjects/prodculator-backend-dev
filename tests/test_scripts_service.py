@@ -1,7 +1,14 @@
 import json
 from types import SimpleNamespace
+from typing import cast
 
+from app.core.config import Settings
 from app.modules.scripts.service import ScriptAnalysisService
+
+
+def _as_settings(fake: SimpleNamespace) -> Settings:
+    """Cast a test double to Settings to satisfy the type checker."""
+    return cast(Settings, fake)
 
 
 def test_parse_json_payload_from_fenced_json():
@@ -27,7 +34,7 @@ Let me know if you need more.
     assert data["locations"][0]["name"] == "London"
 
 
-def _build_settings(**overrides):
+def _build_settings(**overrides) -> Settings:
     defaults = {
         "ANTHROPIC_API_KEY": "test-key",
         "ANTHROPIC_MODEL": "claude-test",
@@ -42,7 +49,7 @@ def _build_settings(**overrides):
         "SCRIPT_ANALYSIS_CHUNKED_ENABLED": False,
     }
     defaults.update(overrides)
-    return SimpleNamespace(**defaults)
+    return _as_settings(SimpleNamespace(**defaults))
 
 
 class _FakeAnthropic:

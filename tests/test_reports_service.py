@@ -1,8 +1,15 @@
 from datetime import date, timedelta
+from typing import Any, cast
 
 from sqlalchemy.exc import NoSuchTableError
 
+from app.core.database_client import DatabaseClient
 from app.modules.reports.service import ReportService
+
+
+def _as_db(fake: Any) -> DatabaseClient:
+    """Cast a test double to DatabaseClient to satisfy the type checker."""
+    return cast(DatabaseClient, fake)
 
 
 class FakeResult:
@@ -37,7 +44,7 @@ class FakeSupabase:
     def __init__(self):
         self.tables = {
             "incentive_programs": [{"id": "i1", "territory": "UK", "status": "active"}],
-            "crew_costs": [{"id": "c1", "territory": "UK"}],
+            "crew_costs": [{"id": "c1", "country": "GB", "territory": "UK", "role_category": "HOD-Camera"}],
             "grant_opportunities": [{"id": "g1", "status": "open"}],
             "film_festivals": [{"id": "f1", "status": "open"}],
         }
@@ -49,7 +56,7 @@ class FakeSupabase:
 
 
 def test_load_analysis_datasets_tolerates_missing_optional_table():
-    service = ReportService(FakeSupabase())
+    service = ReportService(_as_db(FakeSupabase()))
 
     datasets = service._load_analysis_datasets()
 
@@ -80,7 +87,7 @@ def test_load_analysis_datasets_handles_festivals_without_status_column():
                 },
             ]
 
-    service = ReportService(FestivalSupabase())
+    service = ReportService(_as_db(FestivalSupabase()))
     datasets = service._load_analysis_datasets()
 
     assert [f["id"] for f in datasets["festivals"]] == ["f-upcoming"]
@@ -111,7 +118,7 @@ class CaptureSupabase:
 
 def test_fail_report_persists_error_context():
     supabase = CaptureSupabase()
-    service = ReportService(supabase)
+    service = ReportService(_as_db(supabase))
 
     service.fail_report(
         "report-1",
@@ -119,6 +126,7 @@ def test_fail_report_persists_error_context():
         error_context={"step": "script_analysis", "scriptAnalysisMeta": {"mode": "single_pass_fallback"}},
     )
 
+    assert supabase.query.updated_payload is not None
     assert supabase.query.updated_payload["status"] == "failed"
     assert supabase.query.updated_payload["report_data"]["error"] == "script analysis failed"
     assert supabase.query.updated_payload["report_data"]["errorContext"]["step"] == "script_analysis"
@@ -126,7 +134,7 @@ def test_fail_report_persists_error_context():
 
 def test_fail_report_hardens_context_schema_and_redacts_sensitive_values():
     supabase = CaptureSupabase()
-    service = ReportService(supabase)
+    service = ReportService(_as_db(supabase))
 
     service.fail_report(
         "report-2",
@@ -163,6 +171,7 @@ def test_fail_report_hardens_context_schema_and_redacts_sensitive_values():
     )
 
     payload = supabase.query.updated_payload
+    assert payload is not None
     report_data = payload["report_data"]
     assert payload["status"] == "failed"
     assert "[REDACTED]" in report_data["error"]
@@ -194,3 +203,103 @@ def test_redact_sensitive_text_helper_masks_tokens():
     assert "[REDACTED]" in redacted
     assert "Bearer abcdefghijklmnop" not in redacted
     assert "sk-ant-secretvalue-123456789" not in redacted
+
+
+# ── _compute_shoot_months ──────────────────────────────────────────────────────
+
+def _make_service():
+    return ReportService(_as_db(FakeSupabase()))
+
+
+def test_compute_shoot_months_basic():
+    """Feb start + 6 weeks → months [2, 3]."""
+    service = _make_service()
+    months = service._compute_shoot_months("2026-02-01", 6)
+    assert months == [2, 3]
+
+
+def test_compute_shoot_months_year_wrap():
+    """Nov start + 12 weeks → months spanning Nov, Dec, Jan."""
+    service = _make_service()
+    months = service._compute_shoot_months("2026-11-01", 12)
+    assert months is not None
+    assert 11 in months
+    assert 12 in months
+    assert 1 in months
+    assert months == sorted(months)
+
+
+def test_compute_shoot_months_no_input():
+    """Missing start date → None."""
+    service = _make_service()
+    assert service._compute_shoot_months(None, 4) is None
+    assert service._compute_shoot_months("", 4) is None
+
+
+def test_compute_shoot_months_invalid_date():
+    """Unparseable date → None."""
+    service = _make_service()
+    assert service._compute_shoot_months("not-a-date", 4) is None
+
+
+def test_compute_shoot_months_default_duration():
+    """No duration given → defaults to 4 weeks."""
+    service = _make_service()
+    months = service._compute_shoot_months("2026-07-01", None)
+    assert months is not None
+    assert 7 in months
+
+
+# ── _classify_season ──────────────────────────────────────────────────────────
+
+def test_classify_season_summer():
+    assert ReportService._classify_season([6, 7, 8]) == "summer"
+    assert ReportService._classify_season([5, 6]) == "summer"
+
+
+def test_classify_season_winter():
+    assert ReportService._classify_season([12, 1, 2]) == "winter"
+    assert ReportService._classify_season([11, 12]) == "winter"
+
+
+def test_classify_season_mixed():
+    assert ReportService._classify_season([3, 4, 5, 6, 7]) == "mixed"
+    assert ReportService._classify_season([10, 11, 12, 1]) == "mixed"
+
+
+# ── _inject_derived_data ──────────────────────────────────────────────────────
+
+def test_inject_derived_data_shoot_window():
+    """Shoot window is populated when start date + duration are in metadata."""
+    service = _make_service()
+    datasets: dict = {}
+    service._inject_derived_data(
+        datasets,
+        script_analysis=None,
+        request_metadata={"filming_start_date": "2026-06-01", "filming_duration": 8},
+    )
+    assert datasets["_shoot_months"] is not None
+    assert 6 in datasets["_shoot_months"]
+    assert datasets["_shoot_window"] is not None
+    assert datasets["_shoot_window"]["season"] == "summer"
+
+
+def test_inject_derived_data_no_dates():
+    """Without dates, shoot_months and shoot_window are None."""
+    service = _make_service()
+    datasets: dict = {}
+    service._inject_derived_data(datasets, script_analysis=None, request_metadata={})
+    assert datasets["_shoot_months"] is None
+    assert datasets["_shoot_window"] is None
+
+
+def test_inject_derived_data_producer_country():
+    service = _make_service()
+    datasets: dict = {}
+    service._inject_derived_data(
+        datasets,
+        script_analysis=None,
+        request_metadata={"producer_country": "ZA", "co_production_status": "sole_producer"},
+    )
+    assert datasets["_producer_country"] == "ZA"
+    assert datasets["_co_production_status"] == "sole_producer"

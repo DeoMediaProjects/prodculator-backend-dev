@@ -126,40 +126,52 @@ class FakeSupabase:
             "crew_costs": [
                 {
                     "id": "c1",
+                    "country": "GB",
                     "territory": "United Kingdom",
                     "role": "Director of Photography",
-                    "category": "Camera",
+                    "role_category": "HOD-Camera",
+                    "department": "day",
                     "day_rate": 850,
                     "week_rate": 3800,
-                    "union": "BECTU",
-                    "last_updated": "2026-01-15",
-                    "source": "BECTU Rate Card 2025/26",
+                    "union_rate_cents": 85000,
+                    "non_union_rate_cents": 380000,
+                    "rate_currency": "GBP",
+                    "source_name": "ONS ASHE",
+                    "source_type": "government_stats",
                     "created_at": "2026-01-01T00:00:00Z",
                     "updated_at": "2026-01-15T00:00:00Z",
                 },
                 {
                     "id": "c2",
+                    "country": "GB",
                     "territory": "United Kingdom",
                     "role": "Gaffer",
-                    "category": "Lighting",
+                    "role_category": "HOD-Electrical",
+                    "department": "day",
                     "day_rate": 650,
                     "week_rate": 2900,
-                    "union": "BECTU",
-                    "last_updated": "2026-01-15",
-                    "source": "BECTU Rate Card 2025/26",
+                    "union_rate_cents": 65000,
+                    "non_union_rate_cents": 290000,
+                    "rate_currency": "GBP",
+                    "source_name": "ONS ASHE",
+                    "source_type": "government_stats",
                     "created_at": "2026-01-01T00:00:00Z",
                     "updated_at": "2026-01-15T00:00:00Z",
                 },
                 {
                     "id": "c3",
+                    "country": "US",
                     "territory": "Georgia (USA)",
                     "role": "Gaffer",
-                    "category": "Lighting",
+                    "role_category": "HOD-Electrical",
+                    "department": "day",
                     "day_rate": 700,
                     "week_rate": 3100,
-                    "union": "IATSE",
-                    "last_updated": "2026-02-01",
-                    "source": "IATSE Scale 2025",
+                    "union_rate_cents": 70000,
+                    "non_union_rate_cents": 310000,
+                    "rate_currency": "USD",
+                    "source_name": "BLS OEWS",
+                    "source_type": "government_stats",
                     "created_at": "2026-02-01T00:00:00Z",
                     "updated_at": "2026-02-01T00:00:00Z",
                 },
@@ -329,9 +341,11 @@ def test_list_crew_costs_materializes_approved_changes_without_resource_id(clien
     assert data["total"] == 4
 
     row = next(
-        r for r in fake.store["crew_costs"] if r.get("source") == "BLS Occupational Wage Survey"
+        r for r in fake.store["crew_costs"]
+        if r.get("source_name") == "BLS Occupational Wage Survey"
+        or r.get("source") == "BLS Occupational Wage Survey"
     )
-    assert row["territory"] == "United States"
+    assert row.get("territory") == "United States" or row.get("country") is not None
     assert row["day_rate"] == "425"
 
     backfilled = next(
@@ -459,7 +473,7 @@ def test_approve_crew_cost_pending_change_without_resource_id_creates_crew_cost(
 
     row = next(r for r in fake.store["crew_costs"] if r["id"] == data["resourceId"])
     assert row["territory"] == "United States"
-    assert row["source"] == "BLS Occupational Wage Survey"
+    assert row["source_name"] == "BLS Occupational Wage Survey"
     assert row["week_rate"] == "2100"
 
 

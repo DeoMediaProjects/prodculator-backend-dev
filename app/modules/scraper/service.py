@@ -18,19 +18,30 @@ _SCRAPERS = {
 }
 
 _DEPRECATED_SOURCE_URLS = {
+    # Union rate data — copyrighted, removed
     "https://www.bectu.org.uk/rates",
     "https://bectu.org.uk/rates",
+    # Third-party aggregators — removed in favour of official sources
     "https://nofilmschool.com/film-grants",
+    "https://nofilmschool.com/topics/grants-contests-awards",
+    "https://www.wrapbook.com/blog/film-industry-tax-incentives",
+    # Old / superseded URLs
     "https://www.bfi.org.uk/get-funding-and-support",
     "https://www.sundance.org/festivals/sundance-film-festival",
-    # Removed in favour of better sources
-    "https://www.wrapbook.com/blog/film-industry-tax-incentives",
     "https://www.georgia.org/industries/film-entertainment/georgia-film-tv-production",
-    "https://nofilmschool.com/topics/grants-contests-awards",
-    "https://www.labiennale.org/en/cinema",
-    # Commonly blocked/non-scrapeable grant pages
-    "https://cmf-fmc.ca/our-programs/",
-    "https://nfi.hu/en/national-film-institute/funding",
+    "https://www.gov.uk/guidance/claim-film-tax-relief",
+    "https://www.nzfc.govt.nz/funding-and-support/",
+    "https://www.nfvf.co.za/",
+    "https://www.thedtic.gov.za",
+    "https://www.nfi.hu/en/filming-in-hungary/hungarian-film-incentive",
+    # Broken incentive URLs — site restructures / SSL failures (2025)
+    "https://www.gov.uk/guidance/claim-audio-visual-expenditure-credit",
+    "https://www.screenaustralia.gov.au/funding-and-support/location-offset",
+    "https://www.culturaydeporte.gob.es/cultura/areas/cine/incentivos.html",
+    "https://www.culturaydeporte.gob.es/cultura/areas/cine/ayudas.html",
+    "https://cinema.cultura.gov.it/incentivi-tax-credit/",
+    "https://www.icelandicfilmcentre.is/support/production-incentive/",
+    "https://www.nzfilm.co.nz/incentives/new-zealand-screen-production-rebate",
 }
 
 
@@ -41,6 +52,10 @@ def _is_expected_source_failure(exc: Exception) -> bool:
         "blocked by robots.txt",
         "403 forbidden",
         "forbidden",
+        "anthropic extraction failed",
+        "nodename nor servname provided",  # DNS resolution failure
+        "name or service not known",       # DNS resolution failure (Linux)
+        "certificate_verify_failed",       # SSL cert issue
     )
     return any(pattern in message for pattern in expected_patterns)
 

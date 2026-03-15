@@ -38,6 +38,15 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "warningsJson": "warnings_json",
     "lastVerifiedAt": "last_verified_at",
     "sourceName": "source_name",
+    # Regional incentive stacking fields
+    "parentTerritory": "parent_territory",
+    "stackingGroup": "stacking_group",
+    "stackableWith": "stackable_with",
+    # Producer eligibility / nationality fields
+    "nationalityRequirements": "nationality_requirements",
+    "coProductionEligible": "co_production_eligible",
+    "coProductionTreaties": "co_production_treaties",
+    "spvEligible": "spv_eligible",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 
@@ -213,7 +222,7 @@ class IncentivesService:
         field = change.get("field")
         detected_value = change.get("detected_value")
         if field and detected_value is not None:
-            db_field = _CAMEL_TO_SNAKE.get(field, field)
+            db_field = _CAMEL_TO_SNAKE.get(field) or field
             if not resource_id:
                 resource_id = self._get_or_create_resource_id_for_change(change, now)
             self.supabase.table(_TABLE).update(
@@ -300,7 +309,7 @@ class IncentivesService:
 
             now = datetime.now(timezone.utc).isoformat()
             resource_id = self._get_or_create_resource_id_for_change(change, now)
-            db_field = _CAMEL_TO_SNAKE.get(field, field)
+            db_field = _CAMEL_TO_SNAKE.get(field) or field
             self.supabase.table(_TABLE).update(
                 {db_field: detected_value, "updated_at": now}
             ).eq("id", resource_id).execute()
