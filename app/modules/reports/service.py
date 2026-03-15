@@ -1,17 +1,28 @@
+import calendar
 import logging
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.exc import NoSuchTableError
 
 from app.core.database_client import DatabaseClient
+from app.core.territories import (
+    Territory,
+    resolve_territory,
+    territory_to_iso as _build_territory_to_iso,
+    iso_to_territory as _build_iso_to_territory,
+)
 from app.modules.fx.service import FXService
 from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
 
 logger = logging.getLogger(__name__)
+
+# Derived from the canonical Territory enum — single source of truth.
+_TERRITORY_TO_ISO: dict[str, str] = _build_territory_to_iso()
+_ISO_TO_TERRITORY: dict[str, str] = _build_iso_to_territory()
 
 MAX_ERROR_MESSAGE_CHARS = 500
 MAX_STEP_CHARS = 80
@@ -285,6 +296,7 @@ class ReportService:
         datasets = self._load_analysis_datasets(
             territories_hint=request_metadata.get("territories_considering")
         )
+        self._inject_derived_data(datasets, script_analysis=None, request_metadata=request_metadata)
         return script_service.generate_production_analysis(
             script_analysis=None,
             request_metadata=request_metadata,
@@ -305,6 +317,7 @@ class ReportService:
         datasets = self._load_analysis_datasets(
             territories_hint=request_metadata.get("territories_considering")
         )
+        self._inject_derived_data(datasets, script_analysis=script_analysis, request_metadata=request_metadata)
         report_data = script_service.generate_production_analysis(
             script_analysis=script_analysis,
             request_metadata=request_metadata,
@@ -316,6 +329,48 @@ class ReportService:
             report_data["productionIntelligence"] = self._build_production_intelligence()
 
         return report_data
+
+    def _inject_derived_data(
+        self,
+        datasets: dict,
+        *,
+        script_analysis: ScriptAnalysisResult | None,
+        request_metadata: dict,
+    ) -> None:
+        """Compute and inject derived signals into *datasets* in-place.
+
+        These are used by both the AI prompt (via generate_production_analysis)
+        and the post-processing validator (ReportValidator.validate).
+        """
+        # Shoot window
+        shoot_months = self._compute_shoot_months(
+            request_metadata.get("filming_start_date"),
+            request_metadata.get("filming_duration"),
+        )
+        shoot_window = None
+        if shoot_months:
+            shoot_window = {
+                "startDate": request_metadata.get("filming_start_date"),
+                "durationWeeks": request_metadata.get("filming_duration"),
+                "months": shoot_months,
+                "monthNames": [calendar.month_abbr[m] for m in shoot_months],
+                "season": self._classify_season(shoot_months),
+            }
+        datasets["_shoot_months"] = shoot_months
+        datasets["_shoot_window"] = shoot_window
+
+        # Scene exposure profile from script analysis
+        ext_int_ratio: float | None = None
+        if script_analysis is not None:
+            challenges = getattr(script_analysis, "challenges", None)
+            if challenges is not None:
+                ext_int_ratio = getattr(challenges, "extIntRatio", None)
+        datasets["_ext_int_ratio"] = ext_int_ratio
+
+        # Producer eligibility inputs
+        datasets["_producer_country"] = request_metadata.get("producer_country")
+        datasets["_co_production_status"] = request_metadata.get("co_production_status")
+
 
     # --- Dataset loading ---
 
@@ -331,21 +386,100 @@ class ReportService:
             logger.warning("Optional dataset table missing: %s", table_name)
             return []
 
+    def _compute_shoot_months(
+        self,
+        filming_start_date: str | None,
+        filming_duration: int | None,
+    ) -> list[int] | None:
+        """Return sorted list of month numbers (1-12) the shoot spans.
+
+        Returns None if *filming_start_date* is absent or unparseable.
+        """
+        if not filming_start_date:
+            return None
+        try:
+            start = date.fromisoformat(str(filming_start_date).strip()[:10])
+        except ValueError:
+            return None
+
+        duration_weeks = filming_duration if filming_duration and filming_duration > 0 else 4
+        end = start + timedelta(weeks=duration_weeks)
+
+        months: set[int] = set()
+        current = start
+        while current <= end:
+            months.add(current.month)
+            current += timedelta(days=15)
+        months.add(end.month)
+        return sorted(months)
+
+    @staticmethod
+    def _classify_season(months: list[int]) -> str:
+        """Classify shoot window as 'summer', 'winter', or 'mixed' (Northern Hemisphere)."""
+        summer = {5, 6, 7, 8, 9}
+        winter = {11, 12, 1, 2, 3}
+        month_set = set(months)
+        if month_set and month_set.issubset(summer):
+            return "summer"
+        if month_set and month_set.issubset(winter):
+            return "winter"
+        return "mixed"
+
+
     def _load_analysis_datasets(self, territories_hint: list[str] | None = None) -> dict:
         """Load admin-managed datasets for AI prompt injection."""
+
+        # ── Normalise territory hints via the canonical enum ────────────
+        # The frontend may send short forms like "UK", "USA", "Canada" —
+        # resolve them to canonical labels ("United Kingdom", etc.) so DB
+        # matching works against the canonical territory strings we store.
+        normalised_hint: list[str] | None = None
+        if territories_hint:
+            seen: set[str] = set()
+            normalised_hint = []
+            for raw in territories_hint:
+                t = resolve_territory(raw)
+                label = t.label if t else raw
+                if label not in seen:
+                    seen.add(label)
+                    normalised_hint.append(label)
+                    # Also include parent label (e.g. "Scotland" → "United Kingdom")
+                    if t and t.parent and t.parent.label not in seen:
+                        seen.add(t.parent.label)
+                        normalised_hint.append(t.parent.label)
+
         logger.info(
-            "Loading analysis datasets: territories_hint=%s",
+            "Loading analysis datasets: raw_hint=%s normalised_hint=%s",
             territories_hint or [],
+            normalised_hint or [],
         )
-        # Active incentive programs
+
+        # Active incentive programs — include NULL status (legacy rows) too
         all_incentives = self._safe_query(
             "incentive_programs",
-            lambda q: q.select("*").eq("status", "active"),
+            lambda q: q.select("*"),
         )
-        if territories_hint:
-            filtered = [i for i in all_incentives if i.get("territory") in territories_hint]
-            # Fall back to all if filter yields nothing
-            incentives = filtered if filtered else all_incentives
+        # Filter to active + legacy (NULL status treated as active)
+        all_incentives = [
+            i for i in all_incentives
+            if (i.get("status") or "").lower() in ("active", "") or i.get("status") is None
+        ]
+        if normalised_hint:
+            hint_set = set(normalised_hint)
+            # Also build ISO set for matching crew_costs.country-style fields
+            hint_iso = {_TERRITORY_TO_ISO.get(t, t) for t in normalised_hint}
+            # Priority-boost: hinted territories come first, remainder appended after.
+            # Never hard-exclude — every active programme remains available so the
+            # AI (and validator) always have the full dataset to draw from.
+            hinted = [
+                i for i in all_incentives
+                if i.get("territory") in hint_set or i.get("territory") in hint_iso
+            ]
+            rest = [
+                i for i in all_incentives
+                if i.get("territory") not in hint_set and i.get("territory") not in hint_iso
+            ]
+            incentives = hinted + rest
         else:
             incentives = all_incentives
 
@@ -362,16 +496,36 @@ class ReportService:
             else:
                 inc["data_freshness_days"] = None
 
-        # Crew costs — load with FX enrichment
-        all_crew = self._safe_query("crew_costs", lambda q: q.select("*"))
-        if territories_hint:
-            filtered = [c for c in all_crew if c.get("territory") in territories_hint]
-            crew_costs = filtered if filtered else all_crew
-        else:
-            crew_costs = all_crew
+        # Crew & cast costs — load with FX enrichment
+        all_rates = self._safe_query("crew_costs", lambda q: q.select("*"))
+        if normalised_hint:
+            # Convert full territory names to ISO codes for matching
+            hint_iso = {_TERRITORY_TO_ISO.get(t, t) for t in normalised_hint}
+            hint_full = set(normalised_hint)
+            # Priority-boost: hinted territories first, rest appended.
+            hinted = [
+                c for c in all_rates
+                if c.get("country") in hint_iso or c.get("territory") in hint_full
+            ]
+            rest = [
+                c for c in all_rates
+                if c.get("country") not in hint_iso and c.get("territory") not in hint_full
+            ]
+            all_rates = hinted + rest
 
-        # FX-enrich each crew cost row: add day_rate_gbp, week_rate_gbp, fx_rate, fx_date
+        # Split into crew and cast by role_category prefix
+        crew_costs = [
+            c for c in all_rates
+            if not (c.get("role_category") or "").startswith("CAST-")
+        ]
+        cast_costs = [
+            c for c in all_rates
+            if (c.get("role_category") or "").startswith("CAST-")
+        ]
+
+        # FX-enrich each row: add union_rate_gbp, non_union_rate_gbp, fx_rate, fx_date
         crew_costs = self._fx_enrich_crew_costs(crew_costs)
+        cast_costs = self._fx_enrich_crew_costs(cast_costs)
 
         # Comparable productions (small dataset, load all)
         comparables = self._safe_query("comparable_productions", lambda q: q.select("*"))
@@ -386,40 +540,56 @@ class ReportService:
         all_festivals = self._safe_query("film_festivals", lambda q: q.select("*"))
         festivals = [f for f in all_festivals if self._is_open_or_upcoming_festival(f)]
         festivals.sort(key=self._festival_sort_key)
+        # Territory weather data (for shoot-date-aware risk scoring)
+        weather_data = self._safe_query("territory_weather", lambda q: q.select("*"))
+
+        # Build stacking map: group_id → [program_names]
+        stacking_map: dict[str, list[str]] = {}
+        for inc in incentives:
+            group = inc.get("stacking_group")
+            if group:
+                stacking_map.setdefault(group, []).append(inc.get("program_name", ""))
+
         logger.info(
-            "Loaded analysis datasets counts: incentives=%s crew_costs=%s comparables=%s grants=%s festivals=%s",
+            "Loaded analysis datasets counts: incentives=%s crew_costs=%s cast_costs=%s comparables=%s grants=%s festivals=%s weather=%s",
             len(incentives),
             len(crew_costs),
+            len(cast_costs),
             len(comparables),
             len(grants),
             len(festivals),
+            len(weather_data),
         )
 
         return {
             "incentives": incentives,
             "crew_costs": crew_costs,
+            "cast_costs": cast_costs,
             "comparables": comparables,
             "grants": grants,
             "festivals": festivals,
+            "weather": weather_data,
+            "stacking_map": stacking_map,
         }
 
     def _fx_enrich_crew_costs(self, crew_costs: list[dict]) -> list[dict]:
-        """Add day_rate_gbp, week_rate_gbp, fx_rate, fx_date to each crew cost row."""
+        """Add union_rate_gbp, non_union_rate_gbp, fx_rate, fx_date to each crew/cast cost row."""
         if not crew_costs:
             return crew_costs
-        # Collect unique non-GBP currencies
-        currencies = {
-            c["currency"]
-            for c in crew_costs
-            if c.get("currency") and c["currency"].upper() != "GBP"
-        }
+        # Collect unique non-GBP currencies (check both new and legacy field names)
+        currencies = set()
+        for c in crew_costs:
+            ccy = c.get("rate_currency") or c.get("currency") or ""
+            if ccy and ccy.upper() != "GBP":
+                currencies.add(ccy.upper())
+
         if not currencies:
             # All GBP — annotate and return
             for c in crew_costs:
-                c["day_rate_gbp"] = c.get("day_rate_cents")
-                c["week_rate_gbp"] = c.get("week_rate_cents")
+                c["union_rate_gbp"] = c.get("union_rate_cents")
+                c["non_union_rate_gbp"] = c.get("non_union_rate_cents")
                 c["fx_rate"] = 1.0
-                c["fx_date"] = today_str = date.today().isoformat()
+                c["fx_date"] = date.today().isoformat()
             return crew_costs
 
         try:
@@ -430,23 +600,23 @@ class ReportService:
             rates = {}
 
         for c in crew_costs:
-            currency = (c.get("currency") or "").upper()
+            currency = (c.get("rate_currency") or c.get("currency") or "").upper()
             if currency == "GBP":
-                c["day_rate_gbp"] = c.get("day_rate_cents")
-                c["week_rate_gbp"] = c.get("week_rate_cents")
+                c["union_rate_gbp"] = c.get("union_rate_cents")
+                c["non_union_rate_gbp"] = c.get("non_union_rate_cents")
                 c["fx_rate"] = 1.0
                 c["fx_date"] = date.today().isoformat()
             elif currency in rates:
                 rate, fx_date = rates[currency]
-                day_cents = c.get("day_rate_cents")
-                week_cents = c.get("week_rate_cents")
-                c["day_rate_gbp"] = round(day_cents / rate) if day_cents else None
-                c["week_rate_gbp"] = round(week_cents / rate) if week_cents else None
+                union_cents = c.get("union_rate_cents")
+                non_union_cents = c.get("non_union_rate_cents")
+                c["union_rate_gbp"] = round(union_cents / rate) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / rate) if non_union_cents else None
                 c["fx_rate"] = round(rate, 4)
                 c["fx_date"] = fx_date.isoformat() if hasattr(fx_date, "isoformat") else str(fx_date)
             else:
-                c["day_rate_gbp"] = None
-                c["week_rate_gbp"] = None
+                c["union_rate_gbp"] = None
+                c["non_union_rate_gbp"] = None
                 c["fx_rate"] = None
                 c["fx_date"] = None
         return crew_costs
@@ -675,12 +845,16 @@ class ReportService:
                 {"programName": inc["program_name"], "rate": rate_str, "cap": cap, "potentialRebateUSD": rebate}
             )
         shooting_days = analysis.productionScale.estimatedShootingDays
-        daily = sum((c.get("day_rate_cents") or 0) for c in crew_costs) / 100
-        weekly = sum((c.get("week_rate_cents") or 0) for c in crew_costs) / 100
+        daily = sum((c.get("union_rate_cents") or c.get("day_rate_cents") or 0) for c in crew_costs) / 100
+        weekly = sum((c.get("non_union_rate_cents") or c.get("week_rate_cents") or 0) for c in crew_costs) / 100
         weeks = max(1, (shooting_days + 4) // 5)
         total = weekly * weeks
         breakdown = [
-            {"role": c["role"], "dayRate": (c.get("day_rate_cents") or 0) / 100, "weekRate": (c.get("week_rate_cents") or 0) / 100}
+            {
+                "role": c["role"],
+                "dayRate": (c.get("union_rate_cents") or c.get("day_rate_cents") or 0) / 100,
+                "weekRate": (c.get("non_union_rate_cents") or c.get("week_rate_cents") or 0) / 100,
+            }
             for c in crew_costs
         ]
         crew_estimate = {

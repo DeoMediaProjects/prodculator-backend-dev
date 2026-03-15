@@ -535,6 +535,41 @@
   <h3>Territory Rankings &amp; Analysis</h3>
   <p class="muted" style="margin-bottom: 10px;">Based on comprehensive analysis of tax incentives, infrastructure, crew availability, and cultural fit.</p>
 
+  {# ── Scoring Methodology Explainer ── #}
+  {% if report.scoringMethodology %}
+  {% set sm = report.scoringMethodology %}
+  <div class="card" style="margin-bottom: 14px; border-left: 3px solid #b8860b;">
+    <h4 style="margin: 0 0 6px;">How We Score Territories</h4>
+    <p style="font-size: 10px; line-height: 1.5; margin: 0 0 8px;">{{ sm.overview }}</p>
+
+    <table style="margin-bottom: 8px;">
+      <tr><th style="width: 25%;">Dimension</th><th>What It Measures</th></tr>
+      {% for dim in sm.dimensions %}
+      <tr>
+        <td style="font-weight: 600;">{{ dim.name }}</td>
+        <td style="font-size: 9px;">{{ dim.description }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <p style="font-size: 9px; line-height: 1.5; margin: 0 0 6px;">{{ sm.weightingNote }}</p>
+
+    {% if sm.colorKey %}
+    <div class="stat-grid" style="margin-top: 4px;">
+      <div class="stat-box" style="flex: 1 1 120px; padding: 4px 8px; border-left: 3px solid #4CAF50;">
+        <div class="stat-label" style="font-size: 9px;">🟢 {{ sm.colorKey.green }}</div>
+      </div>
+      <div class="stat-box" style="flex: 1 1 120px; padding: 4px 8px; border-left: 3px solid #b8860b;">
+        <div class="stat-label" style="font-size: 9px;">🟡 {{ sm.colorKey.gold }}</div>
+      </div>
+      <div class="stat-box" style="flex: 1 1 120px; padding: 4px 8px; border-left: 3px solid #e74c3c;">
+        <div class="stat-label" style="font-size: 9px;">🔴 {{ sm.colorKey.red }}</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% for loc in report.locationRankings[:10] %}
   <div class="card{% if loop.index == 1 %} card-gold{% endif %}">
     <div class="card-header">

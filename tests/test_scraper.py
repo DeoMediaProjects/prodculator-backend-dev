@@ -142,12 +142,15 @@ class FakeSupabase(DatabaseClient):
             "crew_costs": [
                 {
                     "id": "cc1",
+                    "country": "US",
                     "territory": "United States",
                     "role": "Camera Operator",
-                    "category": "Below-the-Line",
-                    "day_rate": 300.0,
-                    "week_rate": 1500.0,
-                    "union": "IATSE",
+                    "role_category": "HOD-Camera",
+                    "department": "day",
+                    "union_rate_cents": 30000,
+                    "non_union_rate_cents": 150000,
+                    "rate_currency": "USD",
+                    "source_type": "government_stats",
                     "created_at": "2026-01-01T00:00:00Z",
                     "updated_at": "2026-01-01T00:00:00Z",
                 },
@@ -339,13 +342,13 @@ class TestExtractor:
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
         mock_client.messages.create.return_value = self._mock_anthropic_response(
-            '{"crew_costs": [{"territory": "US", "role": "DP", "category": "BTL", "day_rate": 800, "week_rate": 4000, "union": "IATSE"}]}'
+            '{"crew_costs": [{"country": "US", "role": "DP", "role_category": "HOD-Camera", "department": "day", "union_rate_cents": 80000, "non_union_rate_cents": 400000}]}'
         )
 
         result = extract("crew_costs", "some page text", "US", FakeSettings())
 
         assert len(result) == 1
-        assert result[0]["day_rate"] == 800
+        assert result[0]["union_rate_cents"] == 80000
 
     @patch("app.modules.scraper.extractor.Anthropic")
     def test_extracts_grants(self, mock_anthropic_cls):
@@ -494,12 +497,12 @@ class TestDiffer:
     def test_crew_costs_diff(self):
         db = FakeSupabase()
         extracted = [
-            {"territory": "United States", "role": "Camera Operator", "day_rate": 350.0, "week_rate": 1750.0},
+            {"country": "US", "role": "Camera Operator", "union_rate_cents": 35000, "non_union_rate_cents": 175000},
         ]
 
         count = diff_and_queue("crew_costs", extracted, "https://bls.gov", db, confidence="high")
 
-        assert count == 2  # day_rate and week_rate changed
+        assert count == 2  # union_rate_cents and non_union_rate_cents changed
         changes = db.store["pending_changes"]
         assert all(c["confidence"] == "high" for c in changes)
 
@@ -518,7 +521,7 @@ class TestScraperService:
         assert len(sources) == len(DEFAULT_SOURCES)
         labels = {s["label"] for s in sources}
         assert "BFI UK Film Tax Relief" in labels
-        assert "BLS Occupational Wage Survey (API)" in labels
+        assert "BLS Occupational Employment & Wage Statistics (OEWS) — NAICS 5121" in labels
 
     def test_seed_sources_syncs_existing_defaults_and_inserts_missing(self):
         db = FakeSupabase()
@@ -706,11 +709,11 @@ class TestCrewCostsScraper:
 
         result = run(source, db, settings)
 
-        # Should create pending changes for day_rate and week_rate
+        # Should create pending changes for union_rate_cents and non_union_rate_cents
         assert result >= 0  # May be 0 if values match existing
 
     @patch("app.modules.scraper.scrapers.crew_costs.diff_and_queue", return_value=1)
-    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"territory": "UK", "role": "DP", "day_rate": 500}])
+    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"country": "GB", "role": "DP", "union_rate_cents": 50000}])
     @patch("app.modules.scraper.scrapers.crew_costs.fetch_and_strip", return_value="page text")
     def test_html_scrape_branch(self, mock_fetch, mock_extract, mock_diff):
         from app.modules.scraper.scrapers.crew_costs import run
@@ -723,7 +726,7 @@ class TestCrewCostsScraper:
         mock_extract.assert_called_once()
 
     @patch("app.modules.scraper.scrapers.crew_costs.diff_and_queue", return_value=2)
-    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"territory": "UK", "role": "Gaffer", "day_rate": 450}])
+    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"country": "GB", "role": "Gaffer", "union_rate_cents": 45000}])
     @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_text", return_value="Role\tDay Rate\nGaffer\t450")
     @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_links", return_value=["https://example.com/rates.pdf"])
     def test_pdf_pipeline_branch(self, mock_links, mock_pdf, mock_extract, mock_diff):
@@ -739,7 +742,7 @@ class TestCrewCostsScraper:
         mock_extract.assert_called_once()
 
     @patch("app.modules.scraper.scrapers.crew_costs.diff_and_queue", return_value=1)
-    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"territory": "AU", "role": "Grip", "day_rate": 380}])
+    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"country": "AU", "role": "Grip", "union_rate_cents": 38000}])
     @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_text", return_value="Role\tDay Rate\nGrip\t380")
     @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_links", return_value=[])
     def test_pdf_direct_link_fallback(self, mock_links, mock_pdf, mock_extract, mock_diff):
@@ -874,10 +877,10 @@ class TestSources:
 
     def test_pdf_sources_are_flagged(self):
         pdf_sources = [s for s in DEFAULT_SOURCES if s.get("is_pdf")]
-        assert len(pdf_sources) >= 3  # BECTU, IATSE, MEAA
-        # Most PDFs are crew_costs; incentive PDFs (e.g. Screen Malta) are allowed
+        assert len(pdf_sources) >= 1  # At least incentive PDFs (e.g. Screen Malta)
+        # Union/CBA PDF rate cards removed — crew_costs now uses gov stats APIs only
         crew_pdf = [s for s in pdf_sources if s["resource_type"] == "crew_costs"]
-        assert len(crew_pdf) >= 3  # BECTU rate cards + IATSE + MEAA at minimum
+        assert len(crew_pdf) == 0  # No crew cost PDFs — all government API sources
 
     def test_no_filmfreeway_source(self):
         urls = {s["url"] for s in DEFAULT_SOURCES}

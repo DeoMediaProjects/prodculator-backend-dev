@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.core.territories import resolve_territory
 
 
 class CrewRate(BaseModel):
@@ -22,3 +24,12 @@ class CrewRate(BaseModel):
     budgetBand: str | None = None
     rateNotes: str | None = None
     lastVerifiedAt: str | None = None
+
+    @field_validator("territory", mode="before")
+    @classmethod
+    def normalise_territory(cls, v: str | None) -> str | None:
+        """Normalise territory strings to canonical Territory labels."""
+        if not v:
+            return v
+        t = resolve_territory(v)
+        return t.label if t else v

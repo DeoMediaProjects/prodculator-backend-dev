@@ -8,6 +8,7 @@ from uuid import uuid4
 import httpx
 
 from app.core.database_client import DatabaseClient
+from app.core.territories import resolve_territory
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,11 @@ class TMDBService:
 
                 genres = [g["name"] for g in details.get("genres", [])]
                 countries = details.get("production_countries", [])
-                territory = countries[0]["name"] if countries else "Unknown"
+                raw_territory = countries[0]["name"] if countries else "Unknown"
+                # Normalise TMDB country names (e.g. "United States of America")
+                # to canonical Territory labels (e.g. "United States")
+                resolved = resolve_territory(raw_territory)
+                territory = resolved.label if resolved else raw_territory
                 release_date = details.get("release_date", "")
                 year = int(release_date[:4]) if release_date and len(release_date) >= 4 else None
 

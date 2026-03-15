@@ -56,15 +56,18 @@ def _fetch_bls(settings: Settings) -> list[dict]:
             if not value:
                 continue
             annual = float(value)
-            day_rate = round(annual / 260, 2)
-            week_rate = round(annual / 52, 2)
+            day_rate_cents = round(annual / 260 * 100)
+            week_rate_cents = round(annual / 52 * 100)
             records.append({
-                "territory": "United States",
+                "country": "US",
                 "role": _BLS_ROLE_MAP.get(series_id, "Unknown Role"),
-                "category": "Below-the-Line",
-                "day_rate": day_rate,
-                "week_rate": week_rate,
-                "union": "Non-union benchmark (BLS)",
+                "role_category": "BTL-General",
+                "department": "day",
+                "union_rate_cents": day_rate_cents,
+                "non_union_rate_cents": week_rate_cents,
+                "rate_currency": "USD",
+                "source_name": "BLS OEWS NAICS 5121",
+                "source_type": "government_stats",
             })
         return records
     except Exception as exc:

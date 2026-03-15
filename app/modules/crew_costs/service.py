@@ -12,16 +12,28 @@ _RESOURCE_TYPE = "crew_costs"
 # ── Crew cost field maps (camelCase ↔ snake_case) ────────────────────────────
 
 _CAMEL_TO_SNAKE: dict[str, str] = {
+    # Legacy fields (kept during transition)
     "dayRate": "day_rate",
     "weekRate": "week_rate",
     "lastUpdated": "last_updated",
     "createdAt": "created_at",
     "updatedAt": "updated_at",
-    # Enriched fields for data integrity
     "sourceUrl": "source_url",
     "budgetBand": "budget_band",
     "rateNotes": "rate_notes",
     "lastVerifiedAt": "last_verified_at",
+    # New government-stats schema fields
+    "roleCategory": "role_category",
+    "unionRateCents": "union_rate_cents",
+    "nonUnionRateCents": "non_union_rate_cents",
+    "rateCurrency": "rate_currency",
+    "workingDayHours": "working_day_hours",
+    "fringeRatePct": "fringe_rate_pct",
+    "fringeDescription": "fringe_description",
+    "sourceName": "source_name",
+    "sourceType": "source_type",
+    "confidenceScore": "confidence_score",
+    "effectiveFrom": "effective_from",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 
@@ -128,8 +140,12 @@ class CrewCostsService:
     # ── Sync status ──────────────────────────────────────────────────────────
 
     def get_sync_status(self) -> dict[str, Any]:
-        all_rows = self.supabase.table(_TABLE).select("territory").execute().data or []
-        territories = len({r.get("territory") for r in all_rows if r.get("territory")})
+        all_rows = self.supabase.table(_TABLE).select("country,territory").execute().data or []
+        territories = len({
+            r.get("country") or r.get("territory")
+            for r in all_rows
+            if r.get("country") or r.get("territory")
+        })
 
         pending_count = (
             self.supabase.table(_PENDING_CHANGES_TABLE)
@@ -270,14 +286,18 @@ class CrewCostsService:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _get_or_create_resource_id_for_change(self, change: dict[str, Any], now: str) -> str:
-        territory = change.get("territory")
-        source = change.get("source")
+        country = change.get("country") or change.get("territory")
+        source = change.get("source") or change.get("source_name")
 
         query = self.supabase.table(_TABLE).select("id").order("created_at", desc=True).limit(1)
-        if territory:
-            query = query.eq("territory", territory)
+        if country:
+            # Try country first (new schema), fallback to territory (legacy)
+            if len(country) == 2:
+                query = query.eq("country", country)
+            else:
+                query = query.eq("territory", country)
         if source:
-            query = query.eq("source", source)
+            query = query.eq("source_name", source)
         existing = query.execute().data or []
         if existing:
             return existing[0]["id"]
@@ -285,8 +305,9 @@ class CrewCostsService:
         row_id = str(uuid4())
         create_payload: dict[str, Any] = {
             "id": row_id,
-            "territory": territory,
-            "source": source,
+            "country": country if country and len(country) == 2 else None,
+            "territory": country if country and len(country) != 2 else None,
+            "source_name": source,
             "created_at": now,
             "updated_at": now,
         }

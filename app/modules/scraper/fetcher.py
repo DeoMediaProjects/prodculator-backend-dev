@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+import ssl
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -25,6 +26,34 @@ _WHITESPACE_RE = re.compile(r"\n{3,}")
 _robots_cache: dict[str, RobotFileParser | None] = {}
 
 
+def _is_ssl_error(exc: BaseException) -> bool:
+    """Return True if *exc* (or its chain) is an SSL certificate error.
+
+    httpx wraps SSL failures in ``ConnectError`` and may not preserve the
+    original ``ssl.SSLError`` in ``__cause__``.  We therefore also check
+    the string representation of each exception in the chain.
+    """
+    cur: BaseException | None = exc
+    while cur is not None:
+        if isinstance(cur, ssl.SSLCertVerificationError):
+            return True
+        if isinstance(cur, ssl.SSLError) and "CERTIFICATE_VERIFY_FAILED" in str(cur):
+            return True
+        if "CERTIFICATE_VERIFY_FAILED" in str(cur):
+            return True
+        cur = cur.__cause__ if cur.__cause__ is not cur else None
+    return False
+
+
+def _make_client(timeout: int, *, verify: bool = True) -> httpx.Client:
+    """Create an httpx Client, optionally disabling SSL verification."""
+    return httpx.Client(
+        timeout=timeout,
+        follow_redirects=True,
+        verify=verify,
+    )
+
+
 def _check_robots_txt(url: str, timeout: int = 10) -> bool:
     """Return True if robots.txt allows our user-agent to fetch *url*."""
     parsed = urlparse(url)
@@ -34,15 +63,30 @@ def _check_robots_txt(url: str, timeout: int = 10) -> bool:
         robots_url = f"{origin}/robots.txt"
         rp = RobotFileParser()
         try:
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            with _make_client(timeout) as client:
                 resp = client.get(robots_url, headers={"User-Agent": _USER_AGENT})
                 if resp.status_code == 200:
                     rp.parse(resp.text.splitlines())
                 else:
                     # No robots.txt or error → assume allowed
                     rp = None
-        except Exception:
-            rp = None
+        except Exception as exc:
+            if _is_ssl_error(exc):
+                # SSL cert issue — retry without verification so we still
+                # respect robots.txt rather than skipping the check entirely.
+                try:
+                    rp_retry = RobotFileParser()
+                    with _make_client(timeout, verify=False) as client:
+                        resp = client.get(robots_url, headers={"User-Agent": _USER_AGENT})
+                        if resp.status_code == 200:
+                            rp_retry.parse(resp.text.splitlines())
+                            rp = rp_retry
+                        else:
+                            rp = None
+                except Exception:
+                    rp = None
+            else:
+                rp = None
         _robots_cache[origin] = rp
 
     rp = _robots_cache[origin]
@@ -58,16 +102,24 @@ def fetch_and_strip(url: str, settings: Settings) -> str | None:
         return None
 
     try:
-        with httpx.Client(
-            timeout=settings.SCRAPER_REQUEST_TIMEOUT,
-            follow_redirects=True,
-        ) as client:
+        with _make_client(settings.SCRAPER_REQUEST_TIMEOUT) as client:
             resp = client.get(url, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
-        logger.warning("Fetch failed for %s: %s", url, exc)
-        return None
+        if _is_ssl_error(exc):
+            logger.info("SSL verification failed for %s, retrying without verify", url)
+            try:
+                with _make_client(settings.SCRAPER_REQUEST_TIMEOUT, verify=False) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    html = resp.text
+            except Exception as retry_exc:
+                logger.warning("Fetch failed for %s (SSL retry): %s", url, retry_exc)
+                return None
+        else:
+            logger.warning("Fetch failed for %s: %s", url, exc)
+            return None
 
     # Strip noisy blocks first
     text = _STRIP_TAGS.sub("", html)
@@ -95,16 +147,23 @@ def fetch_pdf_text(url: str, settings: Settings) -> str | None:
         return None
 
     try:
-        with httpx.Client(
-            timeout=settings.SCRAPER_REQUEST_TIMEOUT,
-            follow_redirects=True,
-        ) as client:
+        with _make_client(settings.SCRAPER_REQUEST_TIMEOUT) as client:
             resp = client.get(url, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
             pdf_bytes = resp.content
     except Exception as exc:
-        logger.warning("PDF fetch failed for %s: %s", url, exc)
-        return None
+        if _is_ssl_error(exc):
+            try:
+                with _make_client(settings.SCRAPER_REQUEST_TIMEOUT, verify=False) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    pdf_bytes = resp.content
+            except Exception as retry_exc:
+                logger.warning("PDF fetch failed for %s (SSL retry): %s", url, retry_exc)
+                return None
+        else:
+            logger.warning("PDF fetch failed for %s: %s", url, exc)
+            return None
 
     try:
         parts: list[str] = []
@@ -148,16 +207,23 @@ def fetch_pdf_links(url: str, settings: Settings) -> list[str]:
         return []
 
     try:
-        with httpx.Client(
-            timeout=settings.SCRAPER_REQUEST_TIMEOUT,
-            follow_redirects=True,
-        ) as client:
+        with _make_client(settings.SCRAPER_REQUEST_TIMEOUT) as client:
             resp = client.get(url, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
-        logger.warning("Fetch failed for PDF link page %s: %s", url, exc)
-        return []
+        if _is_ssl_error(exc):
+            try:
+                with _make_client(settings.SCRAPER_REQUEST_TIMEOUT, verify=False) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    html = resp.text
+            except Exception as retry_exc:
+                logger.warning("Fetch failed for PDF link page %s (SSL retry): %s", url, retry_exc)
+                return []
+        else:
+            logger.warning("Fetch failed for PDF link page %s: %s", url, exc)
+            return []
 
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
