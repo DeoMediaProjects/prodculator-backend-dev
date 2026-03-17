@@ -273,6 +273,147 @@
     color: #1a1a1a;
   }
 
+  /* ── v3 Section Explainer Boxes ──────────────────────────── */
+  .section-explainer {
+    background: #f8f6f0;
+    border-left: 3px solid #D4AF37;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 10px;
+    line-height: 1.6;
+    color: #444;
+  }
+  .section-explainer strong {
+    color: #1a1a1a;
+  }
+
+  /* ── v3 Headline Net Budget ────────────────────────────────── */
+  .headline-budget {
+    background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+    color: #fff;
+    padding: 16px 20px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .headline-budget-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #D4AF37;
+    margin-bottom: 4px;
+  }
+  .headline-budget-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #D4AF37;
+  }
+  .headline-budget-detail {
+    font-size: 9px;
+    color: #999;
+    margin-top: 4px;
+  }
+
+  /* ── v3 Bankability Labels ─────────────────────────────────── */
+  .bankability {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .bankability-bankable {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+  }
+  .bankability-verify {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+  }
+  .bankability-not {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+  }
+
+  /* ── v3 Action Timeline ────────────────────────────────────── */
+  .action-timeline {
+    margin-bottom: 14px;
+  }
+  .timeline-item {
+    display: flex;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 10px;
+  }
+  .timeline-item:last-child {
+    border-bottom: none;
+  }
+  .timeline-date {
+    flex: 0 0 100px;
+    font-weight: 600;
+    color: #D4AF37;
+  }
+  .timeline-action {
+    flex: 1;
+  }
+  .timeline-owner {
+    flex: 0 0 90px;
+    color: #888;
+    font-size: 9px;
+    text-align: right;
+  }
+
+  /* ── v3 Key Flags ──────────────────────────────────────────── */
+  .key-flags {
+    margin-bottom: 14px;
+  }
+  .key-flag {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .key-flag-icon {
+    flex: 0 0 16px;
+    font-weight: 700;
+    color: #b45309;
+  }
+
+  /* ── v3 Financial 6-step Working ───────────────────────────── */
+  .fin-step {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 10px;
+    border-bottom: 1px dashed #e0e0e0;
+  }
+  .fin-step:last-child {
+    border-bottom: none;
+  }
+  .fin-step-label {
+    color: #666;
+  }
+  .fin-step-value {
+    font-weight: 600;
+    text-align: right;
+  }
+  .fin-step-highlight {
+    color: #D4AF37;
+    font-size: 12px;
+  }
+
   /* ── Territory deep dive ──────────────────────────────────── */
   .dd-header {
     display: flex;
@@ -405,9 +546,39 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; Executive Summary</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.executive_summary %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.executive_summary }}
+  </div>
+  {% endif %}
+
   {% if report._fallbackUsed %}
   <div class="fallback-banner">
     <strong>Limited Analysis</strong> &mdash; AI analysis was temporarily unavailable. Results below use estimated defaults based on project metadata. We recommend regenerating this report for full analysis.
+  </div>
+  {% endif %}
+
+  {# v3 Headline Net Budget #}
+  {% if report.executiveSummary and report.executiveSummary.headlineNetBudget %}
+  <div class="headline-budget">
+    <div class="headline-budget-label">Headline Net Budget (After Top Rebate)</div>
+    <div class="headline-budget-value">{{ report.executiveSummary.headlineNetBudget }}</div>
+    {% if report.executiveSummary.budget %}
+    <div class="headline-budget-detail">Total Budget: {{ report.executiveSummary.budget }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# v3 Key Flags (max 3) #}
+  {% if report.executiveSummary and report.executiveSummary.keyFlags %}
+  <div class="key-flags">
+    {% for flag in report.executiveSummary.keyFlags[:3] %}
+    <div class="key-flag">
+      <div class="key-flag-icon">!</div>
+      <div>{{ flag }}</div>
+    </div>
+    {% endfor %}
   </div>
   {% endif %}
 
@@ -496,8 +667,7 @@
   <table>
     <tr><th style="width: 180px;">Detail</th><th>Value</th></tr>
     {% if es.shootDays %}<tr><td>Estimated Shoot Days</td><td><strong>{{ es.shootDays }} days</strong></td></tr>{% endif %}
-    {% if es.budget %}<tr><td>Estimated Budget</td><td><strong>{{ es.budget }}</strong></td></tr>{% endif %}
-    {% if es.budgetRange %}<tr><td>Budget Range</td><td>{{ es.budgetRange }}</td></tr>{% endif %}
+    {% if es.budget %}<tr><td>Production Budget</td><td><strong>{{ es.budget }}</strong></td></tr>{% endif %}
     <tr><td>Territories Analysed</td><td>{{ report.locationRankings | length }}</td></tr>
     <tr><td>Report Type</td><td>{{ report_type | upper }}</td></tr>
   </table>
@@ -520,6 +690,20 @@
     {{ report.scale | lower if report.scale else "" }} production.
   </p>
   {% endif %}
+
+  {# v3 Action Timeline #}
+  {% if report.executiveSummary and report.executiveSummary.actionTimeline %}
+  <h3>Action Timeline</h3>
+  <div class="action-timeline">
+    {% for item in report.executiveSummary.actionTimeline %}
+    <div class="timeline-item">
+      <div class="timeline-date">{{ item.deadline if item.deadline is defined else "" }}</div>
+      <div class="timeline-action">{{ item.action if item.action is defined else "" }}</div>
+      <div class="timeline-owner">{{ item.owner if item.owner is defined else "" }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 <!-- ════════════════════════════════════════════════════════════
@@ -529,11 +713,18 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.location_strategy %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.location_strategy }}
+  </div>
+  {% endif %}
+
   {% if report.locationRankings %}
 
   {# Summary comparison table #}
   <h3>Territory Rankings &amp; Analysis</h3>
-  <p class="muted" style="margin-bottom: 10px;">Based on comprehensive analysis of tax incentives, infrastructure, crew availability, and cultural fit.</p>
+  <p class="muted" style="margin-bottom: 10px;">Based on comprehensive analysis of tax incentives, infrastructure, crew availability, currency advantage, and incentive reliability.</p>
 
   {# ── Scoring Methodology Explainer ── #}
   {% if report.scoringMethodology %}
@@ -611,18 +802,30 @@
         <div class="stat-label">Payment Speed</div>
       </div>
       {% endif %}
+      {% if loc.bankabilityLabel %}
+      <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
+        <div class="stat-value" style="font-size: 10px;">
+          <span class="bankability {% if loc.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif loc.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
+            {{ loc.bankabilityLabel }}
+          </span>
+        </div>
+        <div class="stat-label">Bankability</div>
+      </div>
+      {% endif %}
     </div>
 
     <table>
       <tr><th>Metric</th><th>Score</th><th></th></tr>
       {% set metrics = [
-        ("Cost Efficiency", loc.costEfficiency),
-        ("Crew Depth", loc.crewDepth),
-        ("Infrastructure", loc.infrastructure),
-        ("Incentive Strength", loc.incentiveStrength),
-        ("Currency Advantage", loc.currencyAdvantage)
+        ("Cost Efficiency", loc.costEfficiency|default(none)),
+        ("Crew Depth", loc.crewDepth|default(none)),
+        ("Infrastructure", loc.infrastructure|default(none)),
+        ("Incentive Strength", loc.incentiveStrength|default(none)),
+        ("Currency Advantage", loc.currencyAdvantage|default(none)),
+        ("Incentive Reliability", loc.incentiveReliability|default(none))
       ] %}
       {% for name, val in metrics %}
+      {% if val is not none %}
       <tr>
         <td>{{ name }}</td>
         <td>{{ val }}/100</td>
@@ -632,6 +835,7 @@
           </div>
         </td>
       </tr>
+      {% endif %}
       {% endfor %}
     </table>
 
@@ -667,27 +871,93 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; Financial Analysis</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.financial_analysis %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.financial_analysis }}
+  </div>
+  {% endif %}
+
   {% if report.financialAnalysis.budgetScenarios %}
   <h3>Budget Scenarios &amp; ROI Comparison</h3>
   {% if report.executiveSummary and report.executiveSummary.budget %}
   <p>Total Production Budget: <strong>{{ report.executiveSummary.budget }}</strong></p>
   {% endif %}
-  <p class="muted" style="margin-bottom: 10px;">The following scenarios show net budget after rebates for top territories.</p>
+  <p class="muted" style="margin-bottom: 10px;">The following scenarios show the full rebate calculation working for top territories.</p>
 
-  <div class="stat-grid">
-    {% for scenario in report.financialAnalysis.budgetScenarios %}
-    <div class="stat-box" style="flex: 1 1 160px; text-align: left; padding: 12px;">
-      <h4 style="margin: 0 0 6px;">{{ scenario.territory }}</h4>
-      <span class="tag tag-gold">{{ scenario.rebateRate }} ROI</span>
-      <table style="margin-top: 8px; margin-bottom: 0;">
-        <tr><td class="muted">Local Spend</td><td><strong>{{ scenario.localSpend }}</strong></td></tr>
-        <tr><td class="muted">Rebate Rate</td><td>{{ scenario.rebateRate }}</td></tr>
-        <tr><td class="muted">Gross Rebate</td><td class="gold"><strong>{{ scenario.grossRebate }}</strong></td></tr>
-        <tr><td class="muted">Net Budget</td><td><strong>{{ scenario.netBudget }}</strong></td></tr>
-      </table>
+  {% for scenario in report.financialAnalysis.budgetScenarios %}
+  <div class="card" style="margin-bottom: 12px;">
+    <div class="card-header">
+      <h4 style="margin: 0;">{{ scenario.territory }}</h4>
+      {% if scenario.programme %}
+      <span class="muted">{{ scenario.programme }}</span>
+      {% endif %}
     </div>
-    {% endfor %}
+
+    {# v3 6-step financial working #}
+    {% if scenario.totalBudget or scenario.qualifyingSpend %}
+    <div style="padding: 8px 0;">
+      {% if scenario.totalBudget %}
+      <div class="fin-step">
+        <span class="fin-step-label">1. Total Budget</span>
+        <span class="fin-step-value">{{ scenario.totalBudget }}</span>
+      </div>
+      {% endif %}
+      {% if scenario.qualifyingSpendPct %}
+      <div class="fin-step">
+        <span class="fin-step-label">2. Qualifying Spend ({{ scenario.qualifyingSpendPct }})</span>
+        <span class="fin-step-value">{{ scenario.qualifyingSpend or "—" }}</span>
+      </div>
+      {% endif %}
+      {% if scenario.atlDeduction %}
+      <div class="fin-step">
+        <span class="fin-step-label">3. Less ATL Deduction (est. 25%)</span>
+        <span class="fin-step-value">-{{ scenario.atlDeduction }}</span>
+      </div>
+      {% endif %}
+      {% if scenario.netQualifyingSpend %}
+      <div class="fin-step">
+        <span class="fin-step-label">4. Net Qualifying Spend</span>
+        <span class="fin-step-value">{{ scenario.netQualifyingSpend }}</span>
+      </div>
+      {% endif %}
+      {% if scenario.rateGross %}
+      <div class="fin-step">
+        <span class="fin-step-label">5. Gross Rate / Net Rate</span>
+        <span class="fin-step-value">{{ scenario.rateGross }}{% if scenario.rateNet %} / {{ scenario.rateNet }}{% endif %}</span>
+      </div>
+      {% endif %}
+      <div class="fin-step">
+        <span class="fin-step-label">6. Gross Rebate</span>
+        <span class="fin-step-value fin-step-highlight">{{ scenario.grossRebate or "—" }}</span>
+      </div>
+      {% if scenario.netRebate %}
+      <div class="fin-step">
+        <span class="fin-step-label">&nbsp;&nbsp;&nbsp;Net Rebate</span>
+        <span class="fin-step-value fin-step-highlight">{{ scenario.netRebate }}</span>
+      </div>
+      {% endif %}
+      {% if scenario.netBudget %}
+      <div class="fin-step" style="border-top: 2px solid #D4AF37; margin-top: 4px; padding-top: 6px;">
+        <span class="fin-step-label" style="font-weight: 600; color: #1a1a1a;">Net Budget After Rebate</span>
+        <span class="fin-step-value fin-step-highlight" style="font-size: 14px;">{{ scenario.netBudget }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% if scenario.notes %}
+    <p class="muted" style="margin-top: 4px; font-style: italic;">{{ scenario.notes }}</p>
+    {% endif %}
+    {% else %}
+    {# Fallback to v2 simple display #}
+    <table style="margin-top: 8px; margin-bottom: 0;">
+      <tr><td class="muted">Local Spend</td><td><strong>{{ scenario.localSpend }}</strong></td></tr>
+      <tr><td class="muted">Rebate Rate</td><td>{{ scenario.rebateRate }}</td></tr>
+      <tr><td class="muted">Gross Rebate</td><td class="gold"><strong>{{ scenario.grossRebate }}</strong></td></tr>
+      <tr><td class="muted">Net Budget</td><td><strong>{{ scenario.netBudget }}</strong></td></tr>
+    </table>
+    {% endif %}
   </div>
+  {% endfor %}
   {% endif %}
 
   {% if report.financialAnalysis.crewCostComparison %}
@@ -727,6 +997,13 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; {{ dd.name }} Territory Analysis</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# v3 Section Explainer (only on first deep dive) #}
+  {% if loop.index == 1 and report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.territory_deep_dives %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.territory_deep_dives }}
+  </div>
+  {% endif %}
+
   <div class="dd-header">
     <div>
       <h3 style="margin: 0; font-size: 16px;">{{ dd.name }}</h3>
@@ -763,6 +1040,16 @@
       <div class="dd-grid-label">Estimated Rebate</div>
       <div class="dd-grid-value gold">{{ dd.estimatedRebate }}</div>
     </div>
+    {% if dd.bankabilityLabel is defined and dd.bankabilityLabel %}
+    <div class="dd-grid-item">
+      <div class="dd-grid-label">Bankability</div>
+      <div class="dd-grid-value">
+        <span class="bankability {% if dd.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif dd.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
+          {{ dd.bankabilityLabel }}
+        </span>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
   {% if dd.keyAdvantages %}
@@ -802,9 +1089,23 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; Tax Incentive Analysis</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.incentive_analysis %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.incentive_analysis }}
+  </div>
+  {% endif %}
+
   {% for inc in report.incentiveEstimates %}
   <div class="card">
-    <h3>{{ inc.territory }} &mdash; {{ inc.program }}</h3>
+    <div class="card-header">
+      <h3 style="margin: 0;">{{ inc.territory }} &mdash; {{ inc.program }}</h3>
+      {% if inc.bankabilityLabel %}
+      <span class="bankability {% if inc.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif inc.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
+        {{ inc.bankabilityLabel }}
+      </span>
+      {% endif %}
+    </div>
     <table>
       <tr><th style="width: 160px;">Detail</th><th>Value</th></tr>
       <tr><td>Rate</td><td><strong>{{ inc.rate }}</strong></td></tr>
@@ -851,6 +1152,13 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; Crew Cost Estimates</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.crew_costs %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.crew_costs }}
+  </div>
+  {% endif %}
+
   <table>
     <tr>
       <th>Territory</th>
@@ -891,6 +1199,13 @@
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Grant &amp; Funding Opportunities</h2>
   {% set ns.sec = ns.sec + 1 %}
+
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.funding_opportunities %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.funding_opportunities }}
+  </div>
+  {% endif %}
 
   <p class="muted" style="margin-bottom: 12px;">Based on your production's profile, here are relevant funding opportunities across top territories.</p>
 
@@ -988,6 +1303,13 @@
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Weather &amp; Logistics</h2>
   {% set ns.sec = ns.sec + 1 %}
+
+  {# v3 Section Explainer #}
+  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.weather_logistics %}
+  <div class="section-explainer">
+    {{ report.scriptAnalysis.sectionExplainers.weather_logistics }}
+  </div>
+  {% endif %}
 
   {% for wl in report.weatherLogistics %}
   <div class="card">

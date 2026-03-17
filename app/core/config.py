@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     ANTHROPIC_MAX_TOKENS_SCRIPT_CHUNK: int | None = None
     ANTHROPIC_MAX_TOKENS_SCRIPT_AGGREGATE: int | None = None
     ANTHROPIC_MAX_TOKENS_REPORT: int | None = None
-    ANTHROPIC_TIMEOUT_SCRIPT_CHUNK: int | None = None
+    ANTHROPIC_TIMEOUT_SCRIPT_CHUNK: int | None = 180
     ANTHROPIC_TIMEOUT_SCRIPT_AGGREGATE: int | None = None
     ANTHROPIC_TIMEOUT_REPORT: int | None = None
 

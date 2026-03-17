@@ -42,6 +42,27 @@ _DEPRECATED_SOURCE_URLS = {
     "https://cinema.cultura.gov.it/incentivi-tax-credit/",
     "https://www.icelandicfilmcentre.is/support/production-incentive/",
     "https://www.nzfilm.co.nz/incentives/new-zealand-screen-production-rebate",
+    # Third-party incentive aggregators (v3 cleanup — official sources cover these territories)
+    "https://ep.com/blog/uk-independent-film-tax-credit-approved-key-updates-for-producers/",
+    "https://britishfilmcommission.org.uk/plan-your-production/accessing-uk-tax-reliefs/",
+    "https://hungariantaxcredit.com",
+    "https://focal.ch/prodvalue",
+    "https://screenmalta.com",
+    # Union/CBA crew rate cards — copyrighted, official stats sources cover these territories
+    "https://bectuartdepartment.co.uk/Rate-Card",
+    "https://camerabranch.org.uk/rates/",
+    # Third-party crew rate aggregators — official stats sources cover these territories
+    "https://callacrew.co.za/crew-rates",
+    "https://callacrew.co.za/cpa-working-guidelines",
+    "https://pcpmalta.com/rebate.html",
+}
+
+# Sources deprecated only for specific resource types (URL is valid for other types)
+_DEPRECATED_SOURCE_BY_TYPE: dict[str, set[str]] = {
+    # screenireland.ie/funding is legitimate for grants but not for crew_costs
+    "crew_costs": {
+        "https://www.screenireland.ie/funding",
+    },
 }
 
 
@@ -98,7 +119,15 @@ class ScraperService:
 
         # Disable known dead legacy sources so they stop failing sync runs.
         for row in existing_rows:
-            if row.get("url") in _DEPRECATED_SOURCE_URLS and row.get("enabled", True):
+            if not row.get("enabled", True):
+                continue
+            url = row.get("url")
+            rt = row.get("resource_type")
+            is_deprecated = (
+                url in _DEPRECATED_SOURCE_URLS
+                or url in _DEPRECATED_SOURCE_BY_TYPE.get(rt, set())
+            )
+            if is_deprecated:
                 self.db.table("scrape_sources").update({
                     "enabled": False,
                     "last_status": "error",

@@ -371,6 +371,40 @@ class ReportService:
         datasets["_producer_country"] = request_metadata.get("producer_country")
         datasets["_co_production_status"] = request_metadata.get("co_production_status")
 
+        # v3: Production priority (needed by validator for score recalculation)
+        datasets["_production_priority"] = request_metadata.get("production_priority", "full")
+
+        # v3: Production format (needed by validator for format harmonisation)
+        datasets["_production_format"] = request_metadata.get("format")
+
+        # v3: Budget conversion to GBP
+        budget_amount = request_metadata.get("budget_amount")
+        budget_currency = request_metadata.get("budget_currency", "GBP")
+        if budget_amount and budget_amount > 0:
+            fx_service = FXService(self.supabase.settings)
+            budget_data = fx_service.convert_budget(budget_amount, budget_currency, "GBP")
+            datasets["_budget_gbp"] = budget_data
+            datasets["_budget_amount"] = budget_amount
+            datasets["_budget_currency"] = budget_currency
+
+            # v3: Currency advantage scores for all territories
+            territory_labels = set()
+            for inc in datasets.get("incentives", []):
+                t = inc.get("territory")
+                if t:
+                    territory_labels.add(t)
+            # Also include territories from weather data
+            for w in datasets.get("weather", []):
+                t = w.get("territory")
+                if t:
+                    territory_labels.add(t)
+            if territory_labels:
+                datasets["_currency_advantage_scores"] = (
+                    fx_service.compute_currency_advantage_batch(
+                        budget_currency, list(territory_labels)
+                    )
+                )
+
 
     # --- Dataset loading ---
 
@@ -548,7 +582,9 @@ class ReportService:
         for inc in incentives:
             group = inc.get("stacking_group")
             if group:
-                stacking_map.setdefault(group, []).append(inc.get("program_name", ""))
+                stacking_map.setdefault(group, []).append(
+                    inc.get("program_name") or inc.get("program") or ""
+                )
 
         logger.info(
             "Loaded analysis datasets counts: incentives=%s crew_costs=%s cast_costs=%s comparables=%s grants=%s festivals=%s weather=%s",
@@ -584,10 +620,12 @@ class ReportService:
                 currencies.add(ccy.upper())
 
         if not currencies:
-            # All GBP — annotate and return
+            # All GBP — convert pence to pounds and annotate
             for c in crew_costs:
-                c["union_rate_gbp"] = c.get("union_rate_cents")
-                c["non_union_rate_gbp"] = c.get("non_union_rate_cents")
+                union_cents = c.get("union_rate_cents")
+                non_union_cents = c.get("non_union_rate_cents")
+                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
                 c["fx_rate"] = 1.0
                 c["fx_date"] = date.today().isoformat()
             return crew_costs
@@ -602,16 +640,19 @@ class ReportService:
         for c in crew_costs:
             currency = (c.get("rate_currency") or c.get("currency") or "").upper()
             if currency == "GBP":
-                c["union_rate_gbp"] = c.get("union_rate_cents")
-                c["non_union_rate_gbp"] = c.get("non_union_rate_cents")
+                union_cents = c.get("union_rate_cents")
+                non_union_cents = c.get("non_union_rate_cents")
+                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
                 c["fx_rate"] = 1.0
                 c["fx_date"] = date.today().isoformat()
             elif currency in rates:
                 rate, fx_date = rates[currency]
                 union_cents = c.get("union_rate_cents")
                 non_union_cents = c.get("non_union_rate_cents")
-                c["union_rate_gbp"] = round(union_cents / rate) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / rate) if non_union_cents else None
+                # Convert from local currency cents to GBP pounds: ÷100 for cents→units, ÷rate for FX
+                c["union_rate_gbp"] = round(union_cents / 100 / rate) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / 100 / rate) if non_union_cents else None
                 c["fx_rate"] = round(rate, 4)
                 c["fx_date"] = fx_date.isoformat() if hasattr(fx_date, "isoformat") else str(fx_date)
             else:

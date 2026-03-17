@@ -378,7 +378,7 @@ def test_financial_calc_applies_qualifying_spend_cap():
     by_program = {"Test Programme": db, "test programme": db}
 
     report = {
-        "executiveSummary": {"budget": "£10M", "budgetRange": "5m-15m"},
+        "executiveSummary": {"budget": "£10M"},
         "incentiveEstimates": [{
             "program": "Test Programme",
             "territory": "TestLand",
@@ -492,10 +492,89 @@ def test_financial_calc_per_person_cap_reduces_qualifying_spend():
     ReportValidator._patch_financial_calculations(report, by_program, warnings)
 
     est = report["incentiveEstimates"][0]
-    # Budget £10M, 80% qs cap → £8M, then 5% ATL deduction → £7.5M
-    # 30% of £7.5M = £2,250,000
-    # Deviation: |3M - 2.25M| / 2.25M = 33% → exceeds 15% tolerance
-    assert "2,250,000" in est["estimatedRebate"]
+    # Budget £10M, 80% qs cap → £8M, then 25% ATL deduction (v3) → £8M - £2.5M = £5.5M
+    # 30% of £5.5M = £1,650,000
+    # Deviation: |3M - 1.65M| / 1.65M = 82% → exceeds 15% tolerance
+    assert "1,650,000" in est["estimatedRebate"]
+    assert len(warnings) > 0
+
+
+def test_budget_scenario_patches_intermediate_fields_and_programme():
+    """budgetScenarios should have corrected atlDeduction, netQualifyingSpend, programme, and rates."""
+    # IFTC-like: cap at £20M
+    iftc = _make_incentive_db_full(
+        "IFTC",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+        qualifying_spend_cap_pct=80.0,
+        cap_amount=20_000_000.0,
+        cap_per_person=500_000.0,
+    )
+    # AVEC-like: no cap, also has ATL cap
+    avec = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80.0,
+        cap_amount=None,
+        cap_per_person=500_000.0,
+    )
+    by_program = {
+        "IFTC": iftc, "iftc": iftc,
+        "AVEC": avec, "avec": avec,
+    }
+
+    report = {
+        "executiveSummary": {"budget": "£30M"},
+        "incentiveEstimates": [],
+        "locationRankings": [],
+        "financialAnalysis": {
+            "budgetScenarios": [{
+                "territory": "United Kingdom",
+                "programme": "IFTC",  # Wrong — should switch to AVEC
+                "totalBudget": "£30,000,000",
+                "qualifyingSpendPct": "100%",
+                "qualifyingSpend": "£30,000,000",
+                "atlDeduction": "£6,000,000",
+                "netQualifyingSpend": "£18,000,000",
+                "rateGross": "53%",
+                "rateNet": "39.75%",
+                "grossRebate": "£15,900,000",
+                "netRebate": "£11,925,000",
+                "netBudget": "£18,075,000",
+            }],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_financial_calculations(
+        report, by_program, warnings, budget_gbp_override=30_000_000,
+    )
+
+    scenario = report["financialAnalysis"]["budgetScenarios"][0]
+
+    # Programme should be switched to AVEC
+    assert scenario["programme"] == "AVEC"
+
+    # Rates should be AVEC (34% / 25.5%), not IFTC (53% / 39.75%)
+    assert scenario["rateGross"] == "34%"
+    assert scenario["rateNet"] == "25.5%"
+
+    # Qualifying spend: 80% of £30M = £24M (before ATL)
+    assert "24,000,000" in scenario["qualifyingSpend"]
+
+    # ATL deduction: 25% of £30M = £7.5M
+    assert "7,500,000" in scenario["atlDeduction"]
+
+    # Net qualifying spend: £24M - £7.5M = £16.5M
+    assert "16,500,000" in scenario["netQualifyingSpend"]
+
+    # Net rebate: £16.5M * 25.5% = £4,207,500
+    assert "4,207,500" in scenario["netRebate"]
+
+    # Notes should mention the programme switch
+    assert "AVEC" in (scenario.get("notes") or "")
     assert len(warnings) > 0
 
 
@@ -714,3 +793,166 @@ def test_parse_money_string():
     assert _parse_money_string(None) is None
     assert _parse_money_string("") is None
     assert _parse_money_string("No data") is None
+
+
+# ── _patch_location_rankings rebateAmount tests ─────────────────────────────
+
+
+def test_location_rankings_rebate_amount_corrected():
+    """rebateAmount in locationRankings should be corrected when it deviates >15%."""
+    db = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "locationRankings": [{
+            "name": "United Kingdom",
+            "rebatePercent": "34% / 25.5%",
+            "rebateAmount": "£11,925,000",  # Wrong — AI hallucinated
+            "score": 72,
+        }],
+        "incentiveEstimates": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_location_rankings(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    # The corrected amount should be 30M * 80% * 25.5% = £6,120,000
+    assert "6,120,000" in report["locationRankings"][0]["rebateAmount"]
+    assert any("rebateAmount corrected" in w for w in warnings)
+
+
+def test_location_rankings_rebate_amount_within_tolerance():
+    """rebateAmount should NOT be overridden if within 15% tolerance."""
+    db = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "locationRankings": [{
+            "name": "United Kingdom",
+            "rebatePercent": "34% / 25.5%",
+            "rebateAmount": "~£6,200,000",  # Close enough to £6,120,000
+            "score": 72,
+        }],
+        "incentiveEstimates": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_location_rankings(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    # Should NOT be corrected — within tolerance
+    assert "6,200,000" in report["locationRankings"][0]["rebateAmount"]
+    assert not any("rebateAmount corrected" in w for w in warnings)
+
+
+# ── _patch_territory_deep_dives score + rebate tests ────────────────────────
+
+
+def test_deep_dive_score_propagated_from_rankings():
+    """territoryDeepDives scores should match locationRankings after patching."""
+    db = _make_incentive_db_full(
+        "AVEC", territory="United Kingdom", rate_gross=34, rate_net=25.5,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "territoryDeepDives": [{
+            "name": "United Kingdom",
+            "score": 78,  # AI-generated, wrong
+            "estimatedRebate": "£4,590,000",
+        }],
+    }
+    ranking_scores = {"United Kingdom": 72}
+    warnings: list[str] = []
+    ReportValidator._patch_territory_deep_dives(
+        report, by_program, warnings,
+        ranking_scores=ranking_scores,
+    )
+
+    assert report["territoryDeepDives"][0]["score"] == 72
+    assert any("score aligned" in w for w in warnings)
+
+
+def test_deep_dive_rebate_corrected():
+    """territoryDeepDives estimatedRebate should be corrected when deviating."""
+    db = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "territoryDeepDives": [{
+            "name": "United Kingdom",
+            "score": 72,
+            "estimatedRebate": "£11,925,000",  # Hallucinated
+        }],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_territory_deep_dives(
+        report, by_program, warnings,
+        budget_gbp=30_000_000,
+    )
+
+    assert "6,120,000" in report["territoryDeepDives"][0]["estimatedRebate"]
+    assert any("estimatedRebate corrected" in w for w in warnings)
+
+
+# ── _patch_production_format tests ───────────────────────────────────────────
+
+
+def test_production_format_harmonises_scale():
+    """scale field should be corrected when it contains wrong format."""
+    report = {
+        "scale": "Mid-to-High Budget Feature Film",
+        "executiveSummary": {"format": "Feature Film"},
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_production_format(report, "TV Series", warnings)
+
+    assert "TV Series" in report["scale"]
+    assert "Feature Film" not in report["scale"]
+    assert report["executiveSummary"]["format"] == "TV Series"
+    assert len(warnings) >= 1
+
+
+def test_production_format_noop_when_correct():
+    """No changes when format already matches."""
+    report = {
+        "scale": "Mid-Budget TV Series",
+        "executiveSummary": {"format": "TV Series"},
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_production_format(report, "TV Series", warnings)
+
+    assert report["scale"] == "Mid-Budget TV Series"
+    assert len(warnings) == 0
+
+
+def test_production_format_noop_when_none():
+    """No changes when production_format is None."""
+    report = {
+        "scale": "Mid-Budget Feature Film",
+        "executiveSummary": {"format": "Feature Film"},
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_production_format(report, None, warnings)
+
+    assert report["scale"] == "Mid-Budget Feature Film"
+    assert len(warnings) == 0

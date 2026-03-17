@@ -374,6 +374,7 @@ def _compact_script_analysis_meta(meta: dict | None) -> dict:
     return compact
 
 
+
 def process_report_task(
     report_id: str,
     user_id: str,
@@ -447,10 +448,10 @@ def process_report_task(
             compact_meta = _compact_script_analysis_meta(script_analysis_meta)
             failed_chunks = ((compact_meta.get("chunkTelemetry") or {}).get("failedChunks") or 0)
             logger.info(
-                "Script analysis complete: report_id=%s locations=%s budget_range=%s elapsed_ms=%s meta=%s",
+                "Script analysis complete: report_id=%s locations=%s budget_estimate=%s elapsed_ms=%s meta=%s",
                 report_id,
                 len(analysis.locations),
-                analysis.budgetEstimate.range,
+                analysis.budgetEstimate.range,  # AI-estimated range from script content
                 int((perf_counter() - step_started) * 1000),
                 compact_meta,
             )

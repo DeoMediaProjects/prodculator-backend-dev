@@ -127,7 +127,8 @@ const metadata = {
   script_title: "My Film",
   report_type: "paid", // "paid" | "b2b" | "preview"
   genre: ["Drama"],
-  budget_range: "2m-5m",
+  budget_amount: 3000000,
+  budget_currency: "GBP",
   format: "Feature Film",
   country: "UK",
   location_strategy: "domestic",

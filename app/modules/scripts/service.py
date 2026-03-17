@@ -42,7 +42,22 @@ FORMAT_OPTIONS = {"feature", "tv_series", "limited_series", "documentary", "shor
 
 SCRIPT_CHUNK_EXTRACTION_PROMPT = """You extract production signals from a script chunk.
 
-Return only valid JSON matching the requested schema.
+GOLDEN RULE: If it is not explicitly written in the script, it does not exist.
+No inference, no assumption. Count what is written.
+- If a scene heading says INT., it is interior. If it says EXT., it is exterior.
+- If a language is not spoken by a character, do not list it.
+- Count scene headings (INT./EXT./INT-EXT.) for scene counts.
+- Count NIGHT/DUSK/DAWN for night scenes, DAY/MORNING/AFTERNOON for day scenes.
+- Only list languages with actual dialogue written in that language OR explicit stage direction.
+
+Return ONLY valid JSON (no markdown fences, no extra text) with these top-level keys:
+- "locations": array of {name, country, territory, frequency (int), isMainLocation (bool)}
+- "budgetEstimate": {range, indicators (array of strings)}
+- "productionScale": {crewSize, principalCast, supportingCast, backgroundExtras, estimatedShootingDays (int)}
+- "equipment": {cameraEquipment, specialEquipment (array), vfxRequirements}
+- "metadata": {genres (array), format, tone, targetAudience}
+- "challenges": {weatherDependent (bool), historicalPeriod (bool), specialPermits (bool), stunts (bool), animalWrangling (bool), waterWork (bool), nightShooting (bool), notes (array), extSceneCount (int), intSceneCount (int), nightSceneCount (int), waterSceneCount (int), vfxHeavySceneCount (int), daySceneCount (int), languages (array), voiceOvers (bool), namedLocations (array of {name, count}), musicPerformanceScenes (int), conflictType, irresolution (bool), stuntSequences (int), crowdScenes (int)}
+
 Use only evidence present in this chunk.
 For unknown values use conservative defaults:
 - budgetEstimate.range: "unknown"
@@ -137,6 +152,27 @@ SCRIPT_CHUNK_OUTPUT_SCHEMA = {
                 "nightSceneCount": {"type": "integer"},
                 "waterSceneCount": {"type": "integer"},
                 "vfxHeavySceneCount": {"type": "integer"},
+                # v3 structured extraction fields
+                "daySceneCount": {"type": "integer"},
+                "languages": {"type": "array", "items": {"type": "string"}},
+                "voiceOvers": {"type": "boolean"},
+                "namedLocations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "count": {"type": "integer"},
+                        },
+                        "required": ["name", "count"],
+                    },
+                },
+                "musicPerformanceScenes": {"type": "integer"},
+                "conflictType": {"type": "string"},
+                "irresolution": {"type": "boolean"},
+                "stuntSequences": {"type": "integer"},
+                "crowdScenes": {"type": "integer"},
             },
             "required": [
                 "weatherDependent",
@@ -195,13 +231,34 @@ DATA INTEGRITY RULES — READ CAREFULLY:
 - Programme scope: respect the `programme_level` or `scope` field. If scope = "state" or programme_level = "state", never describe it as a national programme. If no national programme exists for a country, do not invent one.
 
 SCORING RULES for locationRankings:
-- Each territory gets sub-scores (0-100) for: costEfficiency, crewDepth, infrastructure, incentiveStrength, currencyAdvantage
+- Each territory gets sub-scores (0-100) for: costEfficiency, crewDepth, infrastructure, incentiveStrength, currencyAdvantage, incentiveReliability
 - The overall `score` (0-100) is a weighted average of sub-scores, based on the user's production_priority:
-  - "incentive": incentiveStrength weight x2 (40%), other four share remaining 60% equally (15% each)
-  - "location": crewDepth and infrastructure weight x1.5 each (25% each), other three share 50% (~17% each)
-  - "full": all five sub-scores weighted equally (20% each)
+  - "full": costEfficiency 25%, crewDepth 20%, infrastructure 20%, incentiveStrength 20%, currencyAdvantage 10%, incentiveReliability 5%
+  - "incentive": costEfficiency 15%, crewDepth 15%, infrastructure 15%, incentiveStrength 40%, currencyAdvantage 10%, incentiveReliability 5%
+  - "location": costEfficiency 17%, crewDepth 25%, infrastructure 25%, incentiveStrength 13%, currencyAdvantage 10%, incentiveReliability 10%
 - Use territories_considering to bias selection toward named territories; if empty or contains "Open to all", choose globally optimal set
 - Use filming_start_date and filming_duration to affect seasonal scoring where relevant
+
+INCENTIVE STRENGTH — COMPOSITE SCORING:
+- incentiveStrength (0-100) = (rateScore × 0.35) + (reliabilityScore × 0.30) + (qualificationScore × 0.20) + (stabilityScore × 0.15)
+- rateScore: based on rate_gross/rate_net from dataset. 0% = 0, 20% = 40, 30% = 65, 40% = 82, 53% gross = 90
+- reliabilityScore: based on payment_reliability from dataset. 0.90+ = 90, 0.70–0.89 = 65, 0.50–0.69 = 40, below 0.50 = 15
+- qualificationScore: No cultural test = 85. Cultural test with clear criteria = 65. Cultural test for non-native = 45. Multiple mandatory structures = 30
+- stabilityScore: Programme 10+ years = 90. Active, sunset >2 years = 70. Sunset <2 years = 45. Recent delays = 20
+
+INCENTIVE RELIABILITY (new dimension, 0-100):
+- Based on payment_reliability from dataset, payment timeline, and programme stability
+- Separate from Incentive Strength — gives explicit visibility to how bankable the incentive is
+
+BANKABILITY LABELS — MANDATORY on every incentive and locationRanking:
+- "BANKABLE": payment_reliability >= 0.80, payment_timeline_days_max <= 180, programme active 5+ years
+- "VERIFY FIRST": payment_reliability 0.50–0.79, or payment 180–365 days, or sunset clause within 3 years
+- "NOT BANKABLE": payment_reliability < 0.50, or payment > 365 days, or programme under review
+
+CURRENCY ADVANTAGE — PRE-COMPUTED:
+- Currency advantage scores are pre-computed and provided in DERIVED: CURRENCY ADVANTAGE SCORES section
+- Use these scores directly for the currencyAdvantage sub-score in locationRankings
+- Weight is 10% of overall score (reduced from 20% in v2 — no longer double-counts cost efficiency)
 
 SCRIPT SIGNAL → TERRITORY SCORING RULES:
 - If challenges.waterSceneCount >= 5: boost the score of territories with coastal or maritime infrastructure and note authentic water locations in keyAdvantages. Identify candidates from the dataset based on territory geography.
@@ -210,15 +267,12 @@ SCRIPT SIGNAL → TERRITORY SCORING RULES:
 - If challenges.nightSceneCount >= 8: add a keyRisk for any territory where shoot months have short daylight hours (check TERRITORY WEATHER DATA daylightHours if available).
 - If challenges.historicalPeriod = true: note period-appropriate infrastructure for territories with established studio complexes and period location availability in the dataset.
 
-BUDGET RANGE MIDPOINTS (GBP) for estimating rebate amounts:
-- "<500k": £250,000
-- "500k-2m": £1,250,000
-- "2m-5m": £3,500,000
-- "5m-15m": £10,000,000
-- "15m-30m": £22,500,000
-- "30m+": £40,000,000
+BUDGET HANDLING (v3):
+- The exact budget amount in GBP is provided in DERIVED: BUDGET IN GBP. Use this actual figure for ALL calculations.
+- Do NOT use midpoint estimates. The producer provided their actual budget amount.
+- Show the conversion clearly: "Budget: [original_currency] [amount] = £[GBP_amount] at rate [rate] (fetched [date])."
 
-FINANCIAL CALCULATION RULES — MANDATORY FOR ALL REBATE ESTIMATES:
+FINANCIAL CALCULATION RULES — MANDATORY 6-STEP PROTOCOL FOR ALL REBATE ESTIMATES:
 These rules MUST be applied in order when calculating estimatedRebate for every territory. Failure to apply them will produce materially overstated figures.
 
 STEP 1 — Qualifying Spend Deduction (80% Rule):
@@ -237,8 +291,9 @@ STEP 2 — Budget-Cap Programme Selection:
 STEP 3 — ATL (Above-the-Line) Cap Deductions:
 - If cap_per_person is present in the dataset for a programme, it means individual above-the-line fees are capped. This reduces qualifying spend when key talent is paid above this threshold.
 - If the dataset shows an ATL cap (via cap_per_person, cap_per_person_currency, or notes mentioning ATL cap), estimate the ATL deduction and subtract it from qualifying spend before applying the rate.
-- ATL typically represents 20-35% of total budget. When calculating estimatedRebate, DEDUCT non-qualifying ATL spend before applying the rate.
-- Show the deduction in reasoning: "After ATL cap deductions, qualifying spend reduces to approximately [currency][amount]".
+- ATL typically represents 20-35% of total budget. When calculating estimatedRebate, DEDUCT non-qualifying ATL spend (estimate 25% of budget if no specific data) before applying the rate.
+- Show the deduction in reasoning: "After ATL cap deductions (estimated 25%), qualifying spend reduces to approximately [currency][amount]".
+- The headline figure shown to the producer should be the NET rebate — this is actual cash received.
 
 STEP 4 — Apply Rate to Qualifying Spend (NOT total budget):
 - estimatedRebate = qualifyingSpend (after Steps 1-3) × rate.
@@ -299,7 +354,7 @@ WEATHER–SCHEDULE INTEGRATION RULES:
   8. Set weatherLogistics.shootWindowOverlap to true if any shoot month has storm_risk "high" or avg_rainfall_mm > 100.
   9. Set weatherLogistics.shootWindowRisk to a specific sentence about the overlap.
   10. Set weatherLogistics.estimatedDelayDays to an estimate based on storm_risk and rainfall (high: 3-5 days/month, medium: 1-2 days/month).
-  11. Set weatherLogistics.contingencyBudget to a GBP estimate (£5,000–£10,000 per delay day × estimatedDelayDays).
+  11. Set weatherLogistics.contingencyBudget to a GBP estimate (£7,500 per delay day × estimatedDelayDays). Show as a range.
 - CRITICAL: If a territory has weatherRisk "High" for the shoot window, this finding MUST appear in locationRankings keyRisks AND executiveSummary.keyInsights. Do NOT bury it only in weatherLogistics.
 - If NO shoot window data is present: use annual averages and add to weatherLogistics: "Based on annual averages — provide filming dates for schedule-specific risk assessment."
 
@@ -358,10 +413,12 @@ RESPONSE JSON SCHEMA:
     "recommendedTerritoryInfrastructure": "e.g. Excellent, World-class, Good",
     "recommendedTerritoryPaymentSpeed": "COPY from payment_timeline_notes in dataset. Write 'Data not available' if absent.",
     "shootDays": "integer — estimated shooting days from script analysis or null",
-    "budget": "estimated budget string e.g. £6.5M based on budget range midpoint",
-    "budgetRange": "budget range from metadata e.g. 5m-15m",
+    "budget": "actual budget string e.g. £3,000,000 — use the exact figure from DERIVED: BUDGET IN GBP",
     "primaryLocations": ["location names from script analysis or metadata"],
-    "shootWindow": {"months": ["Feb", "Mar"], "weatherNote": "brief shoot-window weather summary across territories — null if no shoot dates provided"}
+    "shootWindow": {"months": ["Feb", "Mar"], "weatherNote": "brief shoot-window weather summary across territories — null if no shoot dates provided"},
+    "headlineNetBudget": "Your estimated net budget after incentives: £X — the single most prominent figure in the report",
+    "actionTimeline": [{"action": "Apply for BFI certification", "deadline": "12–16 weeks before shoot", "note": "Required for AVEC/IFTC qualification"}],
+    "keyFlags": ["max 3 top-level flags: weather risk, eligibility risk, financial risk — one sentence each"]
   },
 
   "locationRankings": [
@@ -374,10 +431,12 @@ RESPONSE JSON SCHEMA:
       "infrastructure": 0-100,
       "incentiveStrength": 0-100,
       "currencyAdvantage": 0-100,
+      "incentiveReliability": 0-100,
+      "bankabilityLabel": "BANKABLE | VERIFY FIRST | NOT BANKABLE",
       "reasoning": ["specific bullet 1", "specific bullet 2", "specific bullet 3"],
       "isAssessmentOnly": false,
       "rebatePercent": "COPY from rate_gross/rate_net in dataset, e.g. 25%",
-      "rebateAmount": "GBP estimate based on budget range midpoint",
+      "rebateAmount": "GBP estimate based on actual budget figure",
       "culturalTestLikelihood": "High (85%) | Medium (65%) | Low (35%) | N/A",
       "adminComplexity": "Low | Medium | High",
       "paymentSpeed": "COPY from payment_timeline_notes. Write 'Data not available' if absent.",
@@ -436,7 +495,7 @@ RESPONSE JSON SCHEMA:
       "rate": "COPY from rate_gross/rate_net in dataset",
       "cap": "COPY from cap_amount / cap_currency in dataset, or 'No cap'",
       "qualifyingSpend": "COPY from qualifying_spend_min in dataset, or 'See programme terms'",
-      "estimatedRebate": "GBP estimate based on budget range midpoint",
+      "estimatedRebate": "GBP estimate based on actual budget figure and 6-step protocol",
       "requirements": ["COPY from eligibility_rules_json in dataset"],
       "disclaimer": "Estimate only. Final eligibility depends on official approval.",
       "dataSource": "COPY from source_name in dataset, or 'Prodculator admin database'",
@@ -446,7 +505,8 @@ RESPONSE JSON SCHEMA:
       "stackableWith": ["array of program_names this incentive can stack with, from stackable_with field"],
       "stackingNote": "human-readable explanation of how this incentive stacks, or null",
       "eligibilityStatus": "qualified | requires_co_production | requires_spv | ineligible | unknown — based on producer eligibility context",
-      "eligibilityNote": "human-readable eligibility explanation, or null"
+      "eligibilityNote": "human-readable eligibility explanation, or null",
+      "bankabilityLabel": "BANKABLE | VERIFY FIRST | NOT BANKABLE — based on payment_reliability, payment timeline, programme stability"
     }
   ],
   "crewInsights": [
@@ -463,7 +523,7 @@ RESPONSE JSON SCHEMA:
     {
       "title": "production title from dataset",
       "genre": "genre label",
-      "budgetRange": "e.g. £5M–£15M",
+      "budgetRange": "comparable film's budget e.g. £12M",
       "visualScale": "scope description",
       "location": "primary filming territory",
       "year": 2024,
@@ -505,13 +565,14 @@ RESPONSE JSON SCHEMA:
   "scoringMethodology": {
     "overview": "Brief 1-2 sentence explanation of the scoring system — e.g. Each territory is rated 0-100 based on a weighted composite of five production-critical dimensions.",
     "dimensions": [
-      {"name": "Cost Efficiency", "weight": "20%", "description": "How far the production budget stretches in this territory — accounts for local crew rates, facility costs, and cost of living relative to the budget."},
+      {"name": "Cost Efficiency", "weight": "25%", "description": "How far the production budget stretches in this territory — accounts for local crew rates, facility costs, and cost of living relative to the budget."},
       {"name": "Crew Depth", "weight": "20%", "description": "Availability and experience of local film crew — considers size of the local talent pool, specialist skills, and peak-season competition."},
       {"name": "Infrastructure", "weight": "20%", "description": "Quality of studios, stages, post-production facilities, equipment rental houses, and on-location production support."},
-      {"name": "Incentive Strength", "weight": "20%", "description": "Value of tax incentives, rebates, and credits — considers the rebate rate, caps, qualifying spend thresholds, payment speed, and programme stability."},
-      {"name": "Currency Advantage", "weight": "20%", "description": "Favourable exchange rate dynamics for the production's base currency — a weaker local currency means the budget goes further."}
+      {"name": "Incentive Strength", "weight": "20%", "description": "Composite of rebate rate (35%), payment reliability (30%), qualification ease (20%), and programme stability (15%)."},
+      {"name": "Currency Advantage", "weight": "10%", "description": "Purchasing power of the budget currency vs the territory's local currency. Pre-computed from live exchange rates."},
+      {"name": "Incentive Reliability", "weight": "5%", "description": "How bankable is the incentive? Based on payment reliability score, payment timeline, and programme stability. High rate + low reliability = risky."}
     ],
-    "weightingNote": "Weights adjust based on your stated production priority. 'Incentive' priority doubles the Incentive Strength weight to 40%. 'Location' priority boosts Crew Depth and Infrastructure to 25% each.",
+    "weightingNote": "Weights adjust based on your stated production priority. 'Incentive' priority increases Incentive Strength to 40%. 'Location' priority boosts Crew Depth and Infrastructure to 25% each. Currency Advantage is always 10%. Incentive Reliability is 5-10%.",
     "colorKey": "Green (70-100) = Strong, Gold (40-69) = Moderate, Red (0-39) = Weak"
   }
 }
@@ -532,7 +593,7 @@ SECTION REQUIREMENTS:
 COMPARABLE MATCHING RULES:
 - Comparables MUST be selected from the COMPARABLE PRODUCTIONS dataset based on THREE criteria in order of priority:
   1. Genre match: same or adjacent genre to the production being analysed
-  2. Budget tier match: within 0.5x–2x of the production's budget range midpoint
+  2. Budget tier match: within 0.5x–2x of the production's actual budget
   3. Territory/region relevance: filmed in or near the same territories being considered
 - DO NOT select $100M+ studio tentpoles as comparables for mid-budget independent films. A mid-budget thriller should NOT be compared to blockbuster franchise entries.
 - If the dataset lacks ideal matches, acknowledge this: "Limited comparable data available for [genre] at this budget tier" and use the closest matches available with honest relevanceDescription explaining the gap.
@@ -844,13 +905,13 @@ class ScriptAnalysisService:
                 [detail.get("chunk") for detail in failed_chunk_details][:20],
             )
         logger.info(
-            "Chunked script analysis completed: title=%s succeeded_chunks=%s/%s failed_chunks=%s locations=%s budget_range=%s elapsed_ms=%s",
+            "Chunked script analysis completed: title=%s succeeded_chunks=%s/%s failed_chunks=%s locations=%s budget_estimate=%s elapsed_ms=%s",
             script_title,
             len(chunk_results),
             len(chunks),
             failed_chunks,
             len(aggregated.locations),
-            aggregated.budgetEstimate.range,
+            aggregated.budgetEstimate.range,  # AI-estimated range from script content
             int((perf_counter() - started) * 1000),
         )
         return aggregated
@@ -963,7 +1024,8 @@ class ScriptAnalysisService:
                 ),
                 temperature=0.1,
                 stage=self._STAGE_SCRIPT_CHUNK,
-                output_config={"format": {"type": "json_schema", "schema": SCRIPT_CHUNK_OUTPUT_SCHEMA}},
+                # NOTE: output_config with json_schema causes timeouts on claude-sonnet-4-6
+                # with this schema size. Using prompt-based JSON instead.
             )
             raw = self._extract_text_response(response)
             try:
@@ -1035,6 +1097,16 @@ class ScriptAnalysisService:
         night_scene_total = 0
         water_scene_total = 0
         vfx_heavy_scene_total = 0
+        # v3 accumulators
+        day_scene_total = 0
+        music_performance_total = 0
+        stunt_sequences_total = 0
+        crowd_scenes_total = 0
+        all_languages: list[str] = []
+        voice_overs_seen = False
+        named_locations_agg: dict[str, int] = {}
+        conflict_type_values: list[str] = []
+        irresolution_values: list[bool] = []
         section_signal_counts = {
             "locations": 0,
             "budget": 0,
@@ -1162,6 +1234,43 @@ class ScriptAnalysisService:
                         water_scene_total += val
                     elif key == "vfxHeavySceneCount":
                         vfx_heavy_scene_total += val
+            # v3 field accumulation
+            day_val = challenges.get("daySceneCount")
+            if isinstance(day_val, int) and day_val > 0:
+                day_scene_total += day_val
+            music_val = challenges.get("musicPerformanceScenes")
+            if isinstance(music_val, int) and music_val > 0:
+                music_performance_total += music_val
+            stunt_val = challenges.get("stuntSequences")
+            if isinstance(stunt_val, int) and stunt_val > 0:
+                stunt_sequences_total += stunt_val
+            crowd_val = challenges.get("crowdScenes")
+            if isinstance(crowd_val, int) and crowd_val > 0:
+                crowd_scenes_total += crowd_val
+            if bool(challenges.get("voiceOvers", False)):
+                voice_overs_seen = True
+            chunk_langs = challenges.get("languages")
+            if isinstance(chunk_langs, list):
+                all_languages.extend([str(lang).strip() for lang in chunk_langs if str(lang).strip()])
+            chunk_named_locs = challenges.get("namedLocations")
+            if isinstance(chunk_named_locs, list):
+                for entry in chunk_named_locs:
+                    if isinstance(entry, dict):
+                        loc_name = entry.get("name", "")
+                        count = entry.get("count", 0)
+                        if loc_name and isinstance(count, int) and count > 0:
+                            named_locations_agg[str(loc_name)] = named_locations_agg.get(str(loc_name), 0) + count
+            elif isinstance(chunk_named_locs, dict):
+                for loc_name, count in chunk_named_locs.items():
+                    if isinstance(count, int) and count > 0:
+                        named_locations_agg[str(loc_name)] = named_locations_agg.get(str(loc_name), 0) + count
+            ct = challenges.get("conflictType")
+            if isinstance(ct, str) and ct.strip():
+                conflict_type_values.append(ct.strip())
+            irr = challenges.get("irresolution")
+            if isinstance(irr, bool):
+                irresolution_values.append(irr)
+
             if has_challenge_signal:
                 section_signal_counts["challenges"] += 1
 
@@ -1247,6 +1356,31 @@ class ScriptAnalysisService:
                 "nightSceneCount": night_scene_total if night_scene_total > 0 else None,
                 "waterSceneCount": water_scene_total if water_scene_total > 0 else None,
                 "vfxHeavySceneCount": vfx_heavy_scene_total if vfx_heavy_scene_total > 0 else None,
+                # v3 structured extraction fields
+                "total_scenes": (ext_scene_total + int_scene_total) if (ext_scene_total + int_scene_total) > 0 else None,
+                "interior_scenes": int_scene_total if int_scene_total > 0 else None,
+                "exterior_scenes": ext_scene_total if ext_scene_total > 0 else None,
+                "interior_pct": (
+                    round(int_scene_total / (ext_scene_total + int_scene_total) * 100, 1)
+                    if (ext_scene_total + int_scene_total) > 0 else None
+                ),
+                "exterior_pct": (
+                    round(ext_scene_total / (ext_scene_total + int_scene_total) * 100, 1)
+                    if (ext_scene_total + int_scene_total) > 0 else None
+                ),
+                "day_scenes": day_scene_total if day_scene_total > 0 else None,
+                "night_scenes": night_scene_total if night_scene_total > 0 else None,
+                "languages": list(dict.fromkeys(all_languages)) if all_languages else None,
+                "voice_overs": voice_overs_seen if voice_overs_seen else None,
+                "named_locations": named_locations_agg if named_locations_agg else None,
+                "primary_location": (
+                    max(named_locations_agg, key=named_locations_agg.get) if named_locations_agg else None  # type: ignore[arg-type]
+                ),
+                "music_performance_scenes": music_performance_total if music_performance_total > 0 else None,
+                "conflict_type": self._choose_mode(conflict_type_values, default="") or None,
+                "irresolution": any(irresolution_values) if irresolution_values else None,
+                "stunt_sequences": stunt_sequences_total if stunt_sequences_total > 0 else None,
+                "crowd_scenes": crowd_scenes_total if crowd_scenes_total > 0 else None,
             },
             "rawResponse": json.dumps(
                 {
@@ -1484,6 +1618,18 @@ class ScriptAnalysisService:
                 "coProductionStatus": co_production_status,
             }, separators=(",", ":")))
 
+
+        # Derived: budget in GBP (v3)
+        budget_gbp_data = datasets.get("_budget_gbp")
+        if budget_gbp_data:
+            parts.append("\n=== DERIVED: BUDGET IN GBP ===")
+            parts.append(json.dumps(budget_gbp_data, default=str, separators=(",", ":")))
+
+        # Derived: currency advantage scores (v3)
+        currency_scores = datasets.get("_currency_advantage_scores")
+        if currency_scores:
+            parts.append("\n=== DERIVED: CURRENCY ADVANTAGE SCORES ===")
+            parts.append(json.dumps(currency_scores, default=str, separators=(",", ":")))
 
         # Mode instruction
         if is_preview:
@@ -1821,6 +1967,16 @@ class ScriptAnalysisService:
         for attempt in range(1, max_attempts + 1):
             try:
                 client = self._build_client(stage_timeout)
+                api_key_preview = (self.settings.ANTHROPIC_API_KEY or "")[:12] + "..."
+                logger.info(
+                    "Anthropic request: stage=%s attempt=%s/%s model=%s "
+                    "max_tokens=%s timeout=%s base_url=%s api_key=%s "
+                    "has_output_config=%s prompt_chars=%s",
+                    stage, attempt, max_attempts, self.settings.ANTHROPIC_MODEL,
+                    stage_max_tokens, stage_timeout,
+                    getattr(client, "_base_url", getattr(client, "base_url", "unknown")),
+                    api_key_preview, bool(output_config), len(user_content),
+                )
                 request_payload: dict[str, Any] = {
                     "model": self.settings.ANTHROPIC_MODEL,
                     "system": system_prompt,
@@ -1830,15 +1986,33 @@ class ScriptAnalysisService:
                 }
                 if output_config:
                     request_payload["output_config"] = output_config
-                return client.messages.create(
+                import time as _time
+                _t0 = _time.monotonic()
+                logger.info("Anthropic API call starting: stage=%s attempt=%s", stage, attempt)
+                result = client.messages.create(
                     **request_payload,
                 )
+                _elapsed = _time.monotonic() - _t0
+                logger.info(
+                    "Anthropic API call completed: stage=%s attempt=%s elapsed=%.1fs stop_reason=%s",
+                    stage, attempt, _elapsed, getattr(result, "stop_reason", None),
+                )
+                return result
             except Exception as exc:
-                if not self._is_rate_limit_error(exc) or attempt >= max_attempts:
+                logger.error(
+                    "Anthropic request failed: stage=%s attempt=%s/%s "
+                    "exc_type=%s error=%s",
+                    stage, attempt, max_attempts,
+                    type(exc).__name__, exc,
+                )
+                is_retryable = self._is_rate_limit_error(exc) or self._is_timeout_error(exc)
+                if not is_retryable or attempt >= max_attempts:
                     raise
                 delay = retry_delays[attempt - 1]
+                error_kind = "timeout" if self._is_timeout_error(exc) else "rate_limit"
                 logger.warning(
-                    "Anthropic rate limit at stage=%s attempt=%s/%s, retrying in %ss (max_tokens=%s timeout_s=%s)",
+                    "Anthropic %s at stage=%s attempt=%s/%s, retrying in %ss (max_tokens=%s timeout_s=%s)",
+                    error_kind,
                     stage,
                     attempt,
                     max_attempts,
@@ -1857,6 +2031,11 @@ class ScriptAnalysisService:
             or "429" in message
             or "input tokens per minute" in message
         )
+
+    @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "timeout" in message or "timed out" in message
 
     @staticmethod
     def _recover_truncated_json(raw: str) -> dict[str, Any] | None:
@@ -2052,11 +2231,12 @@ class ScriptAnalysisService:
                 "reasoning": loc.get("reasoning", ["No detailed reasoning available"]),
                 "isAssessmentOnly": True if is_preview else loc.get("isAssessmentOnly", False),
             }
-            # New optional fields
+            # Optional fields (including v3 additions)
             for field in (
                 "rebatePercent", "rebateAmount", "culturalTestLikelihood",
                 "adminComplexity", "paymentSpeed",
-                "weatherRiskImpact",  # New: weather score penalty
+                "weatherRiskImpact",
+                "incentiveReliability", "bankabilityLabel",
             ):
                 if loc.get(field) is not None:
                     sanitized_loc[field] = loc[field]
@@ -2079,10 +2259,10 @@ class ScriptAnalysisService:
                 "dataSource": "Prodculator backend datasets",
                 "lastUpdated": inc.get("lastUpdated", ""),
             }
-            # Preserve new regional/stacking/eligibility fields
+            # Preserve regional/stacking/eligibility/bankability fields
             for field in (
                 "scope", "parentTerritory", "stackableWith", "stackingNote",
-                "eligibilityStatus", "eligibilityNote",
+                "eligibilityStatus", "eligibilityNote", "bankabilityLabel",
             ):
                 if inc.get(field) is not None:
                     sanitized_inc[field] = inc[field]
@@ -2100,13 +2280,19 @@ class ScriptAnalysisService:
                 "recommendedTerritoryPaymentSpeed": exec_summary.get("recommendedTerritoryPaymentSpeed"),
                 "shootDays": exec_summary.get("shootDays"),
                 "budget": exec_summary.get("budget"),
-                "budgetRange": exec_summary.get("budgetRange"),
                 "primaryLocations": exec_summary.get("primaryLocations", []),
             }
-            # Preserve new shootWindow field
+            # Preserve shootWindow field
             shoot_window = exec_summary.get("shootWindow")
             if isinstance(shoot_window, dict) and shoot_window.get("months"):
                 sanitized_exec["shootWindow"] = shoot_window
+            # v3 additions
+            if exec_summary.get("headlineNetBudget"):
+                sanitized_exec["headlineNetBudget"] = exec_summary["headlineNetBudget"]
+            if isinstance(exec_summary.get("actionTimeline"), list):
+                sanitized_exec["actionTimeline"] = exec_summary["actionTimeline"]
+            if isinstance(exec_summary.get("keyFlags"), list):
+                sanitized_exec["keyFlags"] = exec_summary["keyFlags"][:3]
             result["executiveSummary"] = sanitized_exec
 
         # Financial analysis (paid only)
@@ -2147,7 +2333,7 @@ class ScriptAnalysisService:
         """Return a static scoring-methodology block that explains how scores work."""
         return {
             "overview": (
-                "Each territory is scored out of 100 based on five weighted "
+                "Each territory is scored out of 100 based on six weighted "
                 "dimensions. The overall score is a weighted average that "
                 "reflects the production's stated priorities."
             ),
@@ -2192,18 +2378,28 @@ class ScriptAnalysisService:
                     "name": "Currency Advantage",
                     "key": "currencyAdvantage",
                     "description": (
-                        "Current and forecasted exchange-rate benefit when "
-                        "spending in local currency versus your home currency, "
-                        "including hedging considerations."
+                        "Purchasing power of the production's budget currency "
+                        "versus the territory's local currency. Computed from "
+                        "live exchange rates at report generation time."
+                    ),
+                },
+                {
+                    "name": "Incentive Reliability",
+                    "key": "incentiveReliability",
+                    "description": (
+                        "How bankable is the incentive? Based on payment reliability "
+                        "score, payment timeline, and programme stability. A high "
+                        "rate with low reliability should not be included in "
+                        "investor projections without verification."
                     ),
                 },
             ],
             "weightingNote": (
                 "Dimension weights are adjusted to match the production priority "
                 "you selected. 'Incentive-first' emphasises incentive strength "
-                "(40 %), 'Location-first' emphasises crew depth and infrastructure "
-                "(25 % each), and 'Full analysis' weights all five dimensions "
-                "equally (20 % each)."
+                "(40%). 'Location-first' emphasises crew depth and infrastructure "
+                "(25% each). Currency advantage is always 10%. Incentive "
+                "reliability is 5–10%."
             ),
             "colorKey": {
                 "green": "Score ≥ 70 — strong fit",
@@ -2216,7 +2412,9 @@ class ScriptAnalysisService:
         """Return fallback analysis when production analysis API call fails."""
         genre = (request_metadata.get("genre") or ["Drama"])[0]
         country = request_metadata.get("country", "UK")
-        budget_range = request_metadata.get("budget_range", "Unknown")
+        budget_amount = request_metadata.get("budget_amount")
+        budget_currency = request_metadata.get("budget_currency", "GBP")
+        budget_display = f"{budget_currency} {budget_amount:,.0f}" if budget_amount else "Unknown"
 
         # Build location rankings from territories_considering if available
         territories = request_metadata.get("territories_considering") or []
@@ -2232,6 +2430,8 @@ class ScriptAnalysisService:
                     "infrastructure": 50,
                     "incentiveStrength": 50,
                     "currencyAdvantage": 50,
+                    "incentiveReliability": 30,
+                    "bankabilityLabel": None,
                     "reasoning": [
                         "Territory selected from user preferences",
                         "Full AI analysis was unavailable — scores are estimated defaults",
@@ -2248,6 +2448,8 @@ class ScriptAnalysisService:
                 "infrastructure": 60,
                 "incentiveStrength": 50,
                 "currencyAdvantage": 50,
+                "incentiveReliability": 30,
+                "bankabilityLabel": None,
                 "reasoning": [
                     "Default territory based on project country",
                     "Full AI analysis was unavailable — scores are estimated defaults",
@@ -2259,12 +2461,12 @@ class ScriptAnalysisService:
             "_fallbackUsed": True,
             "genre": genre,
             "tone": "Pending analysis",
-            "scale": f"{budget_range} production",
+            "scale": f"{budget_display} production",
             "complexity": "Medium",
             "executiveSummary": {
                 "keyInsights": (
                     f"AI analysis was temporarily unavailable for this {genre.lower()} "
-                    f"{budget_range} production. The report below uses estimated defaults "
+                    f"{budget_display} production. The report below uses estimated defaults "
                     f"based on project metadata. We recommend regenerating this report for "
                     f"full territory analysis, financial breakdowns, and crew cost comparisons."
                 ),
@@ -2274,8 +2476,7 @@ class ScriptAnalysisService:
                 "recommendedTerritoryInfrastructure": None,
                 "recommendedTerritoryPaymentSpeed": None,
                 "shootDays": None,
-                "budget": None,
-                "budgetRange": budget_range,
+                "budget": budget_display,
                 "primaryLocations": [],
             },
             "locationRankings": location_rankings,
@@ -2351,6 +2552,23 @@ class ScriptAnalysisService:
                 waterWork=challenges_raw.get("waterWork", False),
                 nightShooting=challenges_raw.get("nightShooting", False),
                 notes=challenges_raw.get("notes", []),
+                # v3 structured extraction fields (pass through if present)
+                total_scenes=challenges_raw.get("total_scenes"),
+                interior_scenes=challenges_raw.get("interior_scenes"),
+                exterior_scenes=challenges_raw.get("exterior_scenes"),
+                interior_pct=challenges_raw.get("interior_pct"),
+                exterior_pct=challenges_raw.get("exterior_pct"),
+                day_scenes=challenges_raw.get("day_scenes"),
+                night_scenes=challenges_raw.get("night_scenes"),
+                languages=challenges_raw.get("languages"),
+                voice_overs=challenges_raw.get("voice_overs"),
+                named_locations=challenges_raw.get("named_locations"),
+                primary_location=challenges_raw.get("primary_location"),
+                music_performance_scenes=challenges_raw.get("music_performance_scenes"),
+                conflict_type=challenges_raw.get("conflict_type"),
+                irresolution=challenges_raw.get("irresolution"),
+                stunt_sequences=challenges_raw.get("stunt_sequences"),
+                crowd_scenes=challenges_raw.get("crowd_scenes"),
             ),
             rawResponse=data.get("rawResponse"),
         )
