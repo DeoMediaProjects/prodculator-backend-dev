@@ -390,8 +390,9 @@ def test_financial_calc_applies_qualifying_spend_cap():
     ReportValidator._patch_financial_calculations(report, by_program, warnings)
 
     est = report["incentiveEstimates"][0]
-    # Should be corrected: 80% of £10M = £8M, then 40% of £8M = £3.2M
-    assert "3,200,000" in est["estimatedRebate"]
+    # Should be corrected: 80% of £10M = £8M QS, minus 15% ATL (£1.5M) = £6.5M
+    # 40% of £6.5M = £2,600,000
+    assert "2,600,000" in est["estimatedRebate"]
     assert len(warnings) > 0
 
 
@@ -411,15 +412,16 @@ def test_financial_calc_no_cap_uses_full_budget():
         "incentiveEstimates": [{
             "program": "NoCap Programme",
             "territory": "TestLand",
-            "estimatedRebate": "£3,000,000",  # Correct: 30% of full £10M
+            "estimatedRebate": "£3,000,000",  # Was: 30% of full £10M
         }],
         "locationRankings": [],
     }
     warnings: list[str] = []
     ReportValidator._patch_financial_calculations(report, by_program, warnings)
 
-    # Should NOT be overridden — it's within tolerance
-    assert "3,000,000" in report["incentiveEstimates"][0]["estimatedRebate"]
+    # With 15% ATL on tax_credit: QS = £10M - £1.5M = £8.5M, 30% = £2,550,000
+    # AI value £3,000,000 deviates by ~17.6% from £2,550,000 → corrected
+    assert "2,550,000" in report["incentiveEstimates"][0]["estimatedRebate"]
 
 
 def test_financial_calc_budget_exceeds_cap_selects_alternative():
@@ -460,9 +462,9 @@ def test_financial_calc_budget_exceeds_cap_selects_alternative():
     ReportValidator._patch_financial_calculations(report, by_program, warnings)
 
     est = report["incentiveEstimates"][0]
-    # Should use Standard Credit (34%/25.5% net) on 80% of £25M = £20M
-    # Net rebate: £20M * 25.5% = £5,100,000
-    assert "5,100,000" in est["estimatedRebate"]
+    # Should use Standard Credit (34%/25.5% net) on 80% of £25M = £20M QS,
+    # minus 15% ATL (£3.75M) = £16.25M. Net: £16.25M * 25.5% = £4,143,750
+    assert "4,143,750" in est["estimatedRebate"]
     assert "programme" in (est.get("programmeNote") or "").lower() or len(warnings) > 0
 
 
@@ -492,10 +494,10 @@ def test_financial_calc_per_person_cap_reduces_qualifying_spend():
     ReportValidator._patch_financial_calculations(report, by_program, warnings)
 
     est = report["incentiveEstimates"][0]
-    # Budget £10M, 80% qs cap → £8M, then 25% ATL deduction (v3) → £8M - £2.5M = £5.5M
-    # 30% of £5.5M = £1,650,000
-    # Deviation: |3M - 1.65M| / 1.65M = 82% → exceeds 15% tolerance
-    assert "1,650,000" in est["estimatedRebate"]
+    # Budget £10M, 80% QS cap → £8M, then 15% ATL deduction → £8M - £1.5M = £6.5M
+    # 30% of £6.5M = £1,950,000
+    # Deviation: |3M - 1.95M| / 1.95M = 54% → exceeds 15% tolerance
+    assert "1,950,000" in est["estimatedRebate"]
     assert len(warnings) > 0
 
 
@@ -564,14 +566,14 @@ def test_budget_scenario_patches_intermediate_fields_and_programme():
     # Qualifying spend: 80% of £30M = £24M (before ATL)
     assert "24,000,000" in scenario["qualifyingSpend"]
 
-    # ATL deduction: 25% of £30M = £7.5M
-    assert "7,500,000" in scenario["atlDeduction"]
+    # ATL deduction: 15% of £30M = £4.5M
+    assert "4,500,000" in scenario["atlDeduction"]
 
-    # Net qualifying spend: £24M - £7.5M = £16.5M
-    assert "16,500,000" in scenario["netQualifyingSpend"]
+    # Net qualifying spend: £24M - £4.5M = £19.5M
+    assert "19,500,000" in scenario["netQualifyingSpend"]
 
-    # Net rebate: £16.5M * 25.5% = £4,207,500
-    assert "4,207,500" in scenario["netRebate"]
+    # Net rebate: £19.5M * 25.5% = £4,972,500
+    assert "4,972,500" in scenario["netRebate"]
 
     # Notes should mention the programme switch
     assert "AVEC" in (scenario.get("notes") or "")
@@ -823,8 +825,9 @@ def test_location_rankings_rebate_amount_corrected():
         report, by_program, warnings, budget_gbp=30_000_000,
     )
 
-    # The corrected amount should be 30M * 80% * 25.5% = £6,120,000
-    assert "6,120,000" in report["locationRankings"][0]["rebateAmount"]
+    # Corrected: 30M * 80% QS = £24M, minus 15% ATL (£4.5M) = £19.5M
+    # £19.5M * 25.5% = £4,972,500
+    assert "4,972,500" in report["locationRankings"][0]["rebateAmount"]
     assert any("rebateAmount corrected" in w for w in warnings)
 
 
@@ -843,7 +846,7 @@ def test_location_rankings_rebate_amount_within_tolerance():
         "locationRankings": [{
             "name": "United Kingdom",
             "rebatePercent": "34% / 25.5%",
-            "rebateAmount": "~£6,200,000",  # Close enough to £6,120,000
+            "rebateAmount": "~£5,100,000",  # Close to £4,972,500 (within 15%)
             "score": 72,
         }],
         "incentiveEstimates": [],
@@ -853,8 +856,8 @@ def test_location_rankings_rebate_amount_within_tolerance():
         report, by_program, warnings, budget_gbp=30_000_000,
     )
 
-    # Should NOT be corrected — within tolerance
-    assert "6,200,000" in report["locationRankings"][0]["rebateAmount"]
+    # Should NOT be corrected — within tolerance (5.1M vs 4.97M = 2.6%)
+    assert "5,100,000" in report["locationRankings"][0]["rebateAmount"]
     assert not any("rebateAmount corrected" in w for w in warnings)
 
 
@@ -910,7 +913,8 @@ def test_deep_dive_rebate_corrected():
         budget_gbp=30_000_000,
     )
 
-    assert "6,120,000" in report["territoryDeepDives"][0]["estimatedRebate"]
+    # Corrected: £30M × 80% QS - 15% ATL (£4.5M) = £19.5M × 25.5% = £4,972,500
+    assert "4,972,500" in report["territoryDeepDives"][0]["estimatedRebate"]
     assert any("estimatedRebate corrected" in w for w in warnings)
 
 
@@ -1142,4 +1146,290 @@ def test_production_format_noop_when_none():
     ReportValidator._patch_production_format(report, None, warnings)
 
     assert report["scale"] == "Mid-Budget Feature Film"
+    assert len(warnings) == 0
+
+
+# ── _patch_executive_summary rebate + headline tests ─────────────────────────
+
+
+def test_executive_summary_rebate_corrected():
+    """recommendedTerritoryRebate should be corrected when AI figure deviates >15%."""
+    db = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80.0,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "executiveSummary": {
+            "recommendedTerritory": "United Kingdom",
+            "recommendedTerritoryRebate": "53% / ~£5,963,000",  # Wrong
+            "headlineNetBudget": "Estimated net budget after UK IFTC: approximately £24,037,000",
+            "recommendedTerritoryPaymentSpeed": "6-9 months",
+        },
+        "incentiveEstimates": [],
+        "locationRankings": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_executive_summary(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    summary = report["executiveSummary"]
+    # Corrected: 30M × 80% QS - 15% ATL (£4.5M) = £19.5M × 25.5% = £4,972,500
+    assert "4,972,500" in summary["recommendedTerritoryRebate"]
+    assert "34%" in summary["recommendedTerritoryRebate"]
+    assert any("recommendedTerritoryRebate corrected" in w for w in warnings)
+
+
+def test_executive_summary_headline_net_budget_corrected():
+    """headlineNetBudget should use corrected rebate for net budget calculation."""
+    db = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80.0,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "executiveSummary": {
+            "recommendedTerritory": "United Kingdom",
+            "recommendedTerritoryRebate": "34% / ~£6,120,000",
+            "headlineNetBudget": "Estimated net budget after UK AVEC: approximately £18,000,000",  # Wrong
+            "recommendedTerritoryPaymentSpeed": "6-9 months",
+        },
+        "incentiveEstimates": [],
+        "locationRankings": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_executive_summary(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    summary = report["executiveSummary"]
+    # Net budget: £30M - £4,972,500 = £25,027,500
+    # _parse_money_string can't extract amount from prose, so headline is
+    # unconditionally replaced (no deviation warning emitted)
+    assert "25,027,500" in summary["headlineNetBudget"]
+
+
+def test_executive_summary_switched_programme_rates():
+    """Executive summary should use AVEC rates when budget exceeds IFTC cap."""
+    iftc = _make_incentive_db_full(
+        "IFTC",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+        qualifying_spend_cap_pct=80.0,
+        cap_amount=20_000_000.0,
+    )
+    avec = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80.0,
+        cap_amount=None,
+    )
+    by_program = {
+        "IFTC": iftc, "iftc": iftc,
+        "AVEC": avec, "avec": avec,
+    }
+
+    report = {
+        "executiveSummary": {
+            "recommendedTerritory": "United Kingdom",
+            "recommendedTerritoryRebate": "53% / ~£11,925,000",  # Wrong — IFTC rate
+            "headlineNetBudget": "Estimated net budget after UK IFTC: approximately £18,075,000",
+            "recommendedTerritoryPaymentSpeed": "6-9 months",
+        },
+        "incentiveEstimates": [],
+        "locationRankings": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_executive_summary(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    summary = report["executiveSummary"]
+    # Should use AVEC rate (34% / 25.5%) not IFTC (53% / 39.75%)
+    assert "34%" in summary["recommendedTerritoryRebate"]
+    assert "53%" not in summary["recommendedTerritoryRebate"]
+    # headlineNetBudget should mention AVEC
+    assert "AVEC" in summary["headlineNetBudget"]
+
+
+# ── territoryDeepDives full rebate string rebuild tests ──────────────────────
+
+
+def test_deep_dive_rebate_string_fully_rebuilt_with_corrected_amount():
+    """When corrected rebate is available, the entire rebate string should be rebuilt."""
+    db = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80.0,
+    )
+    by_program = {"AVEC": db, "avec": db}
+
+    report = {
+        "territoryDeepDives": [{
+            "name": "United Kingdom",
+            "score": 72,
+            "rebate": "34% / 25.5% net / ~£5,565,000 net",  # Amount is wrong
+            "estimatedRebate": "£5,565,000",
+        }],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_territory_deep_dives(
+        report, by_program, warnings,
+        budget_gbp=30_000_000,
+    )
+
+    rebate_str = report["territoryDeepDives"][0]["rebate"]
+    # Corrected: £30M × 80% QS - 15% ATL = £19.5M × 25.5% = £4,972,500
+    assert "4,972,500" in rebate_str
+    assert "34%" in rebate_str
+    assert "(net estimated)" in rebate_str
+
+
+# ── _patch_shoot_duration_context tests ──────────────────────────────────────
+
+
+def test_executive_summary_key_insights_monetary_corrected():
+    """keyInsights narrative monetary amounts should be corrected to match computed figures."""
+    db = _make_incentive_db_full(
+        "IFTC",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+        qualifying_spend_cap_pct=None,  # No QS cap (matching runtime DB)
+    )
+    by_program = {"IFTC": db, "iftc": db}
+
+    report = {
+        "executiveSummary": {
+            "recommendedTerritory": "United Kingdom",
+            "recommendedTerritoryRebate": "53% / ~£7,950,000",
+            "headlineNetBudget": "Estimated net budget after UK IFTC: approximately £12,050,000",
+            "keyInsights": (
+                "at £20M the production qualifies for IFTC, "
+                "delivering approximately £5,955,000 net rebate "
+                "and reducing the budget to around £14,045,000."
+            ),
+        },
+        "incentiveEstimates": [],
+        "locationRankings": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_executive_summary(
+        report, by_program, warnings, budget_gbp=20_000_000,
+    )
+
+    # Corrected: 15% ATL on £20M → £17M QS → £17M × 39.75% = £6,757,500
+    # Net budget: £20M - £6,757,500 = £13,242,500
+    insights = report["executiveSummary"]["keyInsights"]
+    assert "6,757,500" in insights  # rebate corrected
+    assert "13,242,500" in insights  # net budget corrected
+    assert "£20M" in insights  # total budget preserved
+    assert any("keyInsights" in w for w in warnings)
+
+
+def test_atl_deduction_not_applied_to_cash_rebate():
+    """Cash rebate programmes should NOT get ATL deduction — only tax credits."""
+    db = _make_incentive_db_full(
+        "NFI Hungary",
+        territory="Hungary",
+        rate_gross=30.0,
+        rate_net=30.0,
+        qualifying_spend_cap_pct=None,
+        currency="EUR",
+    )
+    db["rate_type"] = "cash_rebate"  # Override default tax_credit
+    by_program = {"NFI Hungary": db, "nfi hungary": db}
+
+    report = {
+        "executiveSummary": {"budget": "€20M"},
+        "incentiveEstimates": [{
+            "program": "NFI Hungary",
+            "territory": "Hungary",
+            "estimatedRebate": "€6,000,000",  # 30% of full €20M — correct for cash rebate
+        }],
+        "locationRankings": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_financial_calculations(report, by_program, warnings)
+
+    # Cash rebate: no ATL deduction, full budget qualifies
+    # €20M * 30% = €6,000,000 — within tolerance, should NOT be overridden
+    assert "6,000,000" in report["incentiveEstimates"][0]["estimatedRebate"]
+
+
+def test_shoot_duration_context_injects_flag_for_long_pilot():
+    """Long shoot duration for a TV Pilot should inject a keyFlag."""
+    report = {
+        "executiveSummary": {
+            "shootDays": 320,  # 320 days = ~64 weeks
+            "keyFlags": ["Some existing flag"],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_shoot_duration_context(report, "TV Pilot", warnings)
+
+    flags = report["executiveSummary"]["keyFlags"]
+    assert len(flags) == 2
+    assert any("shoot timeline" in f.lower() for f in flags)
+    assert "64 weeks" in flags[-1]
+    assert "tv pilot" in flags[-1].lower()
+    assert len(warnings) == 1
+
+
+def test_shoot_duration_context_noop_for_short_shoot():
+    """Normal shoot duration should not trigger a keyFlag."""
+    report = {
+        "executiveSummary": {
+            "shootDays": 40,  # 40 days = ~8 weeks, normal for a pilot
+            "keyFlags": [],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_shoot_duration_context(report, "TV Pilot", warnings)
+
+    assert len(report["executiveSummary"]["keyFlags"]) == 0
+    assert len(warnings) == 0
+
+
+def test_shoot_duration_context_creates_key_flags_list():
+    """keyFlags should be created if it doesn't exist."""
+    report = {
+        "executiveSummary": {
+            "shootDays": 150,
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_shoot_duration_context(report, "Feature Film", warnings)
+
+    assert "keyFlags" in report["executiveSummary"]
+    assert len(report["executiveSummary"]["keyFlags"]) == 1
+    assert "30 weeks" in report["executiveSummary"]["keyFlags"][0]
+
+
+def test_shoot_duration_context_no_duplicate():
+    """Should not add duplicate flag if one already mentions shoot timeline."""
+    report = {
+        "executiveSummary": {
+            "shootDays": 200,
+            "keyFlags": ["Extended shoot timeline: already noted by AI"],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_shoot_duration_context(report, "Feature Film", warnings)
+
+    assert len(report["executiveSummary"]["keyFlags"]) == 1
     assert len(warnings) == 0

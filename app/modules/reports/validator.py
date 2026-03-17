@@ -25,6 +25,14 @@ _REBATE_TOLERANCE = 0.15
 # Data freshness threshold — flag incentives older than this many days
 _STALE_DAYS = 365
 
+# Default ATL (above-the-line) deduction percentage.  Tax credit programmes
+# exclude above-the-line costs from qualifying spend — 15 % of total budget
+# is a standard conservative assumption used in UK/EU tax credit modelling.
+_DEFAULT_ATL_PCT = 0.15
+
+# rate_type values that trigger automatic ATL deduction
+_TAX_CREDIT_RATE_TYPES = {"tax_credit", "enhanced_tax_credit"}
+
 
 class ReportValidator:
     """Post-process a sanitised report dict against the source datasets."""
@@ -55,7 +63,10 @@ class ReportValidator:
         )
         # NOTE: _patch_territory_deep_dives is called later (after score
         # recalculation) so deep dives get authoritative scores + rebates.
-        cls._patch_executive_summary(report, incentives_by_program, warnings)
+        cls._patch_executive_summary(
+            report, incentives_by_program, warnings,
+            budget_gbp=budget_gbp_override,
+        )
         cls._patch_crew_insights(report, datasets.get("crew_costs", []), warnings)
         cls._patch_crew_cost_territories(report, warnings)
         cls._patch_cast_insights(report, datasets.get("cast_costs", []), warnings)
@@ -115,6 +126,9 @@ class ReportValidator:
             budget_gbp_override=budget_gbp_override,
         )
         cls._patch_production_format(
+            report, datasets.get("_production_format"), warnings
+        )
+        cls._patch_shoot_duration_context(
             report, datasets.get("_production_format"), warnings
         )
         cls._inject_section_explainers(report, datasets)
@@ -423,18 +437,31 @@ class ReportValidator:
             elif not dive.get("paymentSpeed"):
                 dive["paymentSpeed"] = "Data not available"
 
-            # rebate string (use corrected rates when a programme switch occurred)
+            # rebate string (use corrected rates + amount when available)
             if corrected is not None and corrected.get("switched_programme"):
                 effective_rate = _format_rate(corrected["rate_gross"], corrected["rate_net"])
             else:
                 effective_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
+
             if effective_rate:
                 existing_rebate = dive.get("rebate", "")
-                if existing_rebate and not existing_rebate.startswith(effective_rate.rstrip("%")):
+                if corrected is not None:
+                    # Rebuild the entire rebate string with corrected rate AND amount
+                    currency = best.get("currency") or "GBP"
+                    symbol = _currency_symbol(currency)
+                    new_rebate = (
+                        f"{effective_rate} / "
+                        f"~{symbol}{corrected['net_rebate']:,.0f} (net estimated)"
+                    )
+                    if existing_rebate != new_rebate:
+                        warnings.append(
+                            f"[territoryDeepDives] {territory}: rebate string overridden"
+                        )
+                        dive["rebate"] = new_rebate
+                elif existing_rebate and not existing_rebate.startswith(effective_rate.rstrip("%")):
                     warnings.append(
                         f"[territoryDeepDives] {territory}: rebate rate component overridden"
                     )
-                    # Patch only the rate prefix portion, keep any estimated amount
                     parts = existing_rebate.split("/", 1)
                     dive["rebate"] = (
                         f"{effective_rate} / {parts[1].strip()}" if len(parts) == 2 else effective_rate
@@ -468,6 +495,8 @@ class ReportValidator:
         report: dict,
         incentives_by_program: dict[str, dict],
         warnings: list[str],
+        *,
+        budget_gbp: float | None = None,
     ) -> None:
         summary = report.get("executiveSummary")
         if not isinstance(summary, dict):
@@ -485,6 +514,8 @@ class ReportValidator:
             return
 
         best = _best_incentive(rows)
+
+        # --- paymentSpeed ---
         timeline_notes = best.get("payment_timeline_notes")
         if timeline_notes:
             if (
@@ -498,6 +529,106 @@ class ReportValidator:
             summary["recommendedTerritoryPaymentSpeed"] = timeline_notes
         elif not summary.get("recommendedTerritoryPaymentSpeed"):
             summary["recommendedTerritoryPaymentSpeed"] = "Data not available"
+
+        # --- recommendedTerritoryRebate + headlineNetBudget ---
+        if budget_gbp is not None:
+            corrected = cls._compute_corrected_rebate(
+                best, budget_gbp, territory_incentives
+            )
+            if corrected is not None:
+                # Use corrected rates (handles budget-cap programme switching)
+                if corrected.get("switched_programme"):
+                    effective_rate = _format_rate(corrected["rate_gross"], corrected["rate_net"])
+                else:
+                    effective_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
+
+                currency = best.get("currency") or "GBP"
+                symbol = _currency_symbol(currency)
+                corrected_rebate_str = (
+                    f"{effective_rate or ''} / "
+                    f"~{symbol}{corrected['net_rebate']:,.0f}"
+                )
+
+                # Patch recommendedTerritoryRebate
+                old_rebate = summary.get("recommendedTerritoryRebate", "")
+                ai_rebate = _parse_money_string(old_rebate)
+                if ai_rebate is not None and corrected["net_rebate"] > 0:
+                    deviation = abs(ai_rebate - corrected["net_rebate"]) / corrected["net_rebate"]
+                    if deviation > _REBATE_TOLERANCE:
+                        warnings.append(
+                            f"[executiveSummary] recommendedTerritoryRebate corrected "
+                            f"from {symbol}{ai_rebate:,.0f} to {symbol}{corrected['net_rebate']:,.0f}"
+                        )
+                        summary["recommendedTerritoryRebate"] = corrected_rebate_str
+                elif ai_rebate is None and old_rebate:
+                    summary["recommendedTerritoryRebate"] = corrected_rebate_str
+
+                # Patch headlineNetBudget
+                net_budget = budget_gbp - corrected["net_rebate"]
+                corrected_headline = (
+                    f"Estimated net budget after {territory} "
+                    f"{corrected.get('switched_programme') or _prog_name(best) or 'incentive'}: "
+                    f"approximately {symbol}{net_budget:,.0f}"
+                )
+                old_headline = summary.get("headlineNetBudget", "")
+                ai_net_budget = _parse_money_string(old_headline)
+                if ai_net_budget is not None and net_budget > 0:
+                    deviation = abs(ai_net_budget - net_budget) / net_budget
+                    if deviation > _REBATE_TOLERANCE:
+                        warnings.append(
+                            f"[executiveSummary] headlineNetBudget corrected "
+                            f"from {symbol}{ai_net_budget:,.0f} to {symbol}{net_budget:,.0f}"
+                        )
+                        summary["headlineNetBudget"] = corrected_headline
+                elif ai_net_budget is None and old_headline:
+                    summary["headlineNetBudget"] = corrected_headline
+
+                # Patch monetary amounts in keyInsights narrative.
+                # Each amount is matched to the closest reference value
+                # (rebate or net budget) and corrected if it doesn't match.
+                # We use a tight tolerance (1%) here — the goal is internal
+                # consistency, not the 15% general tolerance.
+                insights = summary.get("keyInsights")
+                if isinstance(insights, str) and corrected["net_rebate"] > 0:
+                    import re as _re
+
+                    _NARRATIVE_TOLERANCE = 0.01
+                    ref_values = {
+                        "rebate": corrected["net_rebate"],
+                        "net_budget": net_budget,
+                    }
+
+                    def _correct_prose_amount(match: _re.Match) -> str:
+                        raw = match.group(0)
+                        parsed = _parse_money_string(raw)
+                        if parsed is None or parsed <= 0:
+                            return raw
+                        # Skip amounts that are clearly the total budget
+                        if budget_gbp > 0 and abs(parsed - budget_gbp) / budget_gbp < 0.05:
+                            return raw
+                        # Find closest reference value
+                        closest_key = min(
+                            ref_values,
+                            key=lambda k: abs(parsed - ref_values[k]),
+                        )
+                        target = ref_values[closest_key]
+                        if target <= 0:
+                            return raw
+                        deviation = abs(parsed - target) / target
+                        if deviation > _NARRATIVE_TOLERANCE:
+                            return f"{symbol}{target:,.0f}"
+                        return raw
+
+                    fixed = _re.sub(
+                        r'[£$€]\d[\d,]*(?:\.\d+)?(?:\s*[MmKk])?',
+                        _correct_prose_amount,
+                        insights,
+                    )
+                    if fixed != insights:
+                        summary["keyInsights"] = fixed
+                        warnings.append(
+                            f"[executiveSummary] keyInsights monetary amounts corrected"
+                        )
 
     # ── crewCostComparison territory filter ────────────────────────────────
 
@@ -1034,6 +1165,23 @@ class ReportValidator:
 
                     if corrected.get("programme_note"):
                         scenario["notes"] = corrected["programme_note"]
+
+                    # Add full-budget-allocation note so readers don't
+                    # mistake the theoretical maximum for the actual rebate
+                    # on allocated spend in a multi-territory production.
+                    existing_notes = scenario.get("notes") or ""
+                    allocation_note = (
+                        "Modelled on full production budget allocation to this "
+                        "territory — see territory deep-dive sections for "
+                        "split-spend estimates in a multi-territory approach."
+                    )
+                    if "full production budget" not in existing_notes.lower():
+                        scenario["notes"] = (
+                            f"{existing_notes}  {allocation_note}".strip()
+                            if existing_notes
+                            else allocation_note
+                        )
+
                     warnings.append(
                         f"[budgetScenarios] {territory}: corrected to "
                         f"qualifying spend {symbol}{corrected['qualifying_spend']:,.0f}, "
@@ -1074,6 +1222,7 @@ class ReportValidator:
         cap_amount = _to_float(db_row.get("cap_amount"))
         programme_note: str | None = None
         switched_programme: str | None = None
+        alt: dict | None = None  # set if programme switch occurs
 
         # If budget exceeds the programme's hard cap, this programme may not
         # apply.  Check whether the territory has an alternative programme.
@@ -1154,28 +1303,42 @@ class ReportValidator:
                         (t1_net * spend_t1 + t2_net * spend_t2) / qualifying_spend
                     ) if qualifying_spend > 0 else t2_net
 
-        # Step 3 — ATL per-person cap deduction (generic: uses cap_per_person)
-        # This is an approximate deduction — we flag it rather than computing
-        # an exact figure because we don't know individual pay figures.
+        # Step 3 — ATL (above-the-line) deduction
+        #
+        # Tax credit programmes exclude ATL costs (writer, director, lead cast
+        # fees) from qualifying spend.  We apply a default 15 % deduction for
+        # any tax-credit programme — this is universal, not gated on whether
+        # the programme has a per-person cap.  The per-person cap is a separate
+        # mechanism that may further reduce qualifying spend.
+        #
+        # Cash rebate programmes (Hungary NFI, Malta MFC) typically include all
+        # local spend, so no ATL deduction is applied for those.
+        active_row = alt if alt is not None else db_row
+        rate_type = (active_row.get("rate_type") or db_row.get("rate_type") or "").lower()
         cap_per_person = _to_float(db_row.get("cap_per_person"))
         atl_deduction_note: str | None = None
         atl_deduction_amount: float = 0.0
         qualifying_spend_before_atl = qualifying_spend
-        if cap_per_person is not None and cap_per_person > 0:
-            # ATL is typically 20-35% of budget; per-person cap may reduce
-            # qualifying spend.  We apply 25% (midpoint of 20-35%) budget
-            # deduction and flag it for the reader.
-            atl_est = budget_gbp * 0.25
+        apply_atl = rate_type in _TAX_CREDIT_RATE_TYPES or (
+            cap_per_person is not None and cap_per_person > 0
+        )
+        if apply_atl:
+            atl_est = budget_gbp * _DEFAULT_ATL_PCT
             atl_deduction_amount = atl_est
             qualifying_spend = max(0, qualifying_spend - atl_est)
-            cap_currency = db_row.get("cap_per_person_currency") or db_row.get("currency") or "GBP"
+            currency_label = db_row.get("currency") or "GBP"
+            symbol = _currency_symbol(currency_label)
             atl_deduction_note = (
-                f"ATL deduction estimated at 25% of budget "
-                f"({_currency_symbol(cap_currency)}{atl_est:,.0f}). "
-                f"Per-person ATL fee cap of "
-                f"{_currency_symbol(cap_currency)}{cap_per_person:,.0f} "
-                f"may further reduce qualifying spend — verify individual fee allocations"
+                f"ATL deduction estimated at {_DEFAULT_ATL_PCT:.0%} of budget "
+                f"({symbol}{atl_est:,.0f})"
             )
+            if cap_per_person is not None and cap_per_person > 0:
+                cap_currency = db_row.get("cap_per_person_currency") or currency_label
+                atl_deduction_note += (
+                    f". Per-person ATL fee cap of "
+                    f"{_currency_symbol(cap_currency)}{cap_per_person:,.0f} "
+                    f"may further reduce qualifying spend — verify individual fee allocations"
+                )
 
         # Step 4 — compute rebate
         gross_rebate = qualifying_spend * (effective_rate_gross / 100.0)
@@ -1863,6 +2026,71 @@ class ReportValidator:
                             )
                             overview[field] = new_val
                             break
+
+    # ── shoot duration context ────────────────────────────────────────────────
+
+    # Thresholds (in shooting days) above which a keyFlag is injected to
+    # contextualise the schedule for financiers / completion bond underwriters.
+    _LONG_SHOOT_THRESHOLDS: dict[str, int] = {
+        "TV Pilot": 60,
+        "TV Series": 100,
+        "Limited Series": 80,
+        "Feature Film": 80,
+    }
+    _LONG_SHOOT_DEFAULT = 100  # fallback for unknown formats
+
+    @classmethod
+    def _patch_shoot_duration_context(
+        cls,
+        report: dict,
+        production_format: str | None,
+        warnings: list[str],
+    ) -> None:
+        """Add a keyFlag contextualising unusually long shoot durations.
+
+        Completion bond underwriters and financiers will question a long shoot
+        timeline if the report doesn't explain it. When ``shootDays`` exceeds a
+        format-appropriate threshold, inject a flag that converts to weeks and
+        provides context.
+        """
+        summary = report.get("executiveSummary")
+        if not isinstance(summary, dict):
+            return
+
+        shoot_days = summary.get("shootDays")
+        if not isinstance(shoot_days, (int, float)) or shoot_days <= 0:
+            return
+
+        fmt = (production_format or "").strip()
+        threshold = cls._LONG_SHOOT_THRESHOLDS.get(fmt, cls._LONG_SHOOT_DEFAULT)
+
+        if shoot_days < threshold:
+            return
+
+        weeks = max(1, (int(shoot_days) + 4) // 5)
+
+        flag = (
+            f"Extended shoot timeline: {int(shoot_days)} shooting days (~{weeks} weeks). "
+            f"This is a significant schedule for "
+            f"{'a ' + fmt.lower() if fmt else 'this format'} "
+            f"and may require phased production, multiple unit scheduling, "
+            f"or a detailed schedule breakdown for completion bond assessment."
+        )
+
+        key_flags = summary.get("keyFlags")
+        if not isinstance(key_flags, list):
+            key_flags = []
+            summary["keyFlags"] = key_flags
+
+        # Don't duplicate if already present
+        if any("shoot timeline" in f.lower() or "shooting days" in f.lower() for f in key_flags):
+            return
+
+        key_flags.append(flag)
+        warnings.append(
+            f"[executiveSummary] keyFlag injected: extended shoot timeline "
+            f"({int(shoot_days)} days / ~{weeks} weeks)"
+        )
 
     @classmethod
     def _inject_section_explainers(cls, report: dict, datasets: dict) -> None:
