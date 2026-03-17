@@ -914,6 +914,193 @@ def test_deep_dive_rebate_corrected():
     assert any("estimatedRebate corrected" in w for w in warnings)
 
 
+# ── rebatePercent budget-cap switching tests ─────────────────────────────────
+
+
+def test_location_rankings_rebate_percent_uses_switched_programme():
+    """rebatePercent should show AVEC rate (34%), not IFTC (53%), when budget exceeds cap."""
+    iftc = _make_incentive_db_full(
+        "IFTC",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+        qualifying_spend_cap_pct=80.0,
+        cap_amount=20_000_000.0,
+    )
+    avec = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        qualifying_spend_cap_pct=80.0,
+        cap_amount=None,
+    )
+    by_program = {
+        "IFTC": iftc, "iftc": iftc,
+        "AVEC": avec, "avec": avec,
+    }
+
+    report = {
+        "locationRankings": [{
+            "name": "United Kingdom",
+            "rebatePercent": "53% / 39.75%",  # Wrong — IFTC rate, should be AVEC
+            "rebateAmount": "£11,925,000",
+            "score": 72,
+        }],
+        "incentiveEstimates": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_location_rankings(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    # rebatePercent should be AVEC (34% / 25.5%), not IFTC (53% / 39.75%)
+    assert "34%" in report["locationRankings"][0]["rebatePercent"]
+    assert "53%" not in report["locationRankings"][0]["rebatePercent"]
+
+
+# ── incentiveEstimates budget-cap disqualification tests ─────────────────────
+
+
+def test_incentive_estimates_disqualifies_capped_programme():
+    """incentiveEstimates should mark IFTC as DISQUALIFIED when budget exceeds cap."""
+    iftc = _make_incentive_db_full(
+        "IFTC",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+        cap_amount=20_000_000.0,
+    )
+    avec = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        cap_amount=None,
+    )
+    by_program = {
+        "IFTC": iftc, "iftc": iftc,
+        "AVEC": avec, "avec": avec,
+    }
+
+    report = {
+        "incentiveEstimates": [{
+            "program": "IFTC",
+            "territory": "United Kingdom",
+            "rate": "53%",
+            "estimatedRebate": "£7,950,000",  # Should be £0 — DISQUALIFIED
+        }],
+        "locationRankings": [],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_incentive_estimates(
+        report, by_program, warnings, budget_gbp=30_000_000,
+    )
+
+    est = report["incentiveEstimates"][0]
+    assert "DISQUALIFIED" in est["estimatedRebate"]
+    assert "£0" in est["estimatedRebate"]
+    assert "AVEC" in est["estimatedRebate"]
+
+
+# ── crewCostComparison territory filtering tests ─────────────────────────────
+
+
+def test_crew_cost_comparison_removes_extra_territories():
+    """Territories not in locationRankings should be stripped from crew table."""
+    report = {
+        "locationRankings": [
+            {"name": "United Kingdom", "score": 72},
+            {"name": "South Africa", "score": 66},
+        ],
+        "financialAnalysis": {
+            "crewCostComparison": [
+                {
+                    "role": "Director of Photography",
+                    "territories": {
+                        "United Kingdom": "£800-£2,500/day",
+                        "South Africa": "£537-£1,565/day",
+                        "Ireland": "£700-£2,200/day",  # Extra — not in rankings
+                    },
+                },
+            ],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_crew_cost_territories(report, warnings)
+
+    territories = report["financialAnalysis"]["crewCostComparison"][0]["territories"]
+    assert "Ireland" not in territories
+    assert "United Kingdom" in territories
+    assert "South Africa" in territories
+    assert any("Ireland" in w for w in warnings)
+
+
+def test_crew_cost_comparison_noop_when_all_match():
+    """No changes when all crew territories are in locationRankings."""
+    report = {
+        "locationRankings": [
+            {"name": "United Kingdom", "score": 72},
+        ],
+        "financialAnalysis": {
+            "crewCostComparison": [
+                {
+                    "role": "DP",
+                    "territories": {"United Kingdom": "£800/day"},
+                },
+            ],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_crew_cost_territories(report, warnings)
+
+    assert "United Kingdom" in report["financialAnalysis"]["crewCostComparison"][0]["territories"]
+    assert len(warnings) == 0
+
+
+# ── territoryDeepDives rebate rate switching tests ───────────────────────────
+
+
+def test_deep_dive_rebate_string_uses_switched_rate():
+    """territoryDeepDives rebate string should use AVEC rate when budget exceeds IFTC cap."""
+    iftc = _make_incentive_db_full(
+        "IFTC",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+        cap_amount=20_000_000.0,
+    )
+    avec = _make_incentive_db_full(
+        "AVEC",
+        territory="United Kingdom",
+        rate_gross=34.0,
+        rate_net=25.5,
+        cap_amount=None,
+    )
+    by_program = {
+        "IFTC": iftc, "iftc": iftc,
+        "AVEC": avec, "avec": avec,
+    }
+
+    report = {
+        "territoryDeepDives": [{
+            "name": "United Kingdom",
+            "score": 72,
+            "rebate": "53% / 39.75% net / ~£7,950,000 net",
+            "estimatedRebate": "£7,950,000",
+        }],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_territory_deep_dives(
+        report, by_program, warnings,
+        budget_gbp=30_000_000,
+    )
+
+    rebate_str = report["territoryDeepDives"][0]["rebate"]
+    assert "34%" in rebate_str
+    assert "53%" not in rebate_str
+
+
 # ── _patch_production_format tests ───────────────────────────────────────────
 
 

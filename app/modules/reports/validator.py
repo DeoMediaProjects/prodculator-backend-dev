@@ -45,7 +45,10 @@ class ReportValidator:
         if isinstance(budget_gbp_data, dict):
             budget_gbp_override = budget_gbp_data.get("converted")
 
-        cls._patch_incentive_estimates(report, incentives_by_program, warnings)
+        cls._patch_incentive_estimates(
+            report, incentives_by_program, warnings,
+            budget_gbp=budget_gbp_override,
+        )
         cls._patch_location_rankings(
             report, incentives_by_program, warnings,
             budget_gbp=budget_gbp_override,
@@ -54,6 +57,7 @@ class ReportValidator:
         # recalculation) so deep dives get authoritative scores + rebates.
         cls._patch_executive_summary(report, incentives_by_program, warnings)
         cls._patch_crew_insights(report, datasets.get("crew_costs", []), warnings)
+        cls._patch_crew_cost_territories(report, warnings)
         cls._patch_cast_insights(report, datasets.get("cast_costs", []), warnings)
         cls._patch_attributions(report, datasets, warnings)
 
@@ -131,10 +135,16 @@ class ReportValidator:
         report: dict,
         incentives_by_program: dict[str, dict],
         warnings: list[str],
+        *,
+        budget_gbp: float | None = None,
     ) -> None:
         estimates = report.get("incentiveEstimates")
         if not isinstance(estimates, list):
             return
+
+        territory_incentives = _index_incentives_by_territory(
+            list(incentives_by_program.values())
+        )
 
         for est in estimates:
             if not isinstance(est, dict):
@@ -145,6 +155,42 @@ class ReportValidator:
                 continue
 
             territory = est.get("territory") or db_row.get("territory", "")
+
+            # --- Budget-cap disqualification ---
+            cap_amount = _to_float(db_row.get("cap_amount"))
+            if (
+                budget_gbp is not None
+                and cap_amount is not None
+                and cap_amount > 0
+                and budget_gbp > cap_amount
+            ):
+                alt_rows = territory_incentives.get(territory, [])
+                alternatives = [
+                    r for r in alt_rows
+                    if _prog_name(r) != _prog_name(db_row)
+                    and (
+                        _to_float(r.get("cap_amount")) is None
+                        or (_to_float(r.get("cap_amount")) or 0) >= budget_gbp
+                    )
+                    and not _is_zero_rate(r.get("rate_gross"), r.get("rate_net"))
+                ]
+                if alternatives:
+                    cap_currency = db_row.get("cap_currency") or "GBP"
+                    cap_str = _format_cap(cap_amount, cap_currency) or f"{cap_currency} {cap_amount:,.0f}"
+                    alt_name = _prog_name(_best_incentive(alternatives)) or "alternative programme"
+                    disqualified_note = (
+                        f"£0 — DISQUALIFIED. Total production budget exceeds "
+                        f"the {program_name} {cap_str} budget cap. "
+                        f"{alt_name} applies instead."
+                    )
+                    if est.get("estimatedRebate") != disqualified_note:
+                        warnings.append(
+                            f"[incentiveEstimates] {territory}/{program_name}: "
+                            f"disqualified — budget exceeds cap of {cap_str}"
+                        )
+                        est["estimatedRebate"] = disqualified_note
+                    # Still patch other fields (rate, cap, etc.) for reference
+                    # but skip further rebate corrections below
 
             # --- Rate ---
             rate_gross = db_row.get("rate_gross")
@@ -252,14 +298,24 @@ class ReportValidator:
             # Use the best (highest rate_gross) incentive for the territory
             best = _best_incentive(rows)
 
-            # --- rebatePercent ---
-            canonical_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
-            if canonical_rate and loc.get("rebatePercent") != canonical_rate:
+            # Compute corrected rebate (handles budget-cap programme switching)
+            corrected = None
+            if budget_gbp is not None:
+                corrected = cls._compute_corrected_rebate(
+                    best, budget_gbp, territory_incentives
+                )
+
+            # --- rebatePercent (use corrected rates when a programme switch occurred) ---
+            if corrected is not None and corrected.get("switched_programme"):
+                effective_rate = _format_rate(corrected["rate_gross"], corrected["rate_net"])
+            else:
+                effective_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
+            if effective_rate and loc.get("rebatePercent") != effective_rate:
                 warnings.append(
                     f"[locationRankings] {territory}: "
-                    f"rebatePercent overridden {loc.get('rebatePercent')!r} → {canonical_rate!r}"
+                    f"rebatePercent overridden {loc.get('rebatePercent')!r} → {effective_rate!r}"
                 )
-                loc["rebatePercent"] = canonical_rate
+                loc["rebatePercent"] = effective_rate
 
             # --- Zero-rate guard ---
             if _is_zero_rate(
@@ -267,30 +323,26 @@ class ReportValidator:
             ):
                 loc["incentiveStrength"] = 0
                 loc["rebateAmount"] = "£0"
-            elif budget_gbp is not None:
+            elif corrected is not None:
                 # --- rebateAmount correction (uses same logic as financialAnalysis) ---
-                corrected = cls._compute_corrected_rebate(
-                    best, budget_gbp, territory_incentives
-                )
-                if corrected is not None:
-                    currency = best.get("currency") or "GBP"
-                    symbol = _currency_symbol(currency)
-                    formatted = f"~{symbol}{corrected['net_rebate']:,.0f}"
-                    if corrected.get("programme_note"):
-                        programme_label = corrected["programme_note"].split("—")[-1].strip() if "—" in corrected["programme_note"] else ""
-                        if programme_label:
-                            formatted += f" ({programme_label})"
-                    ai_rebate = _parse_money_string(loc.get("rebateAmount"))
-                    if ai_rebate is not None and corrected["net_rebate"] > 0:
-                        deviation = abs(ai_rebate - corrected["net_rebate"]) / corrected["net_rebate"]
-                        if deviation > _REBATE_TOLERANCE:
-                            warnings.append(
-                                f"[locationRankings] {territory}: rebateAmount corrected "
-                                f"from {symbol}{ai_rebate:,.0f} to {symbol}{corrected['net_rebate']:,.0f}"
-                            )
-                            loc["rebateAmount"] = formatted
-                    elif ai_rebate is None:
+                currency = best.get("currency") or "GBP"
+                symbol = _currency_symbol(currency)
+                formatted = f"~{symbol}{corrected['net_rebate']:,.0f}"
+                if corrected.get("programme_note"):
+                    programme_label = corrected["programme_note"].split("—")[-1].strip() if "—" in corrected["programme_note"] else ""
+                    if programme_label:
+                        formatted += f" ({programme_label})"
+                ai_rebate = _parse_money_string(loc.get("rebateAmount"))
+                if ai_rebate is not None and corrected["net_rebate"] > 0:
+                    deviation = abs(ai_rebate - corrected["net_rebate"]) / corrected["net_rebate"]
+                    if deviation > _REBATE_TOLERANCE:
+                        warnings.append(
+                            f"[locationRankings] {territory}: rebateAmount corrected "
+                            f"from {symbol}{ai_rebate:,.0f} to {symbol}{corrected['net_rebate']:,.0f}"
+                        )
                         loc["rebateAmount"] = formatted
+                elif ai_rebate is None:
+                    loc["rebateAmount"] = formatted
 
             # --- paymentSpeed ---
             timeline_notes = best.get("payment_timeline_notes")
@@ -353,6 +405,13 @@ class ReportValidator:
 
             best = _best_incentive(rows)
 
+            # Compute corrected rebate (handles budget-cap programme switching)
+            corrected = None
+            if budget_gbp is not None:
+                corrected = cls._compute_corrected_rebate(
+                    best, budget_gbp, territory_incentives
+                )
+
             # paymentSpeed
             timeline_notes = best.get("payment_timeline_notes")
             if timeline_notes:
@@ -364,43 +423,42 @@ class ReportValidator:
             elif not dive.get("paymentSpeed"):
                 dive["paymentSpeed"] = "Data not available"
 
-            # rebate string
-            canonical_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
-            if canonical_rate:
+            # rebate string (use corrected rates when a programme switch occurred)
+            if corrected is not None and corrected.get("switched_programme"):
+                effective_rate = _format_rate(corrected["rate_gross"], corrected["rate_net"])
+            else:
+                effective_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
+            if effective_rate:
                 existing_rebate = dive.get("rebate", "")
-                if existing_rebate and not existing_rebate.startswith(canonical_rate.rstrip("%")):
+                if existing_rebate and not existing_rebate.startswith(effective_rate.rstrip("%")):
                     warnings.append(
                         f"[territoryDeepDives] {territory}: rebate rate component overridden"
                     )
                     # Patch only the rate prefix portion, keep any estimated amount
                     parts = existing_rebate.split("/", 1)
                     dive["rebate"] = (
-                        f"{canonical_rate} / {parts[1].strip()}" if len(parts) == 2 else canonical_rate
+                        f"{effective_rate} / {parts[1].strip()}" if len(parts) == 2 else effective_rate
                     )
 
             # --- estimatedRebate correction ---
-            if budget_gbp is not None:
-                corrected = cls._compute_corrected_rebate(
-                    best, budget_gbp, territory_incentives
+            if corrected is not None:
+                currency = best.get("currency") or "GBP"
+                symbol = _currency_symbol(currency)
+                formatted = (
+                    f"{symbol}{corrected['net_rebate']:,.0f} net"
+                    f" ({symbol}{corrected['gross_rebate']:,.0f} gross)"
                 )
-                if corrected is not None:
-                    currency = best.get("currency") or "GBP"
-                    symbol = _currency_symbol(currency)
-                    formatted = (
-                        f"{symbol}{corrected['net_rebate']:,.0f} net"
-                        f" ({symbol}{corrected['gross_rebate']:,.0f} gross)"
-                    )
-                    ai_rebate = _parse_money_string(dive.get("estimatedRebate"))
-                    if ai_rebate is not None and corrected["net_rebate"] > 0:
-                        deviation = abs(ai_rebate - corrected["net_rebate"]) / corrected["net_rebate"]
-                        if deviation > _REBATE_TOLERANCE:
-                            warnings.append(
-                                f"[territoryDeepDives] {territory}: estimatedRebate corrected "
-                                f"from {symbol}{ai_rebate:,.0f} to {symbol}{corrected['net_rebate']:,.0f}"
-                            )
-                            dive["estimatedRebate"] = formatted
-                    elif ai_rebate is None:
+                ai_rebate = _parse_money_string(dive.get("estimatedRebate"))
+                if ai_rebate is not None and corrected["net_rebate"] > 0:
+                    deviation = abs(ai_rebate - corrected["net_rebate"]) / corrected["net_rebate"]
+                    if deviation > _REBATE_TOLERANCE:
+                        warnings.append(
+                            f"[territoryDeepDives] {territory}: estimatedRebate corrected "
+                            f"from {symbol}{ai_rebate:,.0f} to {symbol}{corrected['net_rebate']:,.0f}"
+                        )
                         dive["estimatedRebate"] = formatted
+                elif ai_rebate is None:
+                    dive["estimatedRebate"] = formatted
 
     # ── executiveSummary ──────────────────────────────────────────────────────
 
@@ -440,6 +498,49 @@ class ReportValidator:
             summary["recommendedTerritoryPaymentSpeed"] = timeline_notes
         elif not summary.get("recommendedTerritoryPaymentSpeed"):
             summary["recommendedTerritoryPaymentSpeed"] = "Data not available"
+
+    # ── crewCostComparison territory filter ────────────────────────────────
+
+    @classmethod
+    def _patch_crew_cost_territories(
+        cls,
+        report: dict,
+        warnings: list[str],
+    ) -> None:
+        """Remove territories from crewCostComparison that don't appear in
+        locationRankings.  Ensures the crew table only shows territories
+        the user selected for analysis.
+        """
+        rankings = report.get("locationRankings")
+        if not isinstance(rankings, list):
+            return
+        ranked_territories = {
+            loc.get("name")
+            for loc in rankings
+            if isinstance(loc, dict) and loc.get("name")
+        }
+        if not ranked_territories:
+            return
+
+        fin = report.get("financialAnalysis")
+        if not isinstance(fin, dict):
+            return
+        crew_comp = fin.get("crewCostComparison")
+        if not isinstance(crew_comp, list):
+            return
+
+        for row in crew_comp:
+            if not isinstance(row, dict):
+                continue
+            territories = row.get("territories")
+            if not isinstance(territories, dict):
+                continue
+            extra = set(territories.keys()) - ranked_territories
+            for t in extra:
+                del territories[t]
+                warnings.append(
+                    f"[crewCostComparison] removed {t!r} — not in locationRankings"
+                )
 
     # ── crewInsights ──────────────────────────────────────────────────────────
 
