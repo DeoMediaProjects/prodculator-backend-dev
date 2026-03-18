@@ -96,8 +96,9 @@ async def create_report(
     )
 
     if body_data.report_type == "preview":
-        # Email gating: check if blocked, then record usage
-        gate_email = body_data.email or (user.email if user else None)
+        # Email gating: always use the authenticated user's email; fall back to provided email
+        # for anonymous requests only. This prevents DoS via spoofed email.
+        gate_email = user.email if user else body_data.email
         if gate_email:
             if email_gating_service.is_blocked(gate_email):
                 raise HTTPException(

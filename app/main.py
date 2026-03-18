@@ -4,10 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from app.core.cache import close_redis, init_redis
 from app.core.config import get_settings
 from app.core.database_client import create_client
 from app.core.db import init_db
+from app.core.limiter import limiter
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.modules.scraper.service import ScraperService
 
@@ -55,6 +59,7 @@ configure_logging()
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
     # Startup
+    init_redis(settings)
     if settings.AUTO_CREATE_DB_SCHEMA:
         init_db()
     # Seed scrape sources on startup
@@ -67,6 +72,7 @@ async def lifespan(app_: FastAPI):
     yield
     # Shutdown
     stop_scheduler()
+    await close_redis()
 
 
 app = FastAPI(
@@ -78,13 +84,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 

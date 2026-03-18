@@ -1,4 +1,9 @@
+import logging
+
+import stripe as stripe_lib
 from fastapi import APIRouter, Depends, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 from app.core.database_client import DatabaseClient
 
@@ -56,8 +61,12 @@ async def create_checkout(
             user_id=user.id,
         )
         return CheckoutResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error in create_checkout for user=%s", user.id)
+        raise HTTPException(status_code=400, detail="Payment processing failed")
+    except Exception:
+        logger.exception("Unexpected error in create_checkout for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/subscription-checkout", response_model=CheckoutResponse)
@@ -74,8 +83,12 @@ async def create_subscription_checkout(
             user_id=user.id,
         )
         return CheckoutResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error in create_subscription_checkout for user=%s", user.id)
+        raise HTTPException(status_code=400, detail="Payment processing failed")
+    except Exception:
+        logger.exception("Unexpected error in create_subscription_checkout for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/cancel-subscription", response_model=SuccessResponse)
@@ -97,8 +110,12 @@ async def cancel_subscription(
     try:
         service.cancel_subscription(body.subscription_id)
         return SuccessResponse(message="Subscription will be cancelled at end of billing period")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error cancelling subscription for user=%s", user.id)
+        raise HTTPException(status_code=400, detail="Failed to cancel subscription")
+    except Exception:
+        logger.exception("Unexpected error cancelling subscription for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/customer-portal", response_model=CustomerPortalResponse)
@@ -116,8 +133,12 @@ async def customer_portal(
     try:
         url = service.create_customer_portal_session(body.customer_id)
         return CustomerPortalResponse(url=url)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error creating customer portal for user=%s", user.id)
+        raise HTTPException(status_code=400, detail="Failed to open customer portal")
+    except Exception:
+        logger.exception("Unexpected error creating customer portal for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/update-payment-method", response_model=SuccessResponse)
@@ -135,8 +156,12 @@ async def update_payment_method(
     try:
         service.update_payment_method(body.customer_id, body.payment_method_id)
         return SuccessResponse(message="Payment method updated successfully")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error updating payment method for user=%s", user.id)
+        raise HTTPException(status_code=400, detail="Failed to update payment method")
+    except Exception:
+        logger.exception("Unexpected error updating payment method for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # --- Stripe Webhook (no auth, signature verified) ---
@@ -159,6 +184,6 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
     handler = WebhookHandler(supabase, settings)
-    handler.handle_event(event.type, event.data.object)
+    handler.handle_event(event.id, event.type, event.data.object)
 
     return {"received": True}

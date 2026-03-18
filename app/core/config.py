@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings import PydanticBaseSettingsSource
 
@@ -8,7 +9,7 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "Prodculator API"
     APP_ENV: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     AUTO_CREATE_DB_SCHEMA: bool = True
 
     # JWT/Auth
-    JWT_SECRET_KEY: str = "dev-secret-change-me"
+    JWT_SECRET_KEY: str = "dev-secret-change-me"  # must be overridden in production
     JWT_ACCESS_TOKEN_EXPIRES_SECONDS: int = 3600
     JWT_REFRESH_TOKEN_EXPIRES_SECONDS: int = 1209600
 
@@ -40,10 +41,10 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
-    STRIPE_PRICE_SINGLE_USD: str = "price_1Sx84yLcLlewla5EUHVXBQY"
-    STRIPE_PRICE_SINGLE_GBP: str = "price_1Sx5T8LcLlewla5EsQOLFBoy"
-    STRIPE_PRICE_STUDIO_USD: str = "price_1Sx8AfLcLlewla5Exif5R15n"
-    STRIPE_PRICE_STUDIO_GBP: str = "price_1Sx8CpLcLlewla5E42HQTVmg"
+    STRIPE_PRICE_SINGLE_USD: str = ""
+    STRIPE_PRICE_SINGLE_GBP: str = ""
+    STRIPE_PRICE_STUDIO_USD: str = ""
+    STRIPE_PRICE_STUDIO_GBP: str = ""
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
@@ -105,6 +106,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
+        return v
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -114,8 +122,8 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # .env file takes priority over shell environment variables
-        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
+        # env vars > .env file > defaults  (12-Factor compliant)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
 
 @lru_cache()

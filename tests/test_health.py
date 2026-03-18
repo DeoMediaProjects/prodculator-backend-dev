@@ -12,7 +12,7 @@ def test_openapi_includes_core_paths(client):
 
     assert "/api/health" in paths
     assert "/api/auth/signup" in paths
-    assert "/api/scripts/upload" in paths
+    assert "/api/scripts/analyze" in paths
     assert "/api/reports" in paths
     assert "/api/payments/checkout" in paths
     assert "/api/payments/update-payment-method" in paths

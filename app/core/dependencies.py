@@ -1,8 +1,9 @@
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
-from app.core.cache import get_redis_client
+from app.core.cache import get_redis
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.db import get_db
@@ -11,6 +12,8 @@ from app.modules.admin.schemas import AdminUser
 from app.modules.auth.schemas import AuthUser
 
 _bearer_scheme = HTTPBearer(auto_error=True)
+
+_USER_PROFILE_TTL = 300  # 5 minutes
 
 
 def get_supabase(
@@ -44,22 +47,33 @@ async def get_current_user(
     if not user_response or not user_response.user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    # Check token blocklist (revoked via sign-out)
+    # Check token blocklist using the shared Redis pool (no open/close needed).
     if user_response.claims:
         try:
-            redis = get_redis_client(settings)
+            redis = get_redis()
             if await is_token_revoked(user_response.claims, redis):
                 raise HTTPException(status_code=401, detail="Token has been revoked")
-            await redis.aclose()
         except HTTPException:
             raise
         except Exception:
             pass  # Redis unavailable — degrade gracefully, token still valid
 
+    user_id = user_response.user.id
+
+    # Try cache first to avoid a DB round-trip on every request.
+    try:
+        redis = get_redis()
+        cache_key = f"user_profile:{user_id}"
+        cached = await redis.get(cache_key)
+        if cached:
+            return AuthUser.model_validate_json(cached)
+    except Exception:
+        pass  # Cache miss — fall through to DB
+
     result = (
         supabase.table("users")
         .select("*")
-        .eq("id", user_response.user.id)
+        .eq("id", user_id)
         .single()
         .execute()
     )
@@ -70,7 +84,7 @@ async def get_current_user(
     if result.data.get("is_blocked"):
         raise HTTPException(status_code=403, detail="Account has been blocked")
 
-    return AuthUser(
+    user = AuthUser(
         id=result.data["id"],
         email=result.data["email"],
         name=result.data.get("name"),
@@ -80,6 +94,14 @@ async def get_current_user(
         credits_remaining=result.data.get("credits_remaining", 0),
         plan=result.data.get("plan", "free"),
     )
+
+    try:
+        redis = get_redis()
+        await redis.setex(cache_key, _USER_PROFILE_TTL, user.model_dump_json())
+    except Exception:
+        pass  # Best-effort caching
+
+    return user
 
 
 async def get_current_admin(
@@ -100,10 +122,9 @@ async def get_current_admin(
 
     if admin_response.claims:
         try:
-            redis = get_redis_client(settings)
+            redis = get_redis()
             if await is_token_revoked(admin_response.claims, redis):
                 raise HTTPException(status_code=401, detail="Token has been revoked")
-            await redis.aclose()
         except HTTPException:
             raise
         except Exception:

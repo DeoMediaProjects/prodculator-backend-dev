@@ -164,7 +164,6 @@ class FakeSupabase(DatabaseClient):
         }
         self.session = MagicMock()
         self.settings = FakeSettings()
-        self.metadata = MagicMock()
         self.storage = MagicMock()
         self.auth = MagicMock()
 
@@ -176,6 +175,7 @@ class FakeSupabase(DatabaseClient):
 
 
 class FakeSettings(Settings):
+    JWT_SECRET_KEY: str = "test-secret-key-for-unit-tests-only-32ch"
     ANTHROPIC_API_KEY: str = "test-key"
     ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
     ANTHROPIC_MAX_TOKENS: int = 8000

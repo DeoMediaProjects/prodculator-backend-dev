@@ -1,12 +1,14 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.cache import get_redis_client
+from app.core.cache import get_redis
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase, get_current_user
 from app.core.firebase import verify_firebase_token
+from app.core.limiter import limiter
 from app.core.schemas import SuccessResponse
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,9 @@ def get_auth_service(supabase: DatabaseClient = Depends(get_supabase)) -> AuthSe
 
 
 @router.post("/signup", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def signup(
+    request: Request,
     body: SignUpRequest,
     settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
@@ -56,7 +60,9 @@ async def signup(
 
 
 @router.post("/signin", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def signin(
+    request: Request,
     body: SignInRequest,
     auth_service: AuthService = Depends(get_auth_service),
 ):
@@ -103,20 +109,16 @@ async def google_auth(
 @router.post("/signout", response_model=SuccessResponse)
 async def signout(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
-    settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """Sign out the current user and revoke their token."""
-    redis = get_redis_client(settings)
     try:
-        await auth_service.sign_out(credentials.credentials, redis_client=redis)
+        await auth_service.sign_out(credentials.credentials, redis_client=get_redis())
         return SuccessResponse(message="Signed out successfully")
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception:
         raise HTTPException(status_code=500, detail="Sign out failed")
-    finally:
-        await redis.aclose()
 
 
 @router.get("/me", response_model=AuthUser)
@@ -126,7 +128,9 @@ async def get_me(user: AuthUser = Depends(get_current_user)):
 
 
 @router.post("/reset-password", response_model=SuccessResponse)
+@limiter.limit("5/minute")
 async def reset_password(
+    request: Request,
     body: ResetPasswordRequest,
     settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
@@ -172,16 +176,12 @@ async def update_password(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     body: RefreshTokenRequest,
-    settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """Refresh an expired access token and rotate the refresh token."""
-    redis = get_redis_client(settings)
     try:
-        return await auth_service.refresh_session(refresh_token=body.refresh_token, redis_client=redis)
+        return await auth_service.refresh_session(refresh_token=body.refresh_token, redis_client=get_redis())
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception:
         raise HTTPException(status_code=500, detail="Token refresh failed")
-    finally:
-        await redis.aclose()

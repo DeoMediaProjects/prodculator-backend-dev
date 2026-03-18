@@ -163,7 +163,8 @@ class AuthClient:
         return response
 
     def sign_out(self) -> None:
-        return None
+        # Token revocation requires an async Redis call — use security.revoke_token() directly.
+        raise NotImplementedError("Call security.revoke_token() with the Redis client instead")
 
     def get_user(self, token: str) -> AuthResponse:
         claims = decode_token(token, self.client.settings)
@@ -409,6 +410,8 @@ class TableQuery:
         return self._reload_after_write(self._payload)
 
     def _execute_delete(self) -> QueryResult:
+        if not self._filters:
+            raise ValueError("Refusing DELETE with no filters — call .eq() or similar first")
         stmt = self._apply_filters(delete(self.table))
         self.client.session.execute(stmt)
         self.client.session.commit()
@@ -459,33 +462,45 @@ class TableQuery:
         return QueryResult(data=rows)
 
 
+# Shared MetaData populated once at first use — avoids per-request schema reflection.
+_shared_metadata: MetaData | None = None
+
+
+def _get_shared_metadata(bind: Any) -> MetaData:
+    global _shared_metadata
+    if _shared_metadata is None:
+        _shared_metadata = MetaData()
+        _shared_metadata.reflect(bind=bind)
+    return _shared_metadata
+
+
 class DatabaseClient:
     def __init__(self, session: Session, settings: Settings | None = None):
         self.session = session
         self.settings = settings or get_settings()
-        self.metadata = MetaData()
         self.storage = StorageClient(self.settings)
         self.auth = AuthClient(self)
+
+    @property
+    def metadata(self) -> MetaData:
+        return _get_shared_metadata(self.session.get_bind())
 
     def table(self, table_name: str) -> TableQuery:
         return TableQuery(self, table_name)
 
     def _table(self, table_name: str) -> Table:
-        return Table(table_name, self.metadata, autoload_with=self.session.get_bind())
+        return Table(table_name, self.metadata, extend_existing=True)
 
     def close(self) -> None:
         self.session.close()
 
 
-class _OwnedClient(DatabaseClient):
-    def __init__(self, db_url: str):
-        engine: Engine = create_engine(db_url, pool_pre_ping=True)
-        self._session = Session(engine)
-        super().__init__(self._session)
-
-
 def create_client(db_url: str | None = None, _unused_key: str | None = None) -> DatabaseClient:
-    cfg = get_settings()
-    if db_url:
-        return _OwnedClient(db_url)
-    return _OwnedClient(cfg.DB_URL)
+    """Return a DatabaseClient backed by the shared engine from app.core.db."""
+    from app.core.db import get_db_context
+    ctx = get_db_context()
+    session = ctx.__enter__()
+    client = DatabaseClient(session)
+    # Keep the context alive so the session stays open; callers must call client.close().
+    client._ctx = ctx  # type: ignore[attr-defined]
+    return client

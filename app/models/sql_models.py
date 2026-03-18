@@ -131,3 +131,12 @@ class DataSource(SQLModel, table=True):
     sync_schedule: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ProcessedWebhookEvent(SQLModel, table=True):
+    """Deduplication table for Stripe webhook events (at-least-once delivery)."""
+
+    __tablename__: ClassVar[str] = "processed_webhook_events"  # type: ignore[assignment]
+
+    event_id: str = Field(primary_key=True)
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
