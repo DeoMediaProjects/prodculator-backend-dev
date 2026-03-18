@@ -227,7 +227,7 @@ DATA INTEGRITY RULES — READ CAREFULLY:
 - ATL+BTL coverage: if a programme's dataset entry indicates it covers both above-the-line AND below-the-line at the same rate (check rate_tier_json or notes), note this explicitly in the incentiveEstimates entry.
 - Source attribution: for each incentiveEstimate, set dataSource to the source_name field from the dataset, and include source_url as a reference link. If source_name is null, use "Prodculator admin database".
 - Data freshness: if data_freshness_days > 365 for an incentive, add a warning to the relevant keyRisks: "Incentive data may be outdated — verify before committing".
-- Crew costs: use day_rate_gbp and week_rate_gbp fields (already FX-converted) for all GBP comparisons. If these are null, use day_rate_cents / 100 and note the original currency from the currency field.
+- Crew costs: use union_rate_gbp and non_union_rate_gbp fields (already FX-converted to GBP). For crew rate display in the report, use the pre-computed crew_rates from DERIVED: TERRITORY FINANCIALS which are already in the producer's budget currency — do NOT convert from GBP yourself.
 - Programme scope: respect the `programme_level` or `scope` field. If scope = "state" or programme_level = "state", never describe it as a national programme. If no national programme exists for a country, do not invent one.
 
 SCORING RULES for locationRankings:
@@ -236,7 +236,9 @@ SCORING RULES for locationRankings:
   - "full": costEfficiency 25%, crewDepth 20%, infrastructure 20%, incentiveStrength 20%, currencyAdvantage 10%, incentiveReliability 5%
   - "incentive": costEfficiency 15%, crewDepth 15%, infrastructure 15%, incentiveStrength 40%, currencyAdvantage 10%, incentiveReliability 5%
   - "location": costEfficiency 17%, crewDepth 25%, infrastructure 25%, incentiveStrength 13%, currencyAdvantage 10%, incentiveReliability 10%
-- Use territories_considering to bias selection toward named territories; if empty or contains "Open to all", choose globally optimal set
+- territories_considering: If non-empty and does not contain "Open to all", you MUST restrict locationRankings, territoryDeepDives, incentiveEstimates, crewInsights, and weatherLogistics to ONLY those territories. Do NOT add other territories. If empty or "Open to all", choose the globally optimal set from the full dataset.
+- location_strategy: "domestic" = restrict ALL territory sections to the producer's home country (and state_province if provided) ONLY — do NOT add other territories. "international" = producer wants to film outside their home country; exclude the home country from locationRankings unless territories_considering explicitly lists it. "open" = no restriction, choose globally optimal territories.
+- state_province: When provided alongside country, prioritise state/province-level incentives (e.g. country="United States", state_province="Georgia" → prioritise Georgia Entertainment Industry Investment Act). Include the state/province context in territory analysis.
 - Use filming_start_date and filming_duration to affect seasonal scoring where relevant
 
 INCENTIVE STRENGTH — COMPOSITE SCORING:
@@ -267,52 +269,34 @@ SCRIPT SIGNAL → TERRITORY SCORING RULES:
 - If challenges.nightSceneCount >= 8: add a keyRisk for any territory where shoot months have short daylight hours (check TERRITORY WEATHER DATA daylightHours if available).
 - If challenges.historicalPeriod = true: note period-appropriate infrastructure for territories with established studio complexes and period location availability in the dataset.
 
-BUDGET HANDLING (v3):
-- The exact budget amount in GBP is provided in DERIVED: BUDGET IN GBP. Use this actual figure for ALL calculations.
-- Do NOT use midpoint estimates. The producer provided their actual budget amount.
-- Show the conversion clearly: "Budget: [original_currency] [amount] = £[GBP_amount] at rate [rate] (fetched [date])."
+BUDGET HANDLING (v4):
+- The exact budget amount in GBP is provided in DERIVED: BUDGET IN GBP. Use this for reference only.
+- All monetary figures are pre-computed and provided in DERIVED: TERRITORY FINANCIALS.
+- Show the conversion clearly in executiveSummary.budget: "Budget: [original_currency] [amount] ([GBP_equivalent] GBP at rate [rate], fetched [date])."
 
-FINANCIAL CALCULATION RULES — MANDATORY 6-STEP PROTOCOL FOR ALL REBATE ESTIMATES:
-These rules MUST be applied in order when calculating estimatedRebate for every territory. Failure to apply them will produce materially overstated figures.
-
-STEP 1 — Qualifying Spend Deduction (80% Rule):
-- If qualifying_spend_cap_pct is present in the dataset for a programme, apply it: qualifyingSpend = totalBudget × (qualifying_spend_cap_pct / 100).
-- Example: £22.5M budget × 80% = £18M qualifying spend.
-- NEVER apply the rebate rate to 100% of the budget unless qualifying_spend_cap_pct is explicitly null/absent AND the programme has no cap rules.
-- Show the qualifying spend deduction explicitly in the report: "Qualifying spend: £18M (80% of £22.5M budget)".
-
-STEP 2 — Budget-Cap Programme Selection:
-- If a programme has a cap_amount in the dataset, check whether the TOTAL production budget EXCEEDS this cap. If yes, the production CANNOT use this programme.
-- When a programme is disqualified by its budget cap, check whether the same territory has an alternative programme (one without a cap, or with a higher cap). If so, use the alternative and note the switch clearly.
-- If rate_tier_json is present, it defines spend thresholds for different rate tiers. Parse the tiers and apply the correct rate based on the qualifying spend amount. If qualifying spend falls in a taper zone between tiers, calculate the blended rate.
-- CRITICAL: Always show NET rates (after corporation tax) as the primary figure when rate_net is present. The gross rate (rate_gross) should be shown in parentheses for reference only.
-- In financialAnalysis.budgetScenarios, clearly state which programme applies and why — especially when the budget triggered a programme switch.
-
-STEP 3 — ATL (Above-the-Line) Cap Deductions:
-- If cap_per_person is present in the dataset for a programme, it means individual above-the-line fees are capped. This reduces qualifying spend when key talent is paid above this threshold.
-- If the dataset shows an ATL cap (via cap_per_person, cap_per_person_currency, or notes mentioning ATL cap), estimate the ATL deduction and subtract it from qualifying spend before applying the rate.
-- ATL typically represents 20-35% of total budget. When calculating estimatedRebate, DEDUCT non-qualifying ATL spend (estimate 25% of budget if no specific data) before applying the rate.
-- Show the deduction in reasoning: "After ATL cap deductions (estimated 25%), qualifying spend reduces to approximately [currency][amount]".
-- The headline figure shown to the producer should be the NET rebate — this is actual cash received.
-
-STEP 4 — Apply Rate to Qualifying Spend (NOT total budget):
-- estimatedRebate = qualifyingSpend (after Steps 1-3) × rate.
-- For net rebate: use rate_net.
-- For gross rebate: use rate_gross.
-- Show BOTH gross and net in the report. Label clearly: "Gross rebate: £X (rate_gross%). Net of corporation tax: £Y (rate_net%)."
-
-STEP 5 — Minimum Qualifying Spend Thresholds:
-- If qualifying_spend_min is present in the dataset for a programme, verify the production's allocated spend in that territory meets the minimum.
-- If the threshold may not be met, add a keyRisk: "Minimum qualifying spend of [amount] [currency] may not be met — verify allocated [territory] spend."
-
-STEP 6 — Show Your Working:
-- For every territory in financialAnalysis.budgetScenarios, show:
-  1. Total budget allocated to territory
-  2. Qualifying spend after cap_pct deduction
-  3. Qualifying spend after ATL deductions (if applicable)
-  4. Gross rebate (rate × qualifying spend)
-  5. Net rebate (after corporation tax where applicable)
-- This transparency is critical for producer/investor credibility.
+FINANCIAL FIGURES — USE PRE-COMPUTED DATA (v4):
+All monetary figures are pre-computed by the service layer and provided in DERIVED: TERRITORY FINANCIALS.
+DO NOT compute rebate amounts, qualifying spend, net budgets, or crew rates yourself.
+For every territory, copy the exact strings from DERIVED: TERRITORY FINANCIALS into the relevant fields:
+- rebateAmount → territory_financials[territory].net_rebate
+- rebatePercent → territory_financials[territory].rate
+- estimatedRebate → territory_financials[territory].net_rebate
+- headlineNetBudget → territory_financials[territory].headline_net_budget
+- budgetScenarios.totalBudget → territory_financials[territory].total_budget
+- budgetScenarios.qualifyingSpend → territory_financials[territory].qualifying_spend
+- budgetScenarios.atlDeduction → territory_financials[territory].atl_deduction (omit if null)
+  When labelling the ATL deduction step, use: "Less ATL Deduction (est. [atl_pct])" — copy atl_pct verbatim from territory_financials. Do NOT invent the percentage.
+- budgetScenarios.netQualifyingSpend → territory_financials[territory].net_qualifying_spend
+- budgetScenarios.grossRebate → territory_financials[territory].gross_rebate
+- budgetScenarios.netRebate → territory_financials[territory].net_rebate
+- budgetScenarios.netBudget → territory_financials[territory].net_budget
+- budgetScenarios.rateGross → territory_financials[territory].rate_gross
+- budgetScenarios.rateNet → territory_financials[territory].rate_net (omit if null)
+- budgetScenarios.programme → territory_financials[territory].programme
+- crewCostComparison.territories → territory_financials[territory].crew_rates (already in budget currency)
+Your role is qualitative: reasoning about WHY territories rank well/poorly, risk assessment, eligibility context, strategy. Do not compute or invent monetary amounts.
+If DERIVED: TERRITORY FINANCIALS is absent or a territory is not listed, write "Budget not provided" for monetary fields.
+For minimum qualifying spend thresholds: if qualifying_spend_min is present in the dataset for a programme, add a keyRisk if the spend may not be met.
 
 DATASET-DRIVEN RISK AND REQUIREMENT RULES (apply to ALL territories):
 
@@ -354,7 +338,7 @@ WEATHER–SCHEDULE INTEGRATION RULES:
   8. Set weatherLogistics.shootWindowOverlap to true if any shoot month has storm_risk "high" or avg_rainfall_mm > 100.
   9. Set weatherLogistics.shootWindowRisk to a specific sentence about the overlap.
   10. Set weatherLogistics.estimatedDelayDays to an estimate based on storm_risk and rainfall (high: 3-5 days/month, medium: 1-2 days/month).
-  11. Set weatherLogistics.contingencyBudget to a GBP estimate (£7,500 per delay day × estimatedDelayDays). Show as a range.
+  11. Set weatherLogistics.contingencyBudget to an estimate in the producer's budget currency (~7,500 GBP-equivalent per delay day × estimatedDelayDays). Show as a range.
 - CRITICAL: If a territory has weatherRisk "High" for the shoot window, this finding MUST appear in locationRankings keyRisks AND executiveSummary.keyInsights. Do NOT bury it only in weatherLogistics.
 - If NO shoot window data is present: use annual averages and add to weatherLogistics: "Based on annual averages — provide filming dates for schedule-specific risk assessment."
 
@@ -406,17 +390,17 @@ RESPONSE JSON SCHEMA:
   "complexity": "Low | Medium | High | Very High",
 
   "executiveSummary": {
-    "keyInsights": "2-3 sentence narrative paragraph summarizing the most important finding and recommendation. Write as a senior consultant — e.g. 'The top-ranked territory offers the highest rebate (X%) and authentic locations for the script. While [alternative] has stronger infrastructure, the rebate difference of £X is enough to offset importing key crew.'",
+    "keyInsights": "2-3 sentence narrative paragraph summarizing the most important finding and recommendation. Write as a senior consultant — e.g. 'The top-ranked territory offers the highest rebate (X%) and authentic locations for the script. While [alternative] has stronger infrastructure, the rebate difference is enough to offset importing key crew.' For any monetary figures, use ONLY the net_rebate and headline_net_budget values from DERIVED: TERRITORY FINANCIALS. Do NOT include crew day rates or compute percentages in this narrative.",
     "recommendedTerritory": "name of top-ranked territory",
     "recommendedTerritoryScore": 0-100,
-    "recommendedTerritoryRebate": "e.g. 25% / £1,625,000",
+    "recommendedTerritoryRebate": "COPY from DERIVED: TERRITORY FINANCIALS — e.g. territory_financials[territory].rate + ' / ' + territory_financials[territory].net_rebate",
     "recommendedTerritoryInfrastructure": "e.g. Excellent, World-class, Good",
     "recommendedTerritoryPaymentSpeed": "COPY from payment_timeline_notes in dataset. Write 'Data not available' if absent.",
     "shootDays": "integer — estimated shooting days from script analysis or null",
-    "budget": "actual budget string e.g. £3,000,000 — use the exact figure from DERIVED: BUDGET IN GBP",
+    "budget": "actual budget in producer's original currency with GBP equivalent — e.g. '$10,000,000 (£7,517,000 GBP at rate 0.7517)' — see CURRENCY DISPLAY RULES",
     "primaryLocations": ["location names from script analysis or metadata"],
     "shootWindow": {"months": ["Feb", "Mar"], "weatherNote": "brief shoot-window weather summary across territories — null if no shoot dates provided"},
-    "headlineNetBudget": "Your estimated net budget after incentives: £X — the single most prominent figure in the report",
+    "headlineNetBudget": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[recommendedTerritory].headline_net_budget",
     "actionTimeline": [{"action": "Apply for BFI certification", "deadline": "12–16 weeks before shoot", "note": "Required for AVEC/IFTC qualification"}],
     "keyFlags": ["max 3 top-level flags: weather risk, eligibility risk, financial risk — one sentence each"]
   },
@@ -436,7 +420,7 @@ RESPONSE JSON SCHEMA:
       "reasoning": ["specific bullet 1", "specific bullet 2", "specific bullet 3"],
       "isAssessmentOnly": false,
       "rebatePercent": "COPY from rate_gross/rate_net in dataset, e.g. 25%",
-      "rebateAmount": "GBP estimate based on actual budget figure",
+      "rebateAmount": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_rebate",
       "culturalTestLikelihood": "High (85%) | Medium (65%) | Low (35%) | N/A",
       "adminComplexity": "Low | Medium | High",
       "paymentSpeed": "COPY from payment_timeline_notes. Write 'Data not available' if absent.",
@@ -450,24 +434,24 @@ RESPONSE JSON SCHEMA:
     "budgetScenarios": [
       {
         "territory": "territory name",
-        "totalBudget": "e.g. £22,500,000 — total production budget",
-        "qualifyingSpendPct": "e.g. 80% — from qualifying_spend_cap_pct in dataset",
-        "qualifyingSpend": "e.g. £18,000,000 — totalBudget × qualifyingSpendPct",
-        "atlDeduction": "e.g. £2,000,000 — non-qualifying ATL spend deducted (null if no ATL cap applies)",
-        "netQualifyingSpend": "e.g. £16,000,000 — qualifyingSpend minus atlDeduction",
-        "programme": "e.g. programme name from dataset — which programme applies and why",
-        "rateGross": "e.g. 34% — gross rate from dataset",
-        "rateNet": "e.g. 25.5% — net rate after corporation tax (null if cash rebate)",
-        "grossRebate": "e.g. £5,440,000 — netQualifyingSpend × rateGross",
-        "netRebate": "e.g. £4,080,000 — netQualifyingSpend × rateNet (or same as grossRebate for cash rebates)",
-        "netBudget": "e.g. £18,420,000 — totalBudget minus netRebate",
-        "notes": "e.g. Budget exceeds programme cap — alternative programme applies at different rate"
+        "totalBudget": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].total_budget",
+        "qualifyingSpendPct": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].qualifying_spend_pct",
+        "qualifyingSpend": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].qualifying_spend",
+        "atlDeduction": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].atl_deduction (omit field if null)",
+        "netQualifyingSpend": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_qualifying_spend",
+        "programme": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].programme",
+        "rateGross": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].rate_gross",
+        "rateNet": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].rate_net (omit if null)",
+        "grossRebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].gross_rebate",
+        "netRebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_rebate",
+        "netBudget": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_budget",
+        "notes": "COPY territory_financials[territory].programme_note if present, plus territory_financials[territory].fx_note if present"
       }
     ],
     "crewCostComparison": [
       {
         "role": "e.g. Director of Photography",
-        "territories": {"Territory A": "£X - £Y /week", "Territory B": "£X - £Y /week"}
+        "territories": {"Territory A": "COPY from territory_financials[territory].crew_rates[role] — already in budget currency", "Territory B": "same"}
       }
     ]
   },
@@ -477,14 +461,14 @@ RESPONSE JSON SCHEMA:
       "name": "territory name",
       "country": "parent country",
       "score": 0-100,
-      "rebate": "COPY rate from dataset e.g. 25% / £1,625,000",
+      "rebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].rate + ' / ' + territory_financials[territory].net_rebate",
       "infrastructure": "quality description e.g. Excellent",
       "paymentSpeed": "COPY from payment_timeline_notes. Write 'Data not available' if absent.",
       "keyAdvantages": ["advantage 1", "advantage 2", "advantage 3", "advantage 4"],
       "keyRisks": ["risk 1", "risk 2", "risk 3"],
       "culturalTestLikelihood": "High (85%)",
       "adminComplexity": "Medium",
-      "estimatedRebate": "£1,625,000"
+      "estimatedRebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_rebate"
     }
   ],
 
@@ -495,7 +479,7 @@ RESPONSE JSON SCHEMA:
       "rate": "COPY from rate_gross/rate_net in dataset",
       "cap": "COPY from cap_amount / cap_currency in dataset, or 'No cap'",
       "qualifyingSpend": "COPY from qualifying_spend_min in dataset, or 'See programme terms'",
-      "estimatedRebate": "GBP estimate based on actual budget figure and 6-step protocol",
+      "estimatedRebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_rebate",
       "requirements": ["COPY from eligibility_rules_json in dataset"],
       "disclaimer": "Estimate only. Final eligibility depends on official approval.",
       "dataSource": "COPY from source_name in dataset, or 'Prodculator admin database'",
@@ -513,7 +497,7 @@ RESPONSE JSON SCHEMA:
     {
       "territory": "string",
       "availability": "High | Medium | Low",
-      "costVsUSD": "use day_rate_gbp or week_rate_gbp from dataset (already FX-converted to GBP)",
+      "costVsUSD": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].crew_rates (already in budget currency). Example: 'DP: C$604–C$1,611/day, Gaffer: C$450–C$900/day'",
       "qualityRating": 1-5,
       "specialties": ["up to 5 crew roles"],
       "tradeoff": "one sentence summary of key trade-off"
@@ -523,7 +507,7 @@ RESPONSE JSON SCHEMA:
     {
       "title": "production title from dataset",
       "genre": "genre label",
-      "budgetRange": "comparable film's budget e.g. £12M",
+      "budgetRange": "comparable film's budget e.g. $12M or £12M — use the currency natural to the comparable",
       "visualScale": "scope description",
       "location": "primary filming territory",
       "year": 2024,
@@ -546,7 +530,7 @@ RESPONSE JSON SCHEMA:
       "shootWindowRisk": "specific sentence about how the shoot window interacts with local weather — null if no shoot dates provided",
       "exteriorExposure": "e.g. High (72% exterior scenes) — based on SCENE EXPOSURE PROFILE",
       "estimatedDelayDays": "integer estimate of weather delay days for the shoot window — null if no data",
-      "contingencyBudget": "e.g. £15,000–£25,000 — null if no data"
+      "contingencyBudget": "e.g. [budget_currency_symbol]15,000–[budget_currency_symbol]25,000 — null if no data"
     }
   ],
   "fundingOpportunities": [
@@ -580,13 +564,13 @@ RESPONSE JSON SCHEMA:
 SECTION REQUIREMENTS:
 - executiveSummary: ALWAYS populated with meaningful narrative for both preview and paid
 - locationRankings: up to 5 territories for paid, exactly 3 for preview (with isAssessmentOnly: true). Include rebatePercent, rebateAmount, culturalTestLikelihood, paymentSpeed, keyAdvantages (3-4 items), keyRisks (2-3 items) for each
-- financialAnalysis: populated for paid only (budgetScenarios for top 3 territories + crewCostComparison with 4 key roles). Each budgetScenario MUST show the full qualifying spend breakdown (Steps 1-6 from FINANCIAL CALCULATION RULES). Empty object {} for preview
+- financialAnalysis: populated for paid only. budgetScenarios MUST include a scenario for EVERY territory that (a) appears in locationRankings AND (b) has an entry in DERIVED: TERRITORY FINANCIALS — up to 5 scenarios. Do NOT limit to top 3; if 5 territories are ranked and all have territory_financials data, produce 5 scenarios. crewCostComparison must include 4 key roles across all ranked territories. Each budgetScenario MUST show the full qualifying spend breakdown (Steps 1-6 from FINANCIAL CALCULATION RULES). Empty object {} for preview
 - territoryDeepDives: top 3 territories for paid. Empty array [] for preview
 - incentiveEstimates: one entry per incentive program for ranked territories; only include for paid
 - crewInsights: one per ranked territory; empty array [] for preview
 - comparables: 3-5 productions from the dataset; empty array [] for preview. See COMPARABLE MATCHING RULES below
 - weatherLogistics: one per ranked territory; empty array [] for preview
-- fundingOpportunities: mix of at least 2 grants + 2 festivals. Label grant amounts as "Up to £X" since they are competitive awards, not entitlements; empty array [] for preview
+- fundingOpportunities: mix of at least 2 grants + 2 festivals. Label grant amounts as "Up to [symbol]X" since they are competitive awards, not entitlements; empty array [] for preview
 - alternativeStrategy: one actionable recommendation for paid; null for preview
 - scoringMethodology: ALWAYS populated for both preview and paid. Adjust dimension weights in the JSON to reflect the user's production_priority (incentive/location/full)
 
@@ -597,7 +581,7 @@ COMPARABLE MATCHING RULES:
   3. Territory/region relevance: filmed in or near the same territories being considered
 - DO NOT select $100M+ studio tentpoles as comparables for mid-budget independent films. A mid-budget thriller should NOT be compared to blockbuster franchise entries.
 - If the dataset lacks ideal matches, acknowledge this: "Limited comparable data available for [genre] at this budget tier" and use the closest matches available with honest relevanceDescription explaining the gap.
-- Each comparable's relevanceDescription must state the SPECIFIC reason for inclusion (e.g. "Similar genre, £18M budget, shot in relevant territories").
+- Each comparable's relevanceDescription must state the SPECIFIC reason for inclusion (e.g. "Similar genre, [symbol]18M budget, shot in relevant territories").
 
 WRITING QUALITY:
 - executiveSummary.keyInsights must read like a senior consultant's briefing — specific, data-backed, and actionable
@@ -605,6 +589,11 @@ WRITING QUALITY:
 - keyAdvantages and keyRisks should be production-specific, not generic boilerplate
 - comparables.relevanceDescription should explain WHY this production is comparable (similar setting, genre, budget tier, territory)
 - alternativeStrategy should propose a specific multi-territory or alternative approach with clear rationale
+
+PROSE HYGIENE — MANDATORY:
+- Do NOT include raw database field names in any narrative prose. Never write terms like rate_gross, rate_net, rate_type, qualifying_spend_cap_pct, cap_amount, or other internal field identifiers in text that a producer will read. Describe the concept in plain English instead (e.g. "grant-only programme" not "rate_gross 0 — grant only").
+- Shoot duration: When mentioning how long the shoot is in any reasoning bullet or narrative, use ONLY the estimatedShootingDays and estimatedShootingWeeks values from DERIVED: SHOOT DURATION. Do NOT invent a duration.
+- Bankability alignment: Your prose must match the formal bankabilityLabel. If bankabilityLabel is "VERIFY FIRST", do NOT describe that incentive as "investor-bankable" in narrative text. Use "payment timeline requires independent verification" or similar cautious language. Only use "investor-bankable" language when bankabilityLabel is "BANKABLE".
 """
 
 
@@ -1304,12 +1293,21 @@ class ScriptAnalysisService:
             2,
         )
 
+        # Shoot days: trimmed mean with scene-count sanity floor.
+        # Each chunk estimates days for its own slice; the mean can collapse to 2–5 for
+        # large scripts. Floor = total_scenes / 10 (industry standard: ~10 scenes/day).
+        raw_shoot_days = self._trimmed_mean_int(shoot_days_values, default=30)
+        total_scenes = ext_scene_total + int_scene_total
+        if total_scenes > 0:
+            scene_floor = max(1, total_scenes // 10)
+            raw_shoot_days = max(raw_shoot_days, scene_floor)
+
         production_scale = {
             "crewSize": self._choose_weighted_mode(crew_values, SCALE_ORDER, "medium"),
             "principalCast": self._choose_weighted_mode(principal_values, SCALE_ORDER, "medium"),
             "supportingCast": self._choose_weighted_mode(supporting_values, SCALE_ORDER, "medium"),
             "backgroundExtras": self._choose_weighted_mode(extras_values, SCALE_ORDER, "medium"),
-            "estimatedShootingDays": self._trimmed_mean_int(shoot_days_values, default=30),
+            "estimatedShootingDays": raw_shoot_days,
         }
 
         camera = self._choose_mode([c for c in camera_values if c in CAMERA_OPTIONS], default="arri")
@@ -1561,19 +1559,22 @@ class ScriptAnalysisService:
             else:
                 parts.append("No data available.")
 
-        # Territory weather data (only include months relevant to the shoot window)
+        # Territory weather data (filter to shoot window months; fall back to full annual data)
         shoot_months: list[int] | None = datasets.get("_shoot_months")
         weather_data = compacted_datasets.get("weather", [])
         if weather_data:
             if shoot_months:
                 filtered_weather = [w for w in weather_data if w.get("month") in shoot_months]
+                if not filtered_weather:
+                    # No data for the specified months — fall back to annual averages
+                    filtered_weather = weather_data
+                    parts.append(f"\nTERRITORY WEATHER DATA — ANNUAL AVERAGES ({len(filtered_weather)} records, shoot-month data unavailable):")
+                else:
+                    parts.append(f"\nTERRITORY WEATHER DATA ({len(filtered_weather)} records):")
             else:
                 filtered_weather = weather_data
-            parts.append(f"\nTERRITORY WEATHER DATA ({len(filtered_weather)} records):")
-            if filtered_weather:
-                parts.append(json.dumps(filtered_weather, default=str, separators=(",", ":")))
-            else:
-                parts.append("No weather data available for the specified shoot months.")
+                parts.append(f"\nTERRITORY WEATHER DATA ({len(filtered_weather)} records):")
+            parts.append(json.dumps(filtered_weather, default=str, separators=(",", ":")))
 
         # Derived: shoot window
         shoot_window = datasets.get("_shoot_window")
@@ -1608,6 +1609,24 @@ class ScriptAnalysisService:
                 "waterSceneCount": water_count,
             }, separators=(",", ":")))
 
+        # Derived: shoot days — authoritative figure the AI must use in prose
+        if script_analysis is not None:
+            shoot_days = script_analysis.productionScale.estimatedShootingDays
+        else:
+            shoot_days = request_metadata.get("estimated_shooting_days")
+        if shoot_days and int(shoot_days) > 0:
+            shoot_weeks = round(int(shoot_days) / 5)
+            parts.append("\n=== DERIVED: SHOOT DURATION ===")
+            parts.append(json.dumps({
+                "estimatedShootingDays": int(shoot_days),
+                "estimatedShootingWeeks": shoot_weeks,
+                "note": (
+                    "AUTHORITATIVE — use these figures when describing shoot duration in any "
+                    "reasoning bullet, narrative, or cost estimate. Do NOT invent a different "
+                    "shoot duration."
+                ),
+            }, separators=(",", ":")))
+
         # Derived: producer eligibility
         producer_country = datasets.get("_producer_country")
         co_production_status = datasets.get("_co_production_status")
@@ -1625,11 +1644,115 @@ class ScriptAnalysisService:
             parts.append("\n=== DERIVED: BUDGET IN GBP ===")
             parts.append(json.dumps(budget_gbp_data, default=str, separators=(",", ":")))
 
+        # Currency display instruction — tell the AI which currency to use
+        # for budget-level figures in the report.
+        budget_currency = datasets.get("_budget_currency", "GBP")
+        from app.modules.fx.service import TERRITORY_CURRENCY
+        _SYMBOL_MAP = {
+            "GBP": "£", "USD": "$", "EUR": "€", "ZAR": "R",
+            "HUF": "Ft ", "NGN": "₦", "AUD": "A$", "CAD": "C$",
+            "NZD": "NZ$", "CZK": "Kč ", "MAD": "MAD ", "RON": "RON ",
+            "RSD": "RSD ",
+        }
+        budget_symbol = _SYMBOL_MAP.get(budget_currency, f"{budget_currency} ")
+        parts.append(f"\n=== CURRENCY DISPLAY RULES ===")
+        parts.append(
+            f"The producer's budget currency is {budget_currency} ({budget_symbol}).\n"
+            f"IMPORTANT DISPLAY RULES:\n"
+            f"- executiveSummary.budget: Show the ORIGINAL budget in {budget_currency} first, "
+            f"then the GBP conversion in parentheses. "
+            f'E.g. "{budget_symbol}10,000,000 ({_SYMBOL_MAP.get("GBP", "£")}7,517,000 GBP at rate 0.7517)".\n'
+            f"- executiveSummary.headlineNetBudget: Show in {budget_currency} (the producer's currency).\n"
+            f"- executiveSummary.keyInsights narrative: Use {budget_symbol} for budget references.\n"
+            f"- financialAnalysis.budgetScenarios: Show totalBudget and all monetary fields in "
+            f"the TERRITORY's local incentive currency (converted from GBP using FX rates). "
+            f"The validator will handle this conversion — you should use GBP internally.\n"
+            f"- locationRankings.rebateAmount: Show in the territory's incentive currency.\n"
+            f"- territoryDeepDives.estimatedRebate: Show in the territory's incentive currency.\n"
+            f"- crewCostComparison: Show in GBP (already converted in dataset).\n"
+            f"- Wherever you reference the total production budget in prose, use {budget_symbol} not £ "
+            f"(unless the budget IS in GBP)."
+        )
+
         # Derived: currency advantage scores (v3)
         currency_scores = datasets.get("_currency_advantage_scores")
         if currency_scores:
             parts.append("\n=== DERIVED: CURRENCY ADVANTAGE SCORES ===")
             parts.append(json.dumps(currency_scores, default=str, separators=(",", ":")))
+
+        # Derived: territory financials (v4) — pre-computed monetary figures
+        territory_financials = datasets.get("_territory_financials")
+        if territory_financials:
+            parts.append("\n=== DERIVED: TERRITORY FINANCIALS ===")
+            parts.append(
+                "CRITICAL: These figures are pre-computed by the service layer and are AUTHORITATIVE. "
+                "You MUST copy these exact strings into the relevant report fields. "
+                "Do NOT compute rebates, qualifying spend, net budgets, or crew rates yourself.\n"
+                "Fields to copy verbatim:\n"
+                "  rebateAmount / estimatedRebate  → net_rebate\n"
+                "  rebatePercent                   → rate\n"
+                "  headlineNetBudget               → headline_net_budget\n"
+                "  recommendedTerritoryRebate      → rate + ' / ' + net_rebate\n"
+                "  budgetScenarios                 → totalBudget, qualifyingSpend, atlDeduction (label: 'Less ATL Deduction (est. [atl_pct])'), grossRebate, netRebate, netBudget\n"
+                "  crewCostComparison              → crew_rates (already in budget currency — use these strings exactly)\n"
+                "  crewInsights.costVsUSD          → summary of crew_rates entries\n"
+                "  keyInsights monetary figures    → use net_rebate and headline_net_budget only\n"
+                "  reasoning bullets               → do NOT convert crew rates to GBP; if you mention rates, use crew_rates strings"
+            )
+            parts.append(json.dumps(territory_financials, default=str, separators=(",", ":")))
+
+        # Territory scope constraints — enforce territories_considering, location_strategy, state_province
+        _raw_territories = request_metadata.get("territories_considering") or []
+        _strict_territories = [t for t in _raw_territories if t.lower() not in ("open to all", "open")]
+        _location_strategy = (request_metadata.get("location_strategy") or "open").lower()
+        _home_country = request_metadata.get("country") or ""
+        _state_province = request_metadata.get("state_province") or ""
+
+        if _strict_territories:
+            # User has explicitly selected territories — hardest constraint
+            parts.append("\n=== TERRITORY SCOPE — HARD CONSTRAINT ===")
+            parts.append(
+                f"The producer has selected ONLY these territories for analysis: {json.dumps(_strict_territories)}.\n"
+                "CRITICAL: You MUST restrict ALL of the following to ONLY the territories listed above:\n"
+                "  - locationRankings\n"
+                "  - territoryDeepDives\n"
+                "  - incentiveEstimates\n"
+                "  - crewInsights\n"
+                "  - weatherLogistics\n"
+                "Do NOT include any territory not in this list, even if it appears in the reference datasets "
+                "or would otherwise be a strong recommendation. The producer has already made their selection."
+            )
+        elif _location_strategy == "domestic":
+            # Domestic-only production — restrict to home country (+ state/province if specified)
+            _domestic_label = _home_country
+            if _state_province:
+                _domestic_label = f"{_state_province}, {_home_country}"
+            parts.append("\n=== LOCATION STRATEGY — DOMESTIC ONLY ===")
+            parts.append(
+                f"The producer has selected DOMESTIC production only. "
+                f"Restrict ALL territory sections (locationRankings, territoryDeepDives, "
+                f"incentiveEstimates, crewInsights, weatherLogistics) to {_domestic_label} ONLY. "
+                f"Do NOT include any other country or territory."
+            )
+        elif _location_strategy == "international":
+            # International production — exclude the home country from territory rankings
+            parts.append("\n=== LOCATION STRATEGY — INTERNATIONAL ===")
+            parts.append(
+                f"The producer wants to film INTERNATIONALLY — outside their home country ({_home_country}). "
+                f"Do NOT include {_home_country} in locationRankings or territoryDeepDives. "
+                f"Focus entirely on international territories from the reference datasets."
+            )
+
+        # State/province context — inject when provided to ensure state-level incentives are surfaced
+        if _state_province and _location_strategy != "domestic":
+            parts.append("\n=== STATE / PROVINCE CONTEXT ===")
+            parts.append(
+                f"The producer is based in or considering {_state_province}, {_home_country}. "
+                f"Prioritise any state/province-level incentive programmes for {_state_province} "
+                f"(e.g. if country is United States and state is Georgia, the Georgia Entertainment "
+                f"Industry Investment Act should be surfaced). Include {_state_province} in "
+                f"incentiveEstimates if a programme exists in the dataset."
+            )
 
         # Mode instruction
         if is_preview:
@@ -1642,10 +1765,24 @@ class ScriptAnalysisService:
             )
         else:
             parts.append("\n=== MODE: FULL PAID REPORT ===")
-            parts.append(
-                "This is a FULL PAID report. Return up to 15 locationRankings with "
-                "isAssessmentOnly: false. Populate ALL sections with complete data."
-            )
+            if _location_strategy == "domestic" and not _strict_territories:
+                parts.append(
+                    "This is a FULL PAID report with DOMESTIC-ONLY location strategy. "
+                    "Return exactly 1 locationRankings entry (the home territory only). "
+                    "isAssessmentOnly: false. Populate ALL sections with complete data for that territory."
+                )
+            elif _strict_territories:
+                n = len(_strict_territories)
+                parts.append(
+                    f"This is a FULL PAID report. Return exactly {n} locationRankings entr{'y' if n == 1 else 'ies'} "
+                    f"(one per selected territory). "
+                    "isAssessmentOnly: false. Populate ALL sections with complete data."
+                )
+            else:
+                parts.append(
+                    "This is a FULL PAID report. Return up to 15 locationRankings with "
+                    "isAssessmentOnly: false. Populate ALL sections with complete data."
+                )
 
         user_message = "\n".join(parts)
         stage_max_tokens = self._stage_max_tokens(self._STAGE_PRODUCTION_ANALYSIS)

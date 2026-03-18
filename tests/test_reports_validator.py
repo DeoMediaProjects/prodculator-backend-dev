@@ -319,9 +319,6 @@ def test_patch_eligibility_does_not_overwrite_existing_status():
     assert report["incentiveEstimates"][0]["eligibilityStatus"] == "ineligible"
 
 
-# ── _patch_financial_calculations tests ──────────────────────────────────────
-
-
 def _make_incentive_db_full(
     program_name: str,
     territory: str = "United Kingdom",
@@ -364,220 +361,6 @@ def _make_incentive_db_full(
         "co_production_eligible": False,
         "spv_eligible": False,
     }
-
-
-def test_financial_calc_applies_qualifying_spend_cap():
-    """Rebate should be calculated on 80% of budget, not 100%."""
-    db = _make_incentive_db_full(
-        "Test Programme",
-        territory="TestLand",
-        rate_gross=40.0,
-        rate_net=40.0,
-        qualifying_spend_cap_pct=80.0,
-    )
-    by_program = {"Test Programme": db, "test programme": db}
-
-    report = {
-        "executiveSummary": {"budget": "£10M"},
-        "incentiveEstimates": [{
-            "program": "Test Programme",
-            "territory": "TestLand",
-            "estimatedRebate": "£4,000,000",  # Wrong: 40% of full £10M
-        }],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_financial_calculations(report, by_program, warnings)
-
-    est = report["incentiveEstimates"][0]
-    # Should be corrected: 80% of £10M = £8M QS, minus 15% ATL (£1.5M) = £6.5M
-    # 40% of £6.5M = £2,600,000
-    assert "2,600,000" in est["estimatedRebate"]
-    assert len(warnings) > 0
-
-
-def test_financial_calc_no_cap_uses_full_budget():
-    """If qualifying_spend_cap_pct is absent, use full budget."""
-    db = _make_incentive_db_full(
-        "NoCap Programme",
-        territory="TestLand",
-        rate_gross=30.0,
-        rate_net=30.0,
-        qualifying_spend_cap_pct=None,
-    )
-    by_program = {"NoCap Programme": db, "nocap programme": db}
-
-    report = {
-        "executiveSummary": {"budget": "£10M"},
-        "incentiveEstimates": [{
-            "program": "NoCap Programme",
-            "territory": "TestLand",
-            "estimatedRebate": "£3,000,000",  # Was: 30% of full £10M
-        }],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_financial_calculations(report, by_program, warnings)
-
-    # With 15% ATL on tax_credit: QS = £10M - £1.5M = £8.5M, 30% = £2,550,000
-    # AI value £3,000,000 deviates by ~17.6% from £2,550,000 → corrected
-    assert "2,550,000" in report["incentiveEstimates"][0]["estimatedRebate"]
-
-
-def test_financial_calc_budget_exceeds_cap_selects_alternative():
-    """When budget exceeds programme cap, should fall back to alternative programme."""
-    # IFTC-like: cap at £23.5M
-    iftc = _make_incentive_db_full(
-        "Enhanced Credit",
-        territory="TestLand",
-        rate_gross=53.0,
-        rate_net=39.75,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=23_500_000.0,
-    )
-    # AVEC-like: no cap
-    avec = _make_incentive_db_full(
-        "Standard Credit",
-        territory="TestLand",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=None,
-    )
-    by_program = {
-        "Enhanced Credit": iftc, "enhanced credit": iftc,
-        "Standard Credit": avec, "standard credit": avec,
-    }
-
-    report = {
-        "executiveSummary": {"budget": "£25M"},
-        "incentiveEstimates": [{
-            "program": "Enhanced Credit",
-            "territory": "TestLand",
-            "estimatedRebate": "£13,250,000",  # Wrong: 53% of £25M
-        }],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_financial_calculations(report, by_program, warnings)
-
-    est = report["incentiveEstimates"][0]
-    # Should use Standard Credit (34%/25.5% net) on 80% of £25M = £20M QS,
-    # minus 15% ATL (£3.75M) = £16.25M. Net: £16.25M * 25.5% = £4,143,750
-    assert "4,143,750" in est["estimatedRebate"]
-    assert "programme" in (est.get("programmeNote") or "").lower() or len(warnings) > 0
-
-
-def test_financial_calc_per_person_cap_reduces_qualifying_spend():
-    """Per-person ATL cap should reduce qualifying spend and flag it."""
-    db = _make_incentive_db_full(
-        "Capped Programme",
-        territory="TestLand",
-        rate_gross=30.0,
-        rate_net=30.0,
-        qualifying_spend_cap_pct=80.0,  # 80% cap + per-person cap stack
-        cap_per_person=3_000_000.0,
-        cap_per_person_currency="HUF",
-    )
-    by_program = {"Capped Programme": db, "capped programme": db}
-
-    report = {
-        "executiveSummary": {"budget": "£10M"},
-        "incentiveEstimates": [{
-            "program": "Capped Programme",
-            "territory": "TestLand",
-            "estimatedRebate": "£3,000,000",  # Wrong: 30% of full £10M
-        }],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_financial_calculations(report, by_program, warnings)
-
-    est = report["incentiveEstimates"][0]
-    # Budget £10M, 80% QS cap → £8M, then 15% ATL deduction → £8M - £1.5M = £6.5M
-    # 30% of £6.5M = £1,950,000
-    # Deviation: |3M - 1.95M| / 1.95M = 54% → exceeds 15% tolerance
-    assert "1,950,000" in est["estimatedRebate"]
-    assert len(warnings) > 0
-
-
-def test_budget_scenario_patches_intermediate_fields_and_programme():
-    """budgetScenarios should have corrected atlDeduction, netQualifyingSpend, programme, and rates."""
-    # IFTC-like: cap at £20M
-    iftc = _make_incentive_db_full(
-        "IFTC",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=20_000_000.0,
-        cap_per_person=500_000.0,
-    )
-    # AVEC-like: no cap, also has ATL cap
-    avec = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=None,
-        cap_per_person=500_000.0,
-    )
-    by_program = {
-        "IFTC": iftc, "iftc": iftc,
-        "AVEC": avec, "avec": avec,
-    }
-
-    report = {
-        "executiveSummary": {"budget": "£30M"},
-        "incentiveEstimates": [],
-        "locationRankings": [],
-        "financialAnalysis": {
-            "budgetScenarios": [{
-                "territory": "United Kingdom",
-                "programme": "IFTC",  # Wrong — should switch to AVEC
-                "totalBudget": "£30,000,000",
-                "qualifyingSpendPct": "100%",
-                "qualifyingSpend": "£30,000,000",
-                "atlDeduction": "£6,000,000",
-                "netQualifyingSpend": "£18,000,000",
-                "rateGross": "53%",
-                "rateNet": "39.75%",
-                "grossRebate": "£15,900,000",
-                "netRebate": "£11,925,000",
-                "netBudget": "£18,075,000",
-            }],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_financial_calculations(
-        report, by_program, warnings, budget_gbp_override=30_000_000,
-    )
-
-    scenario = report["financialAnalysis"]["budgetScenarios"][0]
-
-    # Programme should be switched to AVEC
-    assert scenario["programme"] == "AVEC"
-
-    # Rates should be AVEC (34% / 25.5%), not IFTC (53% / 39.75%)
-    assert scenario["rateGross"] == "34%"
-    assert scenario["rateNet"] == "25.5%"
-
-    # Qualifying spend: 80% of £30M = £24M (before ATL)
-    assert "24,000,000" in scenario["qualifyingSpend"]
-
-    # ATL deduction: 15% of £30M = £4.5M
-    assert "4,500,000" in scenario["atlDeduction"]
-
-    # Net qualifying spend: £24M - £4.5M = £19.5M
-    assert "19,500,000" in scenario["netQualifyingSpend"]
-
-    # Net rebate: £19.5M * 25.5% = £4,972,500
-    assert "4,972,500" in scenario["netRebate"]
-
-    # Notes should mention the programme switch
-    assert "AVEC" in (scenario.get("notes") or "")
-    assert len(warnings) > 0
 
 
 # ── _patch_reliability_warnings tests ────────────────────────────────────────
@@ -797,40 +580,6 @@ def test_parse_money_string():
     assert _parse_money_string("No data") is None
 
 
-# ── _patch_location_rankings rebateAmount tests ─────────────────────────────
-
-
-def test_location_rankings_rebate_amount_corrected():
-    """rebateAmount in locationRankings should be corrected when it deviates >15%."""
-    db = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "United Kingdom",
-            "rebatePercent": "34% / 25.5%",
-            "rebateAmount": "£11,925,000",  # Wrong — AI hallucinated
-            "score": 72,
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_location_rankings(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    # Corrected: 30M * 80% QS = £24M, minus 15% ATL (£4.5M) = £19.5M
-    # £19.5M * 25.5% = £4,972,500
-    assert "4,972,500" in report["locationRankings"][0]["rebateAmount"]
-    assert any("rebateAmount corrected" in w for w in warnings)
-
-
 def test_location_rankings_rebate_amount_within_tolerance():
     """rebateAmount should NOT be overridden if within 15% tolerance."""
     db = _make_incentive_db_full(
@@ -889,124 +638,6 @@ def test_deep_dive_score_propagated_from_rankings():
     assert any("score aligned" in w for w in warnings)
 
 
-def test_deep_dive_rebate_corrected():
-    """territoryDeepDives estimatedRebate should be corrected when deviating."""
-    db = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "territoryDeepDives": [{
-            "name": "United Kingdom",
-            "score": 72,
-            "estimatedRebate": "£11,925,000",  # Hallucinated
-        }],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_territory_deep_dives(
-        report, by_program, warnings,
-        budget_gbp=30_000_000,
-    )
-
-    # Corrected: £30M × 80% QS - 15% ATL (£4.5M) = £19.5M × 25.5% = £4,972,500
-    assert "4,972,500" in report["territoryDeepDives"][0]["estimatedRebate"]
-    assert any("estimatedRebate corrected" in w for w in warnings)
-
-
-# ── rebatePercent budget-cap switching tests ─────────────────────────────────
-
-
-def test_location_rankings_rebate_percent_uses_switched_programme():
-    """rebatePercent should show AVEC rate (34%), not IFTC (53%), when budget exceeds cap."""
-    iftc = _make_incentive_db_full(
-        "IFTC",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=20_000_000.0,
-    )
-    avec = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=None,
-    )
-    by_program = {
-        "IFTC": iftc, "iftc": iftc,
-        "AVEC": avec, "avec": avec,
-    }
-
-    report = {
-        "locationRankings": [{
-            "name": "United Kingdom",
-            "rebatePercent": "53% / 39.75%",  # Wrong — IFTC rate, should be AVEC
-            "rebateAmount": "£11,925,000",
-            "score": 72,
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_location_rankings(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    # rebatePercent should be AVEC (34% / 25.5%), not IFTC (53% / 39.75%)
-    assert "34%" in report["locationRankings"][0]["rebatePercent"]
-    assert "53%" not in report["locationRankings"][0]["rebatePercent"]
-
-
-# ── incentiveEstimates budget-cap disqualification tests ─────────────────────
-
-
-def test_incentive_estimates_disqualifies_capped_programme():
-    """incentiveEstimates should mark IFTC as DISQUALIFIED when budget exceeds cap."""
-    iftc = _make_incentive_db_full(
-        "IFTC",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-        cap_amount=20_000_000.0,
-    )
-    avec = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        cap_amount=None,
-    )
-    by_program = {
-        "IFTC": iftc, "iftc": iftc,
-        "AVEC": avec, "avec": avec,
-    }
-
-    report = {
-        "incentiveEstimates": [{
-            "program": "IFTC",
-            "territory": "United Kingdom",
-            "rate": "53%",
-            "estimatedRebate": "£7,950,000",  # Should be £0 — DISQUALIFIED
-        }],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_incentive_estimates(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    est = report["incentiveEstimates"][0]
-    assert "DISQUALIFIED" in est["estimatedRebate"]
-    assert "£0" in est["estimatedRebate"]
-    assert "AVEC" in est["estimatedRebate"]
-
-
 # ── crewCostComparison territory filtering tests ─────────────────────────────
 
 
@@ -1062,49 +693,6 @@ def test_crew_cost_comparison_noop_when_all_match():
     assert len(warnings) == 0
 
 
-# ── territoryDeepDives rebate rate switching tests ───────────────────────────
-
-
-def test_deep_dive_rebate_string_uses_switched_rate():
-    """territoryDeepDives rebate string should use AVEC rate when budget exceeds IFTC cap."""
-    iftc = _make_incentive_db_full(
-        "IFTC",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-        cap_amount=20_000_000.0,
-    )
-    avec = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        cap_amount=None,
-    )
-    by_program = {
-        "IFTC": iftc, "iftc": iftc,
-        "AVEC": avec, "avec": avec,
-    }
-
-    report = {
-        "territoryDeepDives": [{
-            "name": "United Kingdom",
-            "score": 72,
-            "rebate": "53% / 39.75% net / ~£7,950,000 net",
-            "estimatedRebate": "£7,950,000",
-        }],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_territory_deep_dives(
-        report, by_program, warnings,
-        budget_gbp=30_000_000,
-    )
-
-    rebate_str = report["territoryDeepDives"][0]["rebate"]
-    assert "34%" in rebate_str
-    assert "53%" not in rebate_str
-
-
 # ── _patch_production_format tests ───────────────────────────────────────────
 
 
@@ -1149,226 +737,7 @@ def test_production_format_noop_when_none():
     assert len(warnings) == 0
 
 
-# ── _patch_executive_summary rebate + headline tests ─────────────────────────
-
-
-def test_executive_summary_rebate_corrected():
-    """recommendedTerritoryRebate should be corrected when AI figure deviates >15%."""
-    db = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "executiveSummary": {
-            "recommendedTerritory": "United Kingdom",
-            "recommendedTerritoryRebate": "53% / ~£5,963,000",  # Wrong
-            "headlineNetBudget": "Estimated net budget after UK IFTC: approximately £24,037,000",
-            "recommendedTerritoryPaymentSpeed": "6-9 months",
-        },
-        "incentiveEstimates": [],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_executive_summary(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    summary = report["executiveSummary"]
-    # Corrected: 30M × 80% QS - 15% ATL (£4.5M) = £19.5M × 25.5% = £4,972,500
-    assert "4,972,500" in summary["recommendedTerritoryRebate"]
-    assert "34%" in summary["recommendedTerritoryRebate"]
-    assert any("recommendedTerritoryRebate corrected" in w for w in warnings)
-
-
-def test_executive_summary_headline_net_budget_corrected():
-    """headlineNetBudget should use corrected rebate for net budget calculation."""
-    db = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "executiveSummary": {
-            "recommendedTerritory": "United Kingdom",
-            "recommendedTerritoryRebate": "34% / ~£6,120,000",
-            "headlineNetBudget": "Estimated net budget after UK AVEC: approximately £18,000,000",  # Wrong
-            "recommendedTerritoryPaymentSpeed": "6-9 months",
-        },
-        "incentiveEstimates": [],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_executive_summary(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    summary = report["executiveSummary"]
-    # Net budget: £30M - £4,972,500 = £25,027,500
-    # _parse_money_string can't extract amount from prose, so headline is
-    # unconditionally replaced (no deviation warning emitted)
-    assert "25,027,500" in summary["headlineNetBudget"]
-
-
-def test_executive_summary_switched_programme_rates():
-    """Executive summary should use AVEC rates when budget exceeds IFTC cap."""
-    iftc = _make_incentive_db_full(
-        "IFTC",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=20_000_000.0,
-    )
-    avec = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-        cap_amount=None,
-    )
-    by_program = {
-        "IFTC": iftc, "iftc": iftc,
-        "AVEC": avec, "avec": avec,
-    }
-
-    report = {
-        "executiveSummary": {
-            "recommendedTerritory": "United Kingdom",
-            "recommendedTerritoryRebate": "53% / ~£11,925,000",  # Wrong — IFTC rate
-            "headlineNetBudget": "Estimated net budget after UK IFTC: approximately £18,075,000",
-            "recommendedTerritoryPaymentSpeed": "6-9 months",
-        },
-        "incentiveEstimates": [],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_executive_summary(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    summary = report["executiveSummary"]
-    # Should use AVEC rate (34% / 25.5%) not IFTC (53% / 39.75%)
-    assert "34%" in summary["recommendedTerritoryRebate"]
-    assert "53%" not in summary["recommendedTerritoryRebate"]
-    # headlineNetBudget should mention AVEC
-    assert "AVEC" in summary["headlineNetBudget"]
-
-
-# ── territoryDeepDives full rebate string rebuild tests ──────────────────────
-
-
-def test_deep_dive_rebate_string_fully_rebuilt_with_corrected_amount():
-    """When corrected rebate is available, the entire rebate string should be rebuilt."""
-    db = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34.0,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80.0,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "territoryDeepDives": [{
-            "name": "United Kingdom",
-            "score": 72,
-            "rebate": "34% / 25.5% net / ~£5,565,000 net",  # Amount is wrong
-            "estimatedRebate": "£5,565,000",
-        }],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_territory_deep_dives(
-        report, by_program, warnings,
-        budget_gbp=30_000_000,
-    )
-
-    rebate_str = report["territoryDeepDives"][0]["rebate"]
-    # Corrected: £30M × 80% QS - 15% ATL = £19.5M × 25.5% = £4,972,500
-    assert "4,972,500" in rebate_str
-    assert "34%" in rebate_str
-    assert "(net estimated)" in rebate_str
-
-
 # ── _patch_shoot_duration_context tests ──────────────────────────────────────
-
-
-def test_executive_summary_key_insights_monetary_corrected():
-    """keyInsights narrative monetary amounts should be corrected to match computed figures."""
-    db = _make_incentive_db_full(
-        "IFTC",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-        qualifying_spend_cap_pct=None,  # No QS cap (matching runtime DB)
-    )
-    by_program = {"IFTC": db, "iftc": db}
-
-    report = {
-        "executiveSummary": {
-            "recommendedTerritory": "United Kingdom",
-            "recommendedTerritoryRebate": "53% / ~£7,950,000",
-            "headlineNetBudget": "Estimated net budget after UK IFTC: approximately £12,050,000",
-            "keyInsights": (
-                "at £20M the production qualifies for IFTC, "
-                "delivering approximately £5,955,000 net rebate "
-                "and reducing the budget to around £14,045,000."
-            ),
-        },
-        "incentiveEstimates": [],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_executive_summary(
-        report, by_program, warnings, budget_gbp=20_000_000,
-    )
-
-    # Corrected: 15% ATL on £20M → £17M QS → £17M × 39.75% = £6,757,500
-    # Net budget: £20M - £6,757,500 = £13,242,500
-    insights = report["executiveSummary"]["keyInsights"]
-    assert "6,757,500" in insights  # rebate corrected
-    assert "13,242,500" in insights  # net budget corrected
-    assert "£20M" in insights  # total budget preserved
-    assert any("keyInsights" in w for w in warnings)
-
-
-def test_atl_deduction_not_applied_to_cash_rebate():
-    """Cash rebate programmes should NOT get ATL deduction — only tax credits."""
-    db = _make_incentive_db_full(
-        "NFI Hungary",
-        territory="Hungary",
-        rate_gross=30.0,
-        rate_net=30.0,
-        qualifying_spend_cap_pct=None,
-        currency="EUR",
-    )
-    db["rate_type"] = "cash_rebate"  # Override default tax_credit
-    by_program = {"NFI Hungary": db, "nfi hungary": db}
-
-    report = {
-        "executiveSummary": {"budget": "€20M"},
-        "incentiveEstimates": [{
-            "program": "NFI Hungary",
-            "territory": "Hungary",
-            "estimatedRebate": "€6,000,000",  # 30% of full €20M — correct for cash rebate
-        }],
-        "locationRankings": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_financial_calculations(report, by_program, warnings)
-
-    # Cash rebate: no ATL deduction, full budget qualifies
-    # €20M * 30% = €6,000,000 — within tolerance, should NOT be overridden
-    assert "6,000,000" in report["incentiveEstimates"][0]["estimatedRebate"]
 
 
 def test_shoot_duration_context_injects_flag_for_long_pilot():
@@ -1432,4 +801,103 @@ def test_shoot_duration_context_no_duplicate():
     ReportValidator._patch_shoot_duration_context(report, "Feature Film", warnings)
 
     assert len(report["executiveSummary"]["keyFlags"]) == 1
+    assert len(warnings) == 0
+
+
+# ── Deadline proximity flagging ──────────────────────────────────────────────
+
+
+def test_deadline_proximity_flags_imminent_deadlines():
+    """Funding deadlines within 8 weeks should be inserted into actionTimeline."""
+    from datetime import date, timedelta
+    # Create a deadline 14 days from now
+    soon = (date.today() + timedelta(days=14)).isoformat()
+    far = (date.today() + timedelta(days=120)).isoformat()
+
+    report = {
+        "executiveSummary": {
+            "actionTimeline": [
+                {"action": "Register with Georgia Film Office", "deadline": None},
+            ],
+        },
+        "fundingOpportunities": [
+            {
+                "type": "Festival",
+                "name": "DIFF",
+                "deadline": f"Feature Submission: {soon}",
+            },
+            {
+                "type": "Festival",
+                "name": "Venice",
+                "deadline": f"Feature Submission: {far}",
+            },
+        ],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_deadline_proximity(report, warnings)
+
+    timeline = report["executiveSummary"]["actionTimeline"]
+    # DIFF should be flagged (14 days away), Venice should not (120 days away)
+    urgent_actions = [a for a in timeline if "URGENT" in a.get("action", "")]
+    assert len(urgent_actions) == 1
+    assert "DIFF" in urgent_actions[0]["action"]
+    assert soon in urgent_actions[0]["deadline"]
+    assert len(warnings) == 1
+
+
+def test_deadline_proximity_noop_when_no_imminent_deadlines():
+    """No action items added when all deadlines are far in the future."""
+    from datetime import date, timedelta
+    far = (date.today() + timedelta(days=120)).isoformat()
+
+    report = {
+        "executiveSummary": {"actionTimeline": []},
+        "fundingOpportunities": [
+            {"type": "Fund", "name": "Telefilm", "deadline": far},
+        ],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_deadline_proximity(report, warnings)
+
+    assert len(report["executiveSummary"]["actionTimeline"]) == 0
+    assert len(warnings) == 0
+
+
+def test_deadline_proximity_skips_past_deadlines():
+    """Deadlines that have already passed should not be flagged."""
+    from datetime import date, timedelta
+    past = (date.today() - timedelta(days=5)).isoformat()
+
+    report = {
+        "executiveSummary": {"actionTimeline": []},
+        "fundingOpportunities": [
+            {"type": "Festival", "name": "DIFF", "deadline": past},
+        ],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_deadline_proximity(report, warnings)
+
+    assert len(report["executiveSummary"]["actionTimeline"]) == 0
+
+
+def test_deadline_proximity_no_duplicate():
+    """Should not add duplicate if the deadline name is already in the timeline."""
+    from datetime import date, timedelta
+    soon = (date.today() + timedelta(days=10)).isoformat()
+
+    report = {
+        "executiveSummary": {
+            "actionTimeline": [
+                {"action": "Submit to DIFF before deadline", "note": ""},
+            ],
+        },
+        "fundingOpportunities": [
+            {"type": "Festival", "name": "DIFF", "deadline": soon},
+        ],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_deadline_proximity(report, warnings)
+
+    timeline = report["executiveSummary"]["actionTimeline"]
+    assert len(timeline) == 1  # No new item added
     assert len(warnings) == 0

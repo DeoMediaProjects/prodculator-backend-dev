@@ -286,6 +286,45 @@ class ReportService:
 
     # --- New analysis report generation ---
 
+    def _resolve_territories_hint(self, request_metadata: dict) -> list[str] | None:
+        """Build the territory hint list for dataset loading from all relevant metadata fields.
+
+        Priority order:
+        1. If location_strategy == "domestic": restrict to home country + state_province only.
+        2. If territories_considering is set: use those (+ state_province if provided).
+        3. If only state_province is set: use country + state_province.
+        4. Otherwise: None (load full dataset, no priority-boost).
+        """
+        location_strategy = (request_metadata.get("location_strategy") or "open").lower()
+        raw_territories = request_metadata.get("territories_considering") or []
+        country = request_metadata.get("country") or ""
+        state_province = request_metadata.get("state_province") or ""
+
+        # Strip "open to all" sentinel values
+        strict_territories = [
+            t for t in raw_territories if t.lower() not in ("open to all", "open")
+        ]
+
+        if location_strategy == "domestic":
+            # Domestic: only the home territory (+ state for state-level incentives)
+            hint: list[str] = []
+            if country:
+                hint.append(country)
+            if state_province and state_province not in hint:
+                hint.append(state_province)
+            return hint or None
+
+        # Open or international — start from user-selected territories
+        hint = list(strict_territories)
+
+        # Always add state_province to hint so state-level incentives get priority-boosted
+        if state_province and state_province not in hint:
+            hint.append(state_province)
+            if country and country not in hint:
+                hint.append(country)
+
+        return hint or None
+
     def generate_preview_report(
         self,
         *,
@@ -294,7 +333,7 @@ class ReportService:
     ) -> dict:
         """Generate a free preview report synchronously (no script, no DB row)."""
         datasets = self._load_analysis_datasets(
-            territories_hint=request_metadata.get("territories_considering")
+            territories_hint=self._resolve_territories_hint(request_metadata)
         )
         self._inject_derived_data(datasets, script_analysis=None, request_metadata=request_metadata)
         return script_service.generate_production_analysis(
@@ -315,7 +354,7 @@ class ReportService:
     ) -> dict:
         """Generate a full paid/b2b analysis report."""
         datasets = self._load_analysis_datasets(
-            territories_hint=request_metadata.get("territories_considering")
+            territories_hint=self._resolve_territories_hint(request_metadata)
         )
         self._inject_derived_data(datasets, script_analysis=script_analysis, request_metadata=request_metadata)
         report_data = script_service.generate_production_analysis(
@@ -405,6 +444,191 @@ class ReportService:
                     )
                 )
 
+            # v3: FX rates from budget currency → each territory's incentive
+            # currency.  Used by the validator to convert budget amounts for
+            # display in budget scenarios and territory deep-dives.
+            from app.modules.fx.service import TERRITORY_CURRENCY
+            target_currencies: set[str] = set()
+            for t in territory_labels:
+                tc = TERRITORY_CURRENCY.get(t)
+                if tc and tc != budget_currency:
+                    target_currencies.add(tc)
+            fx_rates: dict[str, dict] = {}
+            for tc in target_currencies:
+                rate, rate_date = fx_service.get_rate(budget_currency, tc)
+                fx_rates[tc] = {
+                    "rate": rate,
+                    "rate_date": rate_date.isoformat(),
+                    "from_currency": budget_currency,
+                }
+            datasets["_fx_rates_from_budget"] = fx_rates
+
+        # Pre-compute territory financials — authoritative monetary figures
+        # that the AI should use verbatim instead of computing its own.
+        self._pre_compute_territory_financials(datasets)
+
+    def _pre_compute_territory_financials(self, datasets: dict) -> None:
+        """Build datasets["_territory_financials"] with authoritative monetary figures.
+
+        The AI copies these verbatim instead of doing its own rebate arithmetic.
+        Uses the exact same calculation logic as ReportValidator._compute_corrected_rebate.
+        """
+        from app.modules.reports.validator import (
+            ReportValidator,
+            _index_incentives_by_territory,
+            _best_incentive,
+            _budget_to_display,
+            _format_rate,
+            _currency_symbol,
+            _DEFAULT_ATL_PCT,
+        )
+
+        budget_gbp_data = datasets.get("_budget_gbp")
+        if not isinstance(budget_gbp_data, dict):
+            return
+        budget_gbp = budget_gbp_data.get("converted")
+        if not budget_gbp or budget_gbp <= 0:
+            return
+
+        budget_currency = datasets.get("_budget_currency", "GBP")
+        budget_original_amount = datasets.get("_budget_amount")
+        fx_rates_from_budget = datasets.get("_fx_rates_from_budget") or {}
+        incentives = datasets.get("incentives", [])
+        crew_costs = datasets.get("crew_costs", [])
+
+        territory_incentives = _index_incentives_by_territory(incentives)
+        budget_symbol = _currency_symbol(budget_currency)
+
+        # Index crew costs by territory — full name, ISO code, and canonical label.
+        # Crew rows may use ISO codes ("GB"), full names ("United Kingdom"), or
+        # regional labels ("England").  Index all variants so lookups always hit.
+        crew_by_territory: dict[str, list[dict]] = {}
+        for row in crew_costs:
+            for raw_key in (row.get("territory") or "", row.get("country") or ""):
+                if not raw_key:
+                    continue
+                crew_by_territory.setdefault(raw_key, []).append(row)
+                # Resolve to canonical label to handle ISO ↔ full-name mismatches
+                t_obj = resolve_territory(raw_key)
+                if t_obj:
+                    canonical = t_obj.label
+                    if canonical != raw_key:
+                        crew_by_territory.setdefault(canonical, []).append(row)
+                    if t_obj.parent and t_obj.parent.label != raw_key:
+                        crew_by_territory.setdefault(t_obj.parent.label, []).append(row)
+
+        territory_financials: dict[str, dict] = {}
+
+        for territory, rows in territory_incentives.items():
+            if not territory or not rows:
+                continue
+            best = _best_incentive(rows)
+            corrected = ReportValidator._compute_corrected_rebate(
+                best, budget_gbp, territory_incentives
+            )
+            if corrected is None:
+                continue
+
+            territory_currency = best.get("currency") or "GBP"
+
+            def _disp(gbp_amount: float) -> tuple[float, str, str | None]:
+                return _budget_to_display(
+                    gbp_amount, territory_currency, budget_currency,
+                    budget_original_amount, budget_gbp, fx_rates_from_budget,
+                )
+
+            d_total, sym, fx_note = _disp(budget_gbp)
+            d_qs, _, _ = _disp(corrected["qualifying_spend_before_atl"])
+            d_net_qs, _, _ = _disp(corrected["qualifying_spend"])
+            d_gross_rebate, _, _ = _disp(corrected["gross_rebate"])
+            d_net_rebate, _, _ = _disp(corrected["net_rebate"])
+            d_net_budget = d_total - d_net_rebate
+
+            atl_str = None
+            atl_amount = corrected.get("atl_deduction_amount", 0)
+            if atl_amount > 0:
+                d_atl, _, _ = _disp(atl_amount)
+                atl_str = f"{sym}{d_atl:,.0f}"
+
+            rate_str = _format_rate(corrected["rate_gross"], corrected["rate_net"])
+            qs_pct = corrected["qualifying_spend_pct"]
+
+            programme_name = (
+                corrected.get("switched_programme")
+                or best.get("program_name")
+                or best.get("program")
+                or ""
+            )
+
+            # Build crew rate strings for this territory in budget currency
+            t_crew_rows = crew_by_territory.get(territory, [])
+            if not t_crew_rows:
+                # Try ISO lookup
+                from app.core.territories import territory_to_iso as _build_iso
+                iso_map = _build_iso()
+                iso = iso_map.get(territory, "")
+                if iso:
+                    t_crew_rows = crew_by_territory.get(iso, [])
+
+            crew_rates: dict[str, str] = {}
+            for crew_row in t_crew_rows:
+                role = crew_row.get("role_category") or crew_row.get("role") or ""
+                if not role:
+                    continue
+                union_gbp = crew_row.get("union_rate_gbp")
+                non_union_gbp = crew_row.get("non_union_rate_gbp")
+                if union_gbp is None and non_union_gbp is None:
+                    continue
+
+                def _crew_disp(gbp_val: float) -> str:
+                    d, s, _ = _budget_to_display(
+                        gbp_val, budget_currency, budget_currency,
+                        budget_original_amount, budget_gbp, fx_rates_from_budget,
+                    )
+                    return f"{s}{d:,.0f}"
+
+                if union_gbp and non_union_gbp:
+                    lo, hi = sorted([union_gbp, non_union_gbp])
+                    rate_text = f"{_crew_disp(lo)}–{_crew_disp(hi)}/day"
+                elif union_gbp:
+                    rate_text = f"{_crew_disp(union_gbp)}/day"
+                else:
+                    rate_text = f"{_crew_disp(non_union_gbp)}/day"  # type: ignore[arg-type]
+
+                if role not in crew_rates:
+                    crew_rates[role] = rate_text
+
+            territory_financials[territory] = {
+                "currency": territory_currency,
+                "currency_symbol": sym,
+                "total_budget": f"{sym}{d_total:,.0f}",
+                "qualifying_spend_pct": f"{qs_pct:.0f}%",
+                "qualifying_spend": f"{sym}{d_qs:,.0f}",
+                "atl_deduction": atl_str,
+                "atl_pct": f"{_DEFAULT_ATL_PCT:.0%}" if atl_amount > 0 else None,
+                "net_qualifying_spend": f"{sym}{d_net_qs:,.0f}",
+                "rate": rate_str or "N/A",
+                "rate_gross": f"{corrected['rate_gross']:g}%",
+                "rate_net": f"{corrected['rate_net']:g}%" if corrected.get("rate_net") else None,
+                "gross_rebate": f"{sym}{d_gross_rebate:,.0f}",
+                "net_rebate": f"{sym}{d_net_rebate:,.0f}",
+                "net_budget": f"{sym}{d_net_budget:,.0f}",
+                "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
+                "programme": programme_name,
+                "programme_note": corrected.get("programme_note"),
+                "fx_note": fx_note,
+                "crew_rates": crew_rates,
+                # Budget-currency equivalents for context in prompt
+                "budget_currency": budget_currency,
+                "budget_symbol": budget_symbol,
+                "budget_display": f"{budget_symbol}{budget_original_amount:,.0f}" if budget_original_amount else None,
+            }
+
+        datasets["_territory_financials"] = territory_financials
+        logger.info(
+            "Pre-computed territory financials: territories=%s",
+            list(territory_financials.keys()),
+        )
 
     # --- Dataset loading ---
 
