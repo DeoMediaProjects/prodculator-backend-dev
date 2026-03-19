@@ -406,6 +406,28 @@ class ReportService:
                 ext_int_ratio = getattr(challenges, "extIntRatio", None)
         datasets["_ext_int_ratio"] = ext_int_ratio
 
+        # Authoritative shoot days — stored so the validator can override
+        # any AI-hallucinated value in executiveSummary.shootDays.
+        #
+        # filming_duration (weeks, user-decided) is the primary source because
+        # it reflects the producer's actual planned schedule.  Script analysis
+        # estimatedShootingDays is only a fallback for when filming_duration
+        # is not provided.
+        filming_duration_weeks = request_metadata.get("filming_duration")
+        if filming_duration_weeks and int(filming_duration_weeks) > 0:
+            # filming_duration is the user-decided shoot schedule in weeks —
+            # store it directly (no conversion)
+            datasets["_shoot_weeks"] = int(filming_duration_weeks)
+        else:
+            # Fallback: derive weeks from script analysis estimated days
+            _script_days = getattr(
+                getattr(script_analysis, "productionScale", None),
+                "estimatedShootingDays",
+                None,
+            ) if script_analysis is not None else None
+            if _script_days and int(_script_days) > 0:
+                datasets["_shoot_weeks"] = max(1, round(int(_script_days) / 5))
+
         # Producer eligibility inputs
         datasets["_producer_country"] = request_metadata.get("producer_country")
         datasets["_co_production_status"] = request_metadata.get("co_production_status")
@@ -517,14 +539,16 @@ class ReportService:
                     if t_obj.parent and t_obj.parent.label != raw_key:
                         crew_by_territory.setdefault(t_obj.parent.label, []).append(row)
 
+        production_format: str | None = datasets.get("_production_format")
         territory_financials: dict[str, dict] = {}
 
         for territory, rows in territory_incentives.items():
             if not territory or not rows:
                 continue
-            best = _best_incentive(rows)
+            best = _best_incentive(rows, production_format)
             corrected = ReportValidator._compute_corrected_rebate(
-                best, budget_gbp, territory_incentives
+                best, budget_gbp, territory_incentives,
+                production_format=production_format,
             )
             if corrected is None:
                 continue
@@ -616,6 +640,7 @@ class ReportService:
                 "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
                 "programme": programme_name,
                 "programme_note": corrected.get("programme_note"),
+                "atl_deduction_note": corrected.get("atl_deduction_note"),
                 "fx_note": fx_note,
                 "crew_rates": crew_rates,
                 # Budget-currency equivalents for context in prompt

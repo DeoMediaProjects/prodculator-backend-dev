@@ -293,6 +293,7 @@ For every territory, copy the exact strings from DERIVED: TERRITORY FINANCIALS i
 - budgetScenarios.rateGross → territory_financials[territory].rate_gross
 - budgetScenarios.rateNet → territory_financials[territory].rate_net (omit if null)
 - budgetScenarios.programme → territory_financials[territory].programme
+- budgetScenarios.notes → territory_financials[territory].atl_deduction_note if present (append to existing notes; omit if null)
 - crewCostComparison.territories → territory_financials[territory].crew_rates (already in budget currency)
 Your role is qualitative: reasoning about WHY territories rank well/poorly, risk assessment, eligibility context, strategy. Do not compute or invent monetary amounts.
 If DERIVED: TERRITORY FINANCIALS is absent or a territory is not listed, write "Budget not provided" for monetary fields.
@@ -445,7 +446,7 @@ RESPONSE JSON SCHEMA:
         "grossRebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].gross_rebate",
         "netRebate": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_rebate",
         "netBudget": "COPY from DERIVED: TERRITORY FINANCIALS — territory_financials[territory].net_budget",
-        "notes": "COPY territory_financials[territory].programme_note if present, plus territory_financials[territory].fx_note if present"
+        "notes": "COPY territory_financials[territory].programme_note if present, plus territory_financials[territory].fx_note if present, plus territory_financials[territory].atl_deduction_note if present — concatenate all non-null values"
       }
     ],
     "crewCostComparison": [
@@ -1609,21 +1610,19 @@ class ScriptAnalysisService:
                 "waterSceneCount": water_count,
             }, separators=(",", ":")))
 
-        # Derived: shoot days — authoritative figure the AI must use in prose
-        if script_analysis is not None:
-            shoot_days = script_analysis.productionScale.estimatedShootingDays
-        else:
-            shoot_days = request_metadata.get("estimated_shooting_days")
-        if shoot_days and int(shoot_days) > 0:
-            shoot_weeks = round(int(shoot_days) / 5)
+        # Derived: shoot duration — authoritative figure the AI must use in prose.
+        # filming_duration (user-submitted, in weeks) takes priority over the
+        # script analysis estimate.
+        shoot_weeks = datasets.get("_shoot_weeks")
+        if shoot_weeks and int(shoot_weeks) > 0:
             parts.append("\n=== DERIVED: SHOOT DURATION ===")
             parts.append(json.dumps({
-                "estimatedShootingDays": int(shoot_days),
-                "estimatedShootingWeeks": shoot_weeks,
+                "shootingWeeks": int(shoot_weeks),
                 "note": (
-                    "AUTHORITATIVE — use these figures when describing shoot duration in any "
-                    "reasoning bullet, narrative, or cost estimate. Do NOT invent a different "
-                    "shoot duration."
+                    "AUTHORITATIVE — filming_duration submitted by the producer (in weeks). "
+                    "Use this figure when describing shoot duration in any reasoning bullet, "
+                    "narrative, productionOverview.shootDays, or cost estimate. "
+                    "Do NOT invent a different shoot duration."
                 ),
             }, separators=(",", ":")))
 

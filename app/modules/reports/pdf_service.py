@@ -25,6 +25,7 @@ class PDFService:
         script_title: str = "Untitled",
         report_type: str = "paid",
         created_at: str = "",
+        request_config: dict | None = None,
     ) -> str:
         started = perf_counter()
         template = self.env.get_template("report_base.html")
@@ -33,6 +34,7 @@ class PDFService:
             script_title=script_title,
             report_type=report_type,
             created_at=created_at,
+            request_config=request_config,
         )
         logger.debug(
             "Rendered report HTML: keys=%s html_chars=%s elapsed_ms=%s",

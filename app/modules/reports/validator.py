@@ -56,18 +56,25 @@ class ReportValidator:
         # FX rates from budget_currency → each territory's incentive currency
         fx_rates_from_budget = datasets.get("_fx_rates_from_budget") or {}
 
+        # Production format — used to filter format-specific incentive programmes
+        # (e.g. IFTC applies to Feature Film only; TV Series must use AVEC)
+        production_format: str | None = datasets.get("_production_format")
+
         cls._patch_incentive_estimates(
             report, incentives_by_program, warnings,
             budget_gbp=budget_gbp_override,
+            production_format=production_format,
         )
         cls._patch_location_rankings(
             report, incentives_by_program, warnings,
             budget_gbp=budget_gbp_override,
+            production_format=production_format,
         )
         # NOTE: _patch_territory_deep_dives is called later (after score
         # recalculation) so deep dives get authoritative scores.
         cls._patch_executive_summary(
             report, incentives_by_program, warnings,
+            production_format=production_format,
         )
         cls._patch_crew_cost_territories(report, warnings)
         cls._patch_crew_insights(
@@ -100,7 +107,10 @@ class ReportValidator:
         cls._patch_grant_labelling(report, warnings)
 
         # v3 patches
-        cls._patch_incentive_reliability(report, incentives_by_program, warnings)
+        cls._patch_incentive_reliability(
+            report, incentives_by_program, warnings,
+            production_format=production_format,
+        )
         cls._patch_currency_advantage(report, datasets.get("_currency_advantage_scores"), warnings)
         cls._recalculate_overall_score(
             report, datasets.get("_production_priority", "full"), warnings
@@ -140,6 +150,7 @@ class ReportValidator:
                         # Re-run executive summary patch with the new top territory
                         cls._patch_executive_summary(
                             report, incentives_by_program, warnings,
+                            production_format=production_format,
                         )
 
         # Propagate recalculated scores to territoryDeepDives
@@ -153,6 +164,7 @@ class ReportValidator:
         cls._patch_territory_deep_dives(
             report, incentives_by_program, warnings,
             ranking_scores=ranking_scores or None,
+            production_format=production_format,
         )
 
         cls._patch_production_format(
@@ -160,6 +172,12 @@ class ReportValidator:
         )
         cls._patch_shoot_duration_context(
             report, datasets.get("_production_format"), warnings
+        )
+        cls._patch_executive_summary_shoot_days(
+            report, datasets.get("_shoot_weeks"), warnings
+        )
+        cls._patch_budget_scenarios(
+            report, datasets.get("_territory_financials") or {}, warnings
         )
         cls._patch_deadline_proximity(report, warnings)
         cls._inject_section_explainers(report, datasets)
@@ -182,6 +200,7 @@ class ReportValidator:
         warnings: list[str],
         *,
         budget_gbp: float | None = None,
+        production_format: str | None = None,
     ) -> None:
         """Patch DB-authoritative fields on incentiveEstimates.
 
@@ -189,6 +208,8 @@ class ReportValidator:
         the AI via DERIVED: TERRITORY FINANCIALS, so this method only enforces
         structural DB fields: rate, cap, payment timeline, eligibility, source.
         """
+        import json as _json
+
         estimates = report.get("incentiveEstimates")
         if not isinstance(estimates, list):
             return
@@ -202,6 +223,36 @@ class ReportValidator:
                 continue
 
             territory = est.get("territory") or db_row.get("territory", "")
+
+            # --- Format applicability guard ---
+            # If this programme restricts itself to specific production formats and
+            # the current format is not in that list, mark as NOT APPLICABLE so
+            # it doesn't mislead producers with a BANKABLE badge.
+            if production_format:
+                af = db_row.get("applicable_formats")
+                if af is not None:
+                    if isinstance(af, str):
+                        try:
+                            af = _json.loads(af)
+                        except (ValueError, TypeError):
+                            af = None
+                    if isinstance(af, list) and af:
+                        if not any(f.lower() == production_format.lower() for f in af):
+                            est["bankabilityLabel"] = "NOT APPLICABLE"
+                            est["estimatedRebate"] = (
+                                f"Not applicable — programme restricted to {', '.join(af)}"
+                            )
+                            est["eligibilityNote"] = (
+                                f"This programme is only available for "
+                                f"{', '.join(af)} productions. "
+                                f"It does not apply to {production_format}."
+                            )
+                            warnings.append(
+                                f"[incentiveEstimates] {territory}/{program_name}: "
+                                f"marked NOT APPLICABLE (format {production_format!r} not in {af})"
+                            )
+                            # Skip remaining patches — data is irrelevant for this format
+                            continue
 
             # --- Rate ---
             rate_gross = db_row.get("rate_gross")
@@ -276,9 +327,17 @@ class ReportValidator:
                 est["qualifyingSpend"] = "No minimum threshold"
 
             # --- Eligibility rules ---
+            # The field is stored as a JSON string in the DB; parse it first.
             rules_json = db_row.get("eligibility_rules_json")
+            if isinstance(rules_json, str):
+                try:
+                    rules_json = _json.loads(rules_json)
+                except (ValueError, TypeError):
+                    rules_json = None
             if isinstance(rules_json, list) and rules_json:
-                est["requirements"] = rules_json
+                est["requirements"] = [
+                    r["rule"] if isinstance(r, dict) else str(r) for r in rules_json
+                ]
 
             # --- Source attribution ---
             source_name = db_row.get("source_name")
@@ -312,6 +371,7 @@ class ReportValidator:
         warnings: list[str],
         *,
         budget_gbp: float | None = None,
+        production_format: str | None = None,
     ) -> None:
         """Patch DB-authoritative structural fields on locationRankings.
 
@@ -335,7 +395,7 @@ class ReportValidator:
             if not rows:
                 continue
 
-            best = _best_incentive(rows)
+            best = _best_incentive(rows, production_format)
             effective_rate = _format_rate(best.get("rate_gross"), best.get("rate_net"))
             if effective_rate and loc.get("rebatePercent") != effective_rate:
                 warnings.append(
@@ -377,6 +437,7 @@ class ReportValidator:
         warnings: list[str],
         *,
         ranking_scores: dict[str, int] | None = None,
+        production_format: str | None = None,
     ) -> None:
         """Patch score propagation and paymentSpeed on territoryDeepDives.
 
@@ -412,7 +473,7 @@ class ReportValidator:
             if not rows:
                 continue
 
-            best = _best_incentive(rows)
+            best = _best_incentive(rows, production_format)
 
             # paymentSpeed
             timeline_notes = best.get("payment_timeline_notes")
@@ -433,6 +494,8 @@ class ReportValidator:
         report: dict,
         incentives_by_program: dict[str, dict],
         warnings: list[str],
+        *,
+        production_format: str | None = None,
     ) -> None:
         """Patch paymentSpeed on executiveSummary from DB.
 
@@ -455,7 +518,7 @@ class ReportValidator:
         if not rows:
             return
 
-        best = _best_incentive(rows)
+        best = _best_incentive(rows, production_format)
 
         # --- paymentSpeed ---
         timeline_notes = best.get("payment_timeline_notes")
@@ -897,6 +960,7 @@ class ReportValidator:
         db_row: dict,
         budget_gbp: float,
         territory_incentives: dict[str, list[dict]],
+        production_format: str | None = None,
     ) -> dict | None:
         """Compute the correct rebate for a single incentive programme,
         applying qualifying-spend caps, rate-tier thresholds, and ATL
@@ -940,7 +1004,7 @@ class ReportValidator:
                 and not _is_zero_rate(r.get("rate_gross"), r.get("rate_net"))
             ]
             if alternatives:
-                alt = _best_incentive(alternatives)
+                alt = _best_incentive(alternatives, production_format)
                 switched_programme = _prog_name(alt)
                 programme_note = (
                     f"Budget exceeds {_prog_name(db_row) or 'programme'} cap "
@@ -1035,9 +1099,7 @@ class ReportValidator:
         atl_deduction_note: str | None = None
         atl_deduction_amount: float = 0.0
         qualifying_spend_before_atl = qualifying_spend
-        apply_atl = rate_type in _TAX_CREDIT_RATE_TYPES or (
-            cap_per_person is not None and cap_per_person > 0
-        )
+        apply_atl = rate_type in _TAX_CREDIT_RATE_TYPES
         if apply_atl:
             atl_est = budget_gbp * _DEFAULT_ATL_PCT
             atl_deduction_amount = atl_est
@@ -1055,6 +1117,18 @@ class ReportValidator:
                     f"{_currency_symbol(cap_currency)}{cap_per_person:,.0f} "
                     f"may further reduce qualifying spend — verify individual fee allocations"
                 )
+        elif cap_per_person is not None and cap_per_person > 0:
+            # Per-person wage cap set but programme is not a tax-credit type (e.g.
+            # transferable_tax_credit such as Georgia EIIA) — no blanket ATL deduction
+            # applies, but the per-person cap must still be surfaced as a risk note.
+            currency_label = db_row.get("currency") or "GBP"
+            cap_currency = db_row.get("cap_per_person_currency") or currency_label
+            atl_deduction_note = (
+                f"Per-person wage cap: {_currency_symbol(cap_currency)}{cap_per_person:,.0f}"
+                f" per individual \u2014 wages above this threshold are not qualifying spend."
+                f" On high-budget productions with expensive talent, this materially reduces"
+                f" the actual credit received. Verify full payroll breakdown before modelling."
+            )
 
         # Step 4 — compute rebate
         gross_rebate = qualifying_spend * (effective_rate_gross / 100.0)
@@ -1390,6 +1464,8 @@ class ReportValidator:
         report: dict,
         incentives_by_program: dict[str, dict],
         warnings: list[str],
+        *,
+        production_format: str | None = None,
     ) -> None:
         """Compute incentiveReliability (0-100) and bankabilityLabel for each
         locationRanking and incentiveEstimate from dataset payment_reliability.
@@ -1408,7 +1484,7 @@ class ReportValidator:
                 rows = territory_incentives.get(territory, [])
                 if not rows:
                     continue
-                best = _best_incentive(rows)
+                best = _best_incentive(rows, production_format)
                 reliability = _to_float(best.get("payment_reliability"))
                 timeline_max = _to_float(best.get("payment_timeline_days_max"))
 
@@ -1618,17 +1694,157 @@ class ReportValidator:
                             overview[field] = new_val
                             break
 
+    # ── authoritative shoot days override ────────────────────────────────────
+
+    @classmethod
+    def _patch_executive_summary_shoot_days(
+        cls,
+        report: dict,
+        shoot_weeks: int | None,
+        warnings: list[str],
+    ) -> None:
+        """Override executiveSummary.shootDays with the authoritative shoot weeks.
+
+        ``shoot_weeks`` is sourced from ``datasets["_shoot_weeks"]``, which
+        comes from the user-submitted ``filming_duration`` (weeks).  The AI
+        may echo a different number; this patch ensures the report always
+        reflects the producer's own schedule.
+        """
+        if not shoot_weeks or shoot_weeks <= 0:
+            return
+        summary = report.get("executiveSummary")
+        if not isinstance(summary, dict):
+            return
+        current = summary.get("shootDays")
+        if current != shoot_weeks:
+            summary["shootDays"] = shoot_weeks
+            warnings.append(
+                f"[executiveSummary] shootDays overridden: {current!r} → {shoot_weeks} weeks"
+            )
+
+    # ── ATL deduction label correction ───────────────────────────────────────
+
+    @classmethod
+    def _patch_budget_scenarios(
+        cls,
+        report: dict,
+        territory_financials: dict,
+        warnings: list[str],
+    ) -> None:
+        """Enforce pre-computed authoritative figures on financialAnalysis.budgetScenarios.
+
+        The AI is given the authoritative figures via DERIVED: TERRITORY FINANCIALS
+        but sometimes ignores them (e.g. applying 100% qualifying spend instead of
+        the correct 80% for AVEC, or computing its own rebate arithmetic).  This
+        method overwrites every monetary field in each budget scenario with the
+        pre-computed values so the output is always internally consistent and
+        matches the DB-authoritative calculation.
+
+        Territory matching uses ``resolve_territory`` so that minor name
+        differences (e.g. "UK" vs "United Kingdom") are handled gracefully.
+        """
+        from app.core.territories import resolve_territory as _rt
+
+        fin = report.get("financialAnalysis")
+        if not isinstance(fin, dict):
+            return
+        scenarios = fin.get("budgetScenarios")
+        if not isinstance(scenarios, list):
+            return
+
+        def _lookup(territory: str) -> dict | None:
+            """Find the territory_financials entry, trying canonical resolution."""
+            tf = territory_financials.get(territory)
+            if tf:
+                return tf
+            t_obj = _rt(territory)
+            if t_obj:
+                tf = territory_financials.get(t_obj.label)
+                if tf:
+                    return tf
+                if t_obj.parent:
+                    tf = territory_financials.get(t_obj.parent.label)
+                    if tf:
+                        return tf
+            return None
+
+        # Mapping: scenario field → territory_financials key
+        # Only overwrite fields where the authoritative value is non-None.
+        _FIELD_MAP = [
+            ("totalBudget",        "total_budget"),
+            ("qualifyingSpendPct", "qualifying_spend_pct"),
+            ("qualifyingSpend",    "qualifying_spend"),
+            ("netQualifyingSpend", "net_qualifying_spend"),
+            ("rateGross",          "rate_gross"),
+            ("rateNet",            "rate_net"),
+            ("grossRebate",        "gross_rebate"),
+            ("netRebate",          "net_rebate"),
+            ("netBudget",          "net_budget"),
+            ("programme",          "programme"),
+        ]
+
+        for scenario in scenarios:
+            if not isinstance(scenario, dict):
+                continue
+            territory = scenario.get("territory", "")
+            tf = _lookup(territory)
+            if not tf:
+                continue
+
+            for scenario_key, tf_key in _FIELD_MAP:
+                auth_val = tf.get(tf_key)
+                if auth_val is None:
+                    continue
+                old_val = scenario.get(scenario_key)
+                if old_val != auth_val:
+                    scenario[scenario_key] = auth_val
+                    warnings.append(
+                        f"[budgetScenarios] {territory}: {scenario_key} "
+                        f"overridden {old_val!r} → {auth_val!r}"
+                    )
+
+            # ATL deduction amount — store as negative display string
+            atl_str = tf.get("atl_deduction")
+            if atl_str:
+                # Ensure the value is stored with a leading minus for the deduction row
+                neg_atl = f"-{atl_str}" if not atl_str.startswith("-") else atl_str
+                if scenario.get("atlDeduction") != neg_atl:
+                    scenario["atlDeduction"] = neg_atl
+                    warnings.append(
+                        f"[budgetScenarios] {territory}: atlDeduction set to {neg_atl!r}"
+                    )
+
+            # ATL percentage label (read directly by PDF template)
+            atl_pct = tf.get("atl_pct")
+            if atl_pct and scenario.get("atlDeductionPct") != atl_pct:
+                scenario["atlDeductionPct"] = atl_pct
+                warnings.append(
+                    f"[budgetScenarios] {territory}: atlDeductionPct set to {atl_pct}"
+                )
+
+            # Per-person cap / wage cap note — append to scenario notes so it
+            # appears in the financial model footnote (rendered via scenario.notes)
+            atl_note = tf.get("atl_deduction_note")
+            if atl_note:
+                existing = scenario.get("notes") or ""
+                scenario["notes"] = f"{existing} {atl_note}".strip() if existing else atl_note
+                warnings.append(
+                    f"[budgetScenarios] {territory}: atl_deduction_note injected into notes"
+                )
+
     # ── shoot duration context ────────────────────────────────────────────────
 
-    # Thresholds (in shooting days) above which a keyFlag is injected to
+    # Thresholds (in shoot weeks) above which a keyFlag is injected to
     # contextualise the schedule for financiers / completion bond underwriters.
+    # shootDays stores weeks (= filming_duration from frontend).
     _LONG_SHOOT_THRESHOLDS: dict[str, int] = {
-        "TV Pilot": 60,
-        "TV Series": 100,
-        "Limited Series": 80,
-        "Feature Film": 80,
+        "TV Pilot": 12,
+        "TV Series": 20,
+        "Limited Series": 16,
+        "Feature Film": 16,
+        "Mini-Series": 16,
     }
-    _LONG_SHOOT_DEFAULT = 100  # fallback for unknown formats
+    _LONG_SHOOT_DEFAULT = 20  # fallback for unknown formats
 
     @classmethod
     def _patch_shoot_duration_context(
@@ -1640,28 +1856,25 @@ class ReportValidator:
         """Add a keyFlag contextualising unusually long shoot durations.
 
         Completion bond underwriters and financiers will question a long shoot
-        timeline if the report doesn't explain it. When ``shootDays`` exceeds a
-        format-appropriate threshold, inject a flag that converts to weeks and
-        provides context.
+        timeline if the report doesn't explain it. When ``shootDays`` (stored
+        in weeks) exceeds a format-appropriate threshold, inject a flag.
         """
         summary = report.get("executiveSummary")
         if not isinstance(summary, dict):
             return
 
-        shoot_days = summary.get("shootDays")
-        if not isinstance(shoot_days, (int, float)) or shoot_days <= 0:
+        shoot_weeks = summary.get("shootDays")  # stored in weeks
+        if not isinstance(shoot_weeks, (int, float)) or shoot_weeks <= 0:
             return
 
         fmt = (production_format or "").strip()
         threshold = cls._LONG_SHOOT_THRESHOLDS.get(fmt, cls._LONG_SHOOT_DEFAULT)
 
-        if shoot_days < threshold:
+        if shoot_weeks < threshold:
             return
 
-        weeks = max(1, (int(shoot_days) + 4) // 5)
-
         flag = (
-            f"Extended shoot timeline: {int(shoot_days)} shooting days (~{weeks} weeks). "
+            f"Extended shoot timeline: {int(shoot_weeks)} weeks. "
             f"This is a significant schedule for "
             f"{'a ' + fmt.lower() if fmt else 'this format'} "
             f"and may require phased production, multiple unit scheduling, "
@@ -1680,7 +1893,7 @@ class ReportValidator:
         key_flags.append(flag)
         warnings.append(
             f"[executiveSummary] keyFlag injected: extended shoot timeline "
-            f"({int(shoot_days)} days / ~{weeks} weeks)"
+            f"({int(shoot_weeks)} weeks)"
         )
 
     # ── deadline proximity flagging ──────────────────────────────────────────
@@ -1897,8 +2110,25 @@ def _index_incentives_by_territory(incentives: list[dict]) -> dict[str, list[dic
     return result
 
 
-def _best_incentive(rows: list[dict]) -> dict:
-    """Pick the row with the highest rate_gross (fallback to rate_net)."""
+def _best_incentive(rows: list[dict], production_format: str | None = None) -> dict:
+    """Pick the row with the highest rate_gross (fallback to rate_net).
+
+    When *production_format* is given, rows whose ``applicable_formats`` JSON
+    array does NOT include that format are excluded before ranking.  A NULL /
+    absent ``applicable_formats`` means the programme applies to all formats
+    (backward-compatible default).  If filtering would leave no rows we fall
+    back to the full set so the caller never gets an error.
+
+    Rows that require a domestic corporation (``nationality_requirements`` is a
+    non-empty array AND ``spv_eligible`` is explicitly ``False``) are treated as
+    lower-priority than universally-accessible rows.  When at least one
+    universally-accessible row exists, domestic-corp-only rows are excluded
+    before ranking.  This prevents programmes like Canada CPTC (restricted to
+    Canadian-controlled corporations) from being selected over PSTC (accessible
+    to any foreign production via a Canadian entity).  Rows that allow SPV
+    structures (``spv_eligible=True``) such as UK AVEC are NOT excluded.
+    """
+    import json as _json
 
     def _key(r: dict) -> float:
         rate = r.get("rate_gross") or r.get("rate_net") or 0
@@ -1907,7 +2137,45 @@ def _best_incentive(rows: list[dict]) -> dict:
         except (TypeError, ValueError):
             return 0.0
 
-    return max(rows, key=_key)
+    def _is_domestic_corp_only(r: dict) -> bool:
+        """True only when nationality_requirements is non-empty AND spv_eligible is False."""
+        nr = r.get("nationality_requirements")
+        if nr is None:
+            return False
+        if isinstance(nr, str):
+            try:
+                nr = _json.loads(nr)
+            except (ValueError, TypeError):
+                return False
+        return isinstance(nr, list) and bool(nr) and r.get("spv_eligible") is False
+
+    eligible = rows
+    if production_format:
+        def _format_ok(r: dict) -> bool:
+            af = r.get("applicable_formats")
+            if af is None:
+                return True  # NULL → applies to all formats
+            if isinstance(af, str):
+                try:
+                    af = _json.loads(af)
+                except (ValueError, TypeError):
+                    return True  # unparseable → don't exclude
+            if isinstance(af, list) and af:
+                return any(f.lower() == production_format.lower() for f in af)
+            return True  # empty list → applies to all formats
+
+        filtered = [r for r in rows if _format_ok(r)]
+        if filtered:
+            eligible = filtered
+        # else: no matching rows → fall back to full set (graceful degradation)
+
+    # Prefer universally-accessible rows over domestic-corp-only rows.
+    foreign_accessible = [r for r in eligible if not _is_domestic_corp_only(r)]
+    if foreign_accessible:
+        eligible = foreign_accessible
+    # else: all rows require domestic corp → fall back to full set (graceful degradation)
+
+    return max(eligible, key=_key)
 
 
 def _format_rate(rate_gross: Any, rate_net: Any) -> str | None:

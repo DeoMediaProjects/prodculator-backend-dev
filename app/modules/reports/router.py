@@ -493,6 +493,7 @@ def process_report_task(
                 script_title=script_title,
                 report_type=report_type,
                 created_at=str(report_row.get("created_at", "")),
+                request_config=request_metadata,
             )
             logger.debug(
                 "Rendered PDF HTML: report_id=%s html_chars=%s elapsed_ms=%s",

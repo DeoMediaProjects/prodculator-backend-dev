@@ -296,6 +296,7 @@ class FinancialScenario(BaseModel):
     qualifyingSpendPct: str | None = None
     qualifyingSpend: str | None = None
     atlDeduction: str | None = None
+    atlDeductionPct: str | None = None  # e.g. "15%" — set by validator from territory_financials
     netQualifyingSpend: str | None = None
     programme: str | None = None
     rateGross: str | None = None

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from app.modules.reports.validator import ReportValidator
+from app.modules.reports.validator import ReportValidator, _best_incentive
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -744,7 +744,7 @@ def test_shoot_duration_context_injects_flag_for_long_pilot():
     """Long shoot duration for a TV Pilot should inject a keyFlag."""
     report = {
         "executiveSummary": {
-            "shootDays": 320,  # 320 days = ~64 weeks
+            "shootDays": 20,  # 20 weeks — exceeds TV Pilot threshold (12 weeks)
             "keyFlags": ["Some existing flag"],
         },
     }
@@ -754,7 +754,7 @@ def test_shoot_duration_context_injects_flag_for_long_pilot():
     flags = report["executiveSummary"]["keyFlags"]
     assert len(flags) == 2
     assert any("shoot timeline" in f.lower() for f in flags)
-    assert "64 weeks" in flags[-1]
+    assert "20 weeks" in flags[-1]
     assert "tv pilot" in flags[-1].lower()
     assert len(warnings) == 1
 
@@ -763,7 +763,7 @@ def test_shoot_duration_context_noop_for_short_shoot():
     """Normal shoot duration should not trigger a keyFlag."""
     report = {
         "executiveSummary": {
-            "shootDays": 40,  # 40 days = ~8 weeks, normal for a pilot
+            "shootDays": 8,  # 8 weeks — below TV Pilot threshold (12 weeks)
             "keyFlags": [],
         },
     }
@@ -778,7 +778,7 @@ def test_shoot_duration_context_creates_key_flags_list():
     """keyFlags should be created if it doesn't exist."""
     report = {
         "executiveSummary": {
-            "shootDays": 150,
+            "shootDays": 20,  # 20 weeks — exceeds Feature Film threshold (16 weeks)
         },
     }
     warnings: list[str] = []
@@ -786,14 +786,14 @@ def test_shoot_duration_context_creates_key_flags_list():
 
     assert "keyFlags" in report["executiveSummary"]
     assert len(report["executiveSummary"]["keyFlags"]) == 1
-    assert "30 weeks" in report["executiveSummary"]["keyFlags"][0]
+    assert "20 weeks" in report["executiveSummary"]["keyFlags"][0]
 
 
 def test_shoot_duration_context_no_duplicate():
     """Should not add duplicate flag if one already mentions shoot timeline."""
     report = {
         "executiveSummary": {
-            "shootDays": 200,
+            "shootDays": 20,  # 20 weeks — would normally trigger
             "keyFlags": ["Extended shoot timeline: already noted by AI"],
         },
     }
@@ -901,3 +901,316 @@ def test_deadline_proximity_no_duplicate():
     timeline = report["executiveSummary"]["actionTimeline"]
     assert len(timeline) == 1  # No new item added
     assert len(warnings) == 0
+
+
+# ── _patch_budget_scenarios tests ────────────────────────────────────────────
+
+
+def test_patch_budget_scenarios_enforces_precomputed_figures():
+    """All monetary fields should be overwritten by pre-computed territory_financials."""
+    report = {
+        "financialAnalysis": {
+            "budgetScenarios": [{
+                "territory": "United Kingdom",
+                "programme": "Independent Film Tax Credit (IFTC)",  # wrong — AI chose IFTC
+                "totalBudget": "£7,000,000",
+                "qualifyingSpendPct": "100%",          # wrong — should be 80%
+                "qualifyingSpend": "£7,000,000",       # wrong
+                "atlDeduction": "-£1,750,000",         # wrong amount
+                "atlDeductionPct": "25%",              # wrong percentage
+                "netQualifyingSpend": "£5,250,000",    # wrong
+                "rateGross": "34%",
+                "rateNet": "25.5%",
+                "grossRebate": "£2,100,000",           # wrong
+                "netRebate": "£1,517,250",             # wrong (based on 100% QS)
+                "netBudget": "£5,482,750",
+            }],
+        },
+    }
+    territory_financials = {
+        "United Kingdom": {
+            "total_budget": "£7,000,000",
+            "qualifying_spend_pct": "80%",
+            "qualifying_spend": "£5,600,000",
+            "atl_deduction": "£1,050,000",
+            "atl_pct": "15%",
+            "net_qualifying_spend": "£4,550,000",
+            "rate_gross": "34%",
+            "rate_net": "25.5%",
+            "gross_rebate": "£1,547,000",
+            "net_rebate": "£1,160,250",
+            "net_budget": "£5,839,750",
+            "programme": "Audio Visual Expenditure Credit (AVEC)",
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_budget_scenarios(report, territory_financials, warnings)
+
+    scenario = report["financialAnalysis"]["budgetScenarios"][0]
+    assert scenario["qualifyingSpendPct"] == "80%"
+    assert scenario["qualifyingSpend"] == "£5,600,000"
+    assert scenario["netQualifyingSpend"] == "£4,550,000"
+    assert scenario["netRebate"] == "£1,160,250"
+    assert scenario["atlDeduction"] == "-£1,050,000"
+    assert scenario["atlDeductionPct"] == "15%"
+    assert scenario["programme"] == "Audio Visual Expenditure Credit (AVEC)"
+    assert len(warnings) >= 4  # Multiple fields overridden
+
+
+def test_patch_budget_scenarios_noop_when_no_territory_financials():
+    """No changes when territory_financials is empty."""
+    report = {
+        "financialAnalysis": {
+            "budgetScenarios": [{
+                "territory": "Unknown",
+                "netRebate": "£999",
+            }],
+        },
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_budget_scenarios(report, {}, warnings)
+
+    assert report["financialAnalysis"]["budgetScenarios"][0]["netRebate"] == "£999"
+    assert len(warnings) == 0
+
+
+# ── _patch_incentive_estimates eligibility_rules_json parsing ─────────────────
+
+
+def test_patch_incentive_estimates_parses_rules_json_string():
+    """eligibility_rules_json stored as JSON string must be parsed and applied."""
+    db = _make_incentive_db_full(
+        "Independent Film Tax Credit (IFTC)",
+        territory="United Kingdom",
+        eligibility_rules_json='[{"rule":"Budget cap of £23.5M","required":true},{"rule":"Theatrical release required","required":true}]',
+    )
+    by_program = {
+        "Independent Film Tax Credit (IFTC)": db,
+        "independent film tax credit (iftc)": db,
+    }
+    report = {
+        "incentiveEstimates": [{
+            "program": "Independent Film Tax Credit (IFTC)",
+            "territory": "United Kingdom",
+            "requirements": ["Budget cap £20M"],  # AI-generated — wrong
+        }],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_incentive_estimates(report, by_program, warnings)
+
+    requirements = report["incentiveEstimates"][0]["requirements"]
+    assert any("£23.5M" in r for r in requirements), \
+        f"Expected £23.5M in requirements, got: {requirements}"
+    assert not any("£20M" in r for r in requirements)
+
+
+# ── _patch_incentive_estimates format applicability (NOT APPLICABLE) ──────────
+
+
+def test_patch_incentive_estimates_marks_not_applicable_for_wrong_format():
+    """IFTC restricted to Feature Film must show NOT APPLICABLE for TV Series."""
+    db = _make_incentive_db_full(
+        "Independent Film Tax Credit (IFTC)",
+        territory="United Kingdom",
+    )
+    db["applicable_formats"] = json.dumps(["Feature Film"])
+
+    by_program = {
+        "Independent Film Tax Credit (IFTC)": db,
+        "independent film tax credit (iftc)": db,
+    }
+    report = {
+        "incentiveEstimates": [{
+            "program": "Independent Film Tax Credit (IFTC)",
+            "territory": "United Kingdom",
+            "bankabilityLabel": "BANKABLE",
+            "estimatedRebate": "£3,500,000",
+        }],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_incentive_estimates(
+        report, by_program, warnings,
+        production_format="TV Series",
+    )
+
+    est = report["incentiveEstimates"][0]
+    assert est["bankabilityLabel"] == "NOT APPLICABLE"
+    assert "Feature Film" in est["estimatedRebate"]
+    assert "TV Series" in est["eligibilityNote"]
+    assert len(warnings) == 1
+
+
+def test_patch_incentive_estimates_not_applicable_not_triggered_for_matching_format():
+    """IFTC must NOT be marked NOT APPLICABLE when format is Feature Film."""
+    db = _make_incentive_db_full(
+        "Independent Film Tax Credit (IFTC)",
+        territory="United Kingdom",
+        rate_gross=53.0,
+        rate_net=39.75,
+    )
+    db["applicable_formats"] = json.dumps(["Feature Film"])
+
+    by_program = {
+        "Independent Film Tax Credit (IFTC)": db,
+        "independent film tax credit (iftc)": db,
+    }
+    report = {
+        "incentiveEstimates": [{
+            "program": "Independent Film Tax Credit (IFTC)",
+            "territory": "United Kingdom",
+            "bankabilityLabel": "BANKABLE",
+            "estimatedRebate": "£3,500,000",
+        }],
+    }
+    warnings: list[str] = []
+    ReportValidator._patch_incentive_estimates(
+        report, by_program, warnings,
+        production_format="Feature Film",
+    )
+
+    est = report["incentiveEstimates"][0]
+    assert est["bankabilityLabel"] != "NOT APPLICABLE"
+
+
+# ── _best_incentive() nationality filtering ───────────────────────────────────
+
+
+def _make_best_incentive_row(
+    rate_gross: float,
+    nationality_requirements: str | None = None,
+    spv_eligible: bool | None = None,
+    applicable_formats: str | None = None,
+) -> dict:
+    """Build a minimal incentive row for _best_incentive() tests."""
+    return {
+        "rate_gross": rate_gross,
+        "rate_net": None,
+        "nationality_requirements": nationality_requirements,
+        "spv_eligible": spv_eligible,
+        "applicable_formats": applicable_formats,
+    }
+
+
+def test_best_incentive_prefers_pstc_over_cptc():
+    """PSTC (foreign-accessible) is selected over higher-rate CPTC (domestic-corp-only)."""
+    cptc = _make_best_incentive_row(25.0, nationality_requirements='["CA"]', spv_eligible=False)
+    pstc = _make_best_incentive_row(16.0, nationality_requirements=None, spv_eligible=True)
+    result = _best_incentive([cptc, pstc])
+    assert result["rate_gross"] == 16.0, "PSTC should be selected despite lower rate"
+
+
+def test_best_incentive_fallback_when_only_domestic_corp():
+    """When no foreign-accessible row exists, fall back to the only available row."""
+    cptc = _make_best_incentive_row(25.0, nationality_requirements='["CA"]', spv_eligible=False)
+    result = _best_incentive([cptc])
+    assert result["rate_gross"] == 25.0, "Should fall back gracefully when no alternative"
+
+
+def test_best_incentive_spv_true_not_excluded():
+    """Rows with nationality_requirements set but spv_eligible=True are NOT excluded (e.g. UK AVEC)."""
+    avec = _make_best_incentive_row(34.0, nationality_requirements='["GB"]', spv_eligible=True)
+    pstc = _make_best_incentive_row(16.0, nationality_requirements=None)
+    result = _best_incentive([avec, pstc])
+    assert result["rate_gross"] == 34.0, "AVEC (SPV-accessible) should still win"
+
+
+def test_best_incentive_nationality_none_spv_false_not_excluded():
+    """Rows with nationality_requirements=None are always accessible regardless of spv_eligible."""
+    row_a = _make_best_incentive_row(30.0, nationality_requirements=None, spv_eligible=False)
+    row_b = _make_best_incentive_row(25.0, nationality_requirements=None, spv_eligible=True)
+    result = _best_incentive([row_a, row_b])
+    assert result["rate_gross"] == 30.0
+
+
+def test_best_incentive_multiple_domestic_corp_only_fallback():
+    """When all rows are domestic-corp-only, picks the highest rate (graceful degradation)."""
+    row_a = _make_best_incentive_row(25.0, nationality_requirements='["CA"]', spv_eligible=False)
+    row_b = _make_best_incentive_row(35.0, nationality_requirements='["CA"]', spv_eligible=False)
+    result = _best_incentive([row_a, row_b])
+    assert result["rate_gross"] == 35.0
+
+
+# ── apply_atl / cap_per_person decoupling ─────────────────────────────────────
+
+
+def _make_rebate_row(
+    rate_gross: float = 30.0,
+    rate_type: str = "tax_credit",
+    cap_per_person: float | None = None,
+    cap_per_person_currency: str | None = None,
+    qualifying_spend_cap_pct: float | None = None,
+    cap_amount: float | None = None,
+    currency: str = "GBP",
+) -> dict:
+    """Build a minimal DB row for _compute_corrected_rebate() tests."""
+    return {
+        "rate_gross": rate_gross,
+        "rate_net": rate_gross,
+        "rate_type": rate_type,
+        "cap_per_person": cap_per_person,
+        "cap_per_person_currency": cap_per_person_currency,
+        "qualifying_spend_cap_pct": qualifying_spend_cap_pct,
+        "cap_amount": cap_amount,
+        "currency": currency,
+        "rate_tier_json": None,
+        "payment_timeline_notes": None,
+        "last_verified_at": None,
+    }
+
+
+def test_georgia_cap_per_person_no_atl_deduction():
+    """transferable_tax_credit + cap_per_person must NOT trigger 15% ATL deduction."""
+    row = _make_rebate_row(
+        rate_gross=30.0,
+        rate_type="transferable_tax_credit",
+        cap_per_person=500_000.0,
+        cap_per_person_currency="USD",
+    )
+    budget_gbp = 37_600_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    # No ATL deduction — full budget qualifies
+    assert result["atl_deduction_amount"] == 0.0
+    assert abs(result["qualifying_spend"] - budget_gbp) < 1.0
+    # W-2 cap note IS surfaced
+    note = result.get("atl_deduction_note", "")
+    assert "per-person wage cap" in note.lower() or "500,000" in note
+
+
+def test_georgia_rebate_amount_correct_with_cap_per_person():
+    """Rebate = 30% × full budget when cap_per_person is set on transferable_tax_credit."""
+    row = _make_rebate_row(
+        rate_gross=30.0,
+        rate_type="transferable_tax_credit",
+        cap_per_person=500_000.0,
+        cap_per_person_currency="USD",
+    )
+    budget_gbp = 37_600_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected_rebate = budget_gbp * 0.30
+    assert abs(result["gross_rebate"] - expected_rebate) < 1.0
+
+
+def test_tax_credit_cap_per_person_still_triggers_atl():
+    """tax_credit type + cap_per_person → ATL deduction still applies (France CIC pattern)."""
+    row = _make_rebate_row(
+        rate_gross=25.0,
+        rate_type="tax_credit",
+        cap_per_person=990_000.0,
+        qualifying_spend_cap_pct=80.0,
+    )
+    budget_gbp = 37_600_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    assert result["atl_deduction_amount"] > 0, "ATL deduction must still be applied"
+
+
+def test_transferable_tax_credit_without_cap_per_person_no_atl():
+    """transferable_tax_credit without cap_per_person — no ATL deduction, no note."""
+    row = _make_rebate_row(rate_gross=30.0, rate_type="transferable_tax_credit")
+    budget_gbp = 37_600_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    assert result["atl_deduction_amount"] == 0.0
+    assert result.get("atl_deduction_note") is None

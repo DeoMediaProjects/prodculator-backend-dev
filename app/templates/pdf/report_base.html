@@ -287,6 +287,52 @@
     color: #1a1a1a;
   }
 
+  /* ── Production Brief ─────────────────────────────────────── */
+  .prod-brief {
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #D4AF37;
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    background: #fafafa;
+    page-break-inside: avoid;
+  }
+  .prod-brief-heading {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #D4AF37;
+    margin-bottom: 2px;
+  }
+  .prod-brief-sub {
+    font-size: 9px;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  .prod-brief table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  .prod-brief table tr td {
+    padding: 4px 6px;
+    border-bottom: 1px solid #eeeeee;
+    vertical-align: top;
+  }
+  .prod-brief table tr:last-child td {
+    border-bottom: none;
+  }
+  .prod-brief table tr td:first-child {
+    width: 160px;
+    color: #666;
+    font-weight: 500;
+  }
+  .prod-brief table tr td:last-child {
+    color: #1a1a1a;
+    font-weight: 600;
+  }
+
   /* ── v3 Headline Net Budget ────────────────────────────────── */
   .headline-budget {
     background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
@@ -546,6 +592,97 @@
   <h2>{{ '%02d' % ns.sec }} &mdash; Executive Summary</h2>
   {% set ns.sec = ns.sec + 1 %}
 
+  {# ── Production Brief ─────────────────────────────────────────────────── #}
+  {% if request_config %}
+  <div class="prod-brief avoid-break">
+    <div class="prod-brief-heading">Production Brief</div>
+    <div class="prod-brief-sub">The parameters submitted to generate this analysis</div>
+    <table>
+      {# Core fields — always present #}
+      {% if request_config.format %}
+      <tr><td>Production Format</td><td>{{ request_config.format }}</td></tr>
+      {% endif %}
+      {% if request_config.genre %}
+      <tr><td>Genre</td><td>{{ request_config.genre | join(", ") }}</td></tr>
+      {% endif %}
+      {% if request_config.budget_amount and request_config.budget_currency %}
+      <tr><td>Production Budget</td><td>{{ "{:,.0f}".format(request_config.budget_amount) }} {{ request_config.budget_currency }}</td></tr>
+      {% endif %}
+      {% if request_config.country %}
+      <tr><td>Base Country</td><td>{{ request_config.country }}</td></tr>
+      {% endif %}
+      {# Location strategy — human-readable label #}
+      {% if request_config.location_strategy %}
+      <tr>
+        <td>Location Strategy</td>
+        <td>
+          {% if request_config.location_strategy == "domestic" %}Domestic Only
+          {% elif request_config.location_strategy == "open" %}Open (All Territories)
+          {% elif request_config.location_strategy == "international" %}International
+          {% else %}{{ request_config.location_strategy | title }}{% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {# Production priority — human-readable label #}
+      {% if request_config.production_priority %}
+      <tr>
+        <td>Analysis Priority</td>
+        <td>
+          {% if request_config.production_priority == "incentive" %}Tax Incentive Optimised
+          {% elif request_config.production_priority == "full" %}Balanced Assessment
+          {% elif request_config.production_priority == "location" %}Location-First
+          {% else %}{{ request_config.production_priority | title }}{% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {# Optional fields — only rendered when present #}
+      {% if request_config.territories_considering %}
+      <tr><td>Territories Under Analysis</td><td>{{ request_config.territories_considering | join(", ") }}</td></tr>
+      {% endif %}
+      {% if request_config.filming_start_date %}
+      <tr><td>Filming Start Date</td><td>{{ request_config.filming_start_date }}</td></tr>
+      {% endif %}
+      {% if request_config.filming_duration %}
+      <tr><td>Filming Duration</td><td>{{ request_config.filming_duration }} weeks</td></tr>
+      {% endif %}
+      {% if request_config.language %}
+      <tr><td>Primary Language</td><td>{{ request_config.language }}</td></tr>
+      {% endif %}
+      {% if request_config.producer_country %}
+      <tr><td>Producer Jurisdiction</td><td>{{ request_config.producer_country }}</td></tr>
+      {% endif %}
+      {# Co-production status — human-readable #}
+      {% if request_config.co_production_status %}
+      <tr>
+        <td>Co-Production Structure</td>
+        <td>
+          {% if request_config.co_production_status == "sole_producer" %}Sole Producer
+          {% elif request_config.co_production_status == "co_production_treaty" %}Treaty Co-Production
+          {% elif request_config.co_production_status == "co_production_informal" %}Informal Co-Production
+          {% elif request_config.co_production_status == "undecided" %}Undecided
+          {% else %}{{ request_config.co_production_status | replace("_", " ") | title }}{% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% if request_config.crew_size %}
+      <tr><td>Crew Size</td><td>{{ request_config.crew_size }}</td></tr>
+      {% endif %}
+      {% if request_config.principal_cast %}
+      <tr><td>Principal Cast</td><td>{{ request_config.principal_cast }}</td></tr>
+      {% endif %}
+      {% if request_config.supporting_cast %}
+      <tr><td>Supporting Cast</td><td>{{ request_config.supporting_cast }}</td></tr>
+      {% endif %}
+      {% if request_config.camera_equipment %}
+      <tr><td>Camera Equipment</td><td>{{ request_config.camera_equipment | join(", ") }}</td></tr>
+      {% endif %}
+      {% if request_config.target_audience %}
+      <tr><td>Target Audience</td><td>{{ request_config.target_audience }}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+  {% endif %}
+
   {# v3 Section Explainer #}
   {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.executive_summary %}
   <div class="section-explainer">
@@ -666,7 +803,7 @@
   {% set es = report.executiveSummary %}
   <table>
     <tr><th style="width: 180px;">Detail</th><th>Value</th></tr>
-    {% if es.shootDays %}<tr><td>Estimated Shoot Days</td><td><strong>{{ es.shootDays }} days</strong></td></tr>{% endif %}
+    {% if es.shootDays %}<tr><td>Estimated Shoot Duration</td><td><strong>{{ es.shootDays }} weeks</strong></td></tr>{% endif %}
     {% if es.budget %}<tr><td>Production Budget</td><td><strong>{{ es.budget }}</strong></td></tr>{% endif %}
     <tr><td>Territories Analysed</td><td>{{ report.locationRankings | length }}</td></tr>
     <tr><td>Report Type</td><td>{{ report_type | upper }}</td></tr>
@@ -911,7 +1048,7 @@
       {% endif %}
       {% if scenario.atlDeduction %}
       <div class="fin-step">
-        <span class="fin-step-label">3. Less ATL Deduction (est. 25%)</span>
+        <span class="fin-step-label">3. Less ATL Deduction (est. {{ scenario.atlDeductionPct or "15%" }})</span>
         <span class="fin-step-value">-{{ scenario.atlDeduction }}</span>
       </div>
       {% endif %}
@@ -1449,6 +1586,16 @@
   <div class="card">
     <h3>Recommended Actions</h3>
     <ol style="padding-left: 20px; line-height: 2;">
+      {# Urgent / time-sensitive actions from actionTimeline come first #}
+      {% if report.executiveSummary and report.executiveSummary.actionTimeline %}
+        {% for item in report.executiveSummary.actionTimeline %}
+          <li>
+            {% if item.deadline %}<strong>[{{ item.deadline }}]</strong> {% endif %}
+            {{ item.action }}
+            {% if item.note %} — <em>{{ item.note }}</em>{% endif %}
+          </li>
+        {% endfor %}
+      {% endif %}
       {% if report.locationRankings %}
       <li>Explore incentive pre-qualification with <strong>{{ report.locationRankings[0].name }}</strong> film commission</li>
       {% endif %}
