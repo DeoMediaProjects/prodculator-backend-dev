@@ -1,9 +1,11 @@
-"""Unit tests for ReportValidator gap-fix patch methods.
+"""Unit tests for ReportValidator kept methods.
 
 Covers:
-- _patch_stacking_logic
-- _patch_weather_risk
-- _patch_eligibility
+- _compute_corrected_rebate (rebate caps, labour type, ATL deduction, PDV, local_spend)
+- _best_incentive (from helpers, re-exported via validator)
+- _parse_money_string
+- _patch_production_format
+- assert_integrity
 """
 from __future__ import annotations
 
@@ -14,554 +16,96 @@ from app.modules.reports.validator import ReportValidator, _best_incentive
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_report(incentive_estimates=None, location_rankings=None):
-    return {
-        "incentiveEstimates": incentive_estimates or [],
-        "locationRankings": location_rankings or [],
-    }
 
-
-def _make_incentive_db(
-    program_name: str,
-    territory: str = "United Kingdom",
-    scope: str = "national",
-    parent_territory: str | None = None,
-    stackable_with: list[str] | None = None,
-    nationality_requirements: list[str] | None = None,
-    co_production_eligible: bool = False,
-    co_production_treaties: list[str] | None = None,
-    spv_eligible: bool = False,
-):
-    return {
-        "program_name": program_name,
-        "territory": territory,
-        "scope": scope,
-        "parent_territory": parent_territory,
-        "stackable_with": json.dumps(stackable_with) if stackable_with else None,
-        "nationality_requirements": json.dumps(nationality_requirements) if nationality_requirements else None,
-        "co_production_eligible": co_production_eligible,
-        "co_production_treaties": json.dumps(co_production_treaties) if co_production_treaties else None,
-        "spv_eligible": spv_eligible,
-        "rate_gross": 34,
-        "rate_net": None,
-        "cap_amount": None,
-        "cap_currency": "GBP",
-    }
-
-
-# ── _patch_stacking_logic ─────────────────────────────────────────────────────
-
-def test_patch_stacking_logic_patches_scope_from_db():
-    """scope is copied from DB when the AI omits it."""
-    db = _make_incentive_db("AVEC", scope="national")
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "AVEC", "territory": "United Kingdom"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_stacking_logic(report, by_program, warnings)
-    assert report["incentiveEstimates"][0]["scope"] == "national"
-
-
-def test_patch_stacking_logic_patches_parent_territory():
-    """parentTerritory is copied from DB for regional incentives."""
-    db = _make_incentive_db(
-        "Creative Scotland Production Growth Fund",
-        territory="Scotland",
-        scope="regional",
-        parent_territory="United Kingdom",
-    )
-    by_program = {
-        "Creative Scotland Production Growth Fund": db,
-        "creative scotland production growth fund": db,
-    }
-    report = _make_report(
-        incentive_estimates=[{"program": "Creative Scotland Production Growth Fund", "territory": "Scotland"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_stacking_logic(report, by_program, warnings)
-    est = report["incentiveEstimates"][0]
-    assert est["scope"] == "regional"
-    assert est["parentTerritory"] == "United Kingdom"
-
-
-def test_patch_stacking_logic_strips_hallucinated_stacking():
-    """AI-invented stacking entries not in DB stackable_with are removed."""
-    db = _make_incentive_db("AVEC", stackable_with=["Creative Scotland Production Growth Fund"])
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{
-            "program": "AVEC",
-            "territory": "United Kingdom",
-            "stackableWith": ["Creative Scotland Production Growth Fund", "Hallucinated Fund"],
-        }]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_stacking_logic(report, by_program, warnings)
-    est = report["incentiveEstimates"][0]
-    assert "Hallucinated Fund" not in (est.get("stackableWith") or [])
-    assert "Creative Scotland Production Growth Fund" in (est.get("stackableWith") or [])
-    assert any("hallucinated" in w.lower() for w in warnings)
-
-
-def test_patch_stacking_logic_fills_stackable_with_from_db():
-    """If AI omitted stackableWith, fill it from DB."""
-    db = _make_incentive_db("AVEC", stackable_with=["Creative Scotland Production Growth Fund"])
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "AVEC", "territory": "United Kingdom"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_stacking_logic(report, by_program, warnings)
-    assert report["incentiveEstimates"][0].get("stackableWith") == ["Creative Scotland Production Growth Fund"]
-
-
-def test_patch_stacking_logic_no_op_when_no_incentive_data():
-    """Gracefully handles unknown program (not in incentives_by_program)."""
-    report = _make_report(
-        incentive_estimates=[{"program": "Unknown Fund", "territory": "Atlantis"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_stacking_logic(report, {}, warnings)
-    assert warnings == []
-
-
-# ── _patch_weather_risk ───────────────────────────────────────────────────────
-
-def _make_weather_row(territory: str, month: int, storm_risk: str = "low", rainfall: float = 30.0):
-    return {
-        "territory": territory,
-        "month": month,
-        "storm_risk": storm_risk,
-        "avg_rainfall_mm": rainfall,
-        "exterior_shoot_score": 80 if storm_risk == "low" else 30,
-    }
-
-
-def test_patch_weather_risk_injects_key_risk_for_high_risk_month():
-    """High storm risk in shoot month → risk injected at top of keyRisks."""
-    weather = [_make_weather_row("South Africa", 2, storm_risk="high", rainfall=150.0)]
-    report = _make_report(
-        location_rankings=[{"name": "South Africa", "score": 70, "keyRisks": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_weather_risk(report, weather, shoot_months=[2], ext_int_ratio=0.6, warnings=warnings)
-
-    loc = report["locationRankings"][0]
-    assert any("weather risk" in r.lower() for r in loc["keyRisks"])
-    assert loc["keyRisks"][0].lower().startswith("weather risk")  # inserted at top
-    assert loc["score"] < 70  # penalised
-    assert loc.get("weatherRiskImpact") is not None
-    assert loc["weatherRiskImpact"] < 0
-    assert any("penali" in w.lower() for w in warnings)
-
-
-def test_patch_weather_risk_high_ext_ratio_adds_exposure_risk():
-    """70%+ exterior ratio AND high risk month → exposure message added."""
-    weather = [_make_weather_row("South Africa", 2, storm_risk="high", rainfall=200.0)]
-    report = _make_report(
-        location_rankings=[{"name": "South Africa", "score": 70, "keyRisks": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_weather_risk(report, weather, shoot_months=[2], ext_int_ratio=0.72, warnings=warnings)
-
-    key_risks = report["locationRankings"][0]["keyRisks"]
-    assert any("exterior" in r.lower() for r in key_risks)
-
-
-def test_patch_weather_risk_low_ext_ratio_no_penalty():
-    """Low ext ratio (< 0.5) → no score penalty even with high risk month."""
-    weather = [_make_weather_row("South Africa", 2, storm_risk="high", rainfall=150.0)]
-    report = _make_report(
-        location_rankings=[{"name": "South Africa", "score": 70, "keyRisks": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_weather_risk(report, weather, shoot_months=[2], ext_int_ratio=0.2, warnings=warnings)
-
-    loc = report["locationRankings"][0]
-    # Risk note may still be added, but no score penalty
-    assert loc["score"] == 70
-    assert loc.get("weatherRiskImpact") is None
-
-
-def test_patch_weather_risk_no_data_is_noop():
-    """No weather data → no changes at all."""
-    report = _make_report(
-        location_rankings=[{"name": "South Africa", "score": 70, "keyRisks": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_weather_risk(report, [], shoot_months=[2], ext_int_ratio=0.8, warnings=warnings)
-    assert report["locationRankings"][0]["score"] == 70
-    assert warnings == []
-
-
-def test_patch_weather_risk_no_shoot_months_is_noop():
-    """No shoot months → no changes."""
-    weather = [_make_weather_row("South Africa", 2, storm_risk="high", rainfall=150.0)]
-    report = _make_report(
-        location_rankings=[{"name": "South Africa", "score": 70, "keyRisks": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_weather_risk(report, weather, shoot_months=None, ext_int_ratio=0.8, warnings=warnings)
-    assert report["locationRankings"][0]["score"] == 70
-    assert warnings == []
-
-
-def test_patch_weather_risk_low_rainfall_no_risk():
-    """Low rainfall + low storm_risk → no injection."""
-    weather = [_make_weather_row("Malta", 6, storm_risk="low", rainfall=5.0)]
-    report = _make_report(
-        location_rankings=[{"name": "Malta", "score": 80, "keyRisks": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_weather_risk(report, weather, shoot_months=[6], ext_int_ratio=0.6, warnings=warnings)
-    assert report["locationRankings"][0]["score"] == 80
-    assert warnings == []
-
-
-# ── _patch_eligibility ────────────────────────────────────────────────────────
-
-def test_patch_eligibility_uk_producer_qualifies():
-    """GB producer + AVEC (requires GB) → eligibilityStatus = 'qualified'."""
-    db = _make_incentive_db("AVEC", nationality_requirements=["GB"], spv_eligible=True)
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "AVEC", "territory": "United Kingdom"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_eligibility(report, by_program, producer_country="GB", co_production_status=None, warnings=warnings)
-
-    est = report["incentiveEstimates"][0]
-    assert est["eligibilityStatus"] == "qualified"
-    assert warnings == []
-
-
-def test_patch_eligibility_foreign_producer_requires_spv():
-    """ZA producer + AVEC (requires GB, spv_eligible=True) → requires_spv."""
-    db = _make_incentive_db(
-        "AVEC",
-        nationality_requirements=["GB"],
-        co_production_eligible=True,
-        spv_eligible=True,
-    )
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "AVEC", "territory": "United Kingdom"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_eligibility(report, by_program, producer_country="ZA", co_production_status=None, warnings=warnings)
-
-    est = report["incentiveEstimates"][0]
-    assert est["eligibilityStatus"] == "requires_spv"
-    assert "ZA" in est.get("eligibilityNote", "")
-    assert any("nationality_requirements" in w for w in warnings)
-
-
-def test_patch_eligibility_foreign_producer_requires_co_production():
-    """ZA producer + AVEC (requires GB, co_production_eligible=True, spv_eligible=False)."""
-    db = _make_incentive_db(
-        "AVEC",
-        nationality_requirements=["GB"],
-        co_production_eligible=True,
-        spv_eligible=False,
-    )
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "AVEC", "territory": "United Kingdom"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_eligibility(report, by_program, producer_country="ZA", co_production_status=None, warnings=warnings)
-
-    assert report["incentiveEstimates"][0]["eligibilityStatus"] == "requires_co_production"
-
-
-def test_patch_eligibility_no_producer_adds_assumption_note():
-    """No producer_country → assumption note appended to requirements."""
-    db = _make_incentive_db("AVEC", nationality_requirements=["GB"])
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "AVEC", "territory": "United Kingdom", "requirements": []}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_eligibility(report, by_program, producer_country=None, co_production_status=None, warnings=warnings)
-
-    reqs = report["incentiveEstimates"][0]["requirements"]
-    assert any("eligibility assumes" in r.lower() for r in reqs)
-    assert warnings == []  # assumption note is not a warning
-
-
-def test_patch_eligibility_no_nationality_requirements_is_qualified():
-    """Programme with no nationality_requirements → open to all → qualified."""
-    db = _make_incentive_db("SA DTIC", nationality_requirements=None)
-    by_program = {"SA DTIC": db, "sa dtic": db}
-    report = _make_report(
-        incentive_estimates=[{"program": "SA DTIC", "territory": "South Africa"}]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_eligibility(report, by_program, producer_country="ZA", co_production_status=None, warnings=warnings)
-    assert report["incentiveEstimates"][0]["eligibilityStatus"] == "qualified"
-
-
-def test_patch_eligibility_does_not_overwrite_existing_status():
-    """If AI already set eligibilityStatus, the validator doesn't overwrite it."""
-    db = _make_incentive_db("AVEC", nationality_requirements=["GB"])
-    by_program = {"AVEC": db, "avec": db}
-    report = _make_report(
-        incentive_estimates=[{
-            "program": "AVEC",
-            "territory": "United Kingdom",
-            "eligibilityStatus": "ineligible",  # AI set this
-        }]
-    )
-    warnings: list[str] = []
-    ReportValidator._patch_eligibility(report, by_program, producer_country="ZA", co_production_status=None, warnings=warnings)
-    # Should still be ineligible — validator only sets if not present
-    assert report["incentiveEstimates"][0]["eligibilityStatus"] == "ineligible"
-
-
-def _make_incentive_db_full(
-    program_name: str,
-    territory: str = "United Kingdom",
-    rate_gross: float = 34.0,
-    rate_net: float | None = 25.5,
-    qualifying_spend_cap_pct: float | None = 80.0,
-    cap_amount: float | None = None,
-    cap_currency: str = "GBP",
+def _make_rebate_row(
+    rate_gross: float = 30.0,
+    rate_type: str = "tax_credit",
     cap_per_person: float | None = None,
     cap_per_person_currency: str | None = None,
-    rate_tier_json: str | None = None,
-    warnings_json: str | None = None,
-    eligibility_rules_json: str | None = None,
-    payment_timeline_days_min: int | None = None,
-    payment_timeline_days_max: int | None = None,
+    qualifying_spend_cap_pct: float | None = None,
+    cap_amount: float | None = None,
     currency: str = "GBP",
-):
+    qualifying_spend_type: str | None = None,
+    qualifying_spend_labour_pct: float | None = None,
+) -> dict:
+    """Build a minimal DB row for _compute_corrected_rebate() tests."""
     return {
-        "program_name": program_name,
-        "territory": territory,
         "rate_gross": rate_gross,
-        "rate_net": rate_net,
-        "qualifying_spend_cap_pct": qualifying_spend_cap_pct,
-        "cap_amount": cap_amount,
-        "cap_currency": cap_currency,
+        "rate_net": rate_gross,
+        "rate_type": rate_type,
         "cap_per_person": cap_per_person,
         "cap_per_person_currency": cap_per_person_currency,
-        "rate_tier_json": rate_tier_json,
-        "rate_type": "tax_credit",
-        "warnings_json": warnings_json,
-        "eligibility_rules_json": eligibility_rules_json,
-        "payment_timeline_days_min": payment_timeline_days_min,
-        "payment_timeline_days_max": payment_timeline_days_max,
-        "payment_timeline_notes": None,
+        "qualifying_spend_cap_pct": qualifying_spend_cap_pct,
+        "cap_amount": cap_amount,
         "currency": currency,
-        "scope": "national",
-        "parent_territory": None,
-        "stackable_with": None,
-        "nationality_requirements": None,
-        "co_production_eligible": False,
-        "spv_eligible": False,
+        "rate_tier_json": None,
+        "payment_timeline_notes": None,
+        "last_verified_at": None,
+        "qualifying_spend_type": qualifying_spend_type,
+        "qualifying_spend_labour_pct": qualifying_spend_labour_pct,
     }
 
 
-# ── _patch_reliability_warnings tests ────────────────────────────────────────
-
-
-def test_reliability_warnings_injected_from_dataset():
-    """Warnings from warnings_json should appear in keyRisks."""
-    db = _make_incentive_db_full(
-        "Slow Programme",
-        territory="SlowLand",
-        warnings_json='["Payment takes forever","ZAR volatility risk"]',
-    )
-    by_program = {"Slow Programme": db, "slow programme": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "SlowLand",
-            "keyRisks": [],
-        }],
-        "incentiveEstimates": [],
+def _make_best_incentive_row(
+    rate_gross: float,
+    nationality_requirements: str | None = None,
+    spv_eligible: bool | None = None,
+    applicable_formats: str | None = None,
+) -> dict:
+    """Build a minimal incentive row for _best_incentive() tests."""
+    return {
+        "rate_gross": rate_gross,
+        "rate_net": None,
+        "nationality_requirements": nationality_requirements,
+        "spv_eligible": spv_eligible,
+        "applicable_formats": applicable_formats,
     }
-    warnings: list[str] = []
-    ReportValidator._patch_reliability_warnings(report, by_program, warnings)
-
-    risks = report["locationRankings"][0]["keyRisks"]
-    assert any("payment takes forever" in r.lower() for r in risks)
-    assert any("zar volatility" in r.lower() for r in risks)
 
 
-def test_reliability_warnings_long_payment_timeline():
-    """Territories with >180 day payment get investor-bankable warning."""
-    db = _make_incentive_db_full(
-        "Delayed Programme",
-        territory="DelayLand",
-        payment_timeline_days_min=270,
-        payment_timeline_days_max=450,
-    )
-    by_program = {"Delayed Programme": db, "delayed programme": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "DelayLand",
-            "keyRisks": [],
-        }],
-        "incentiveEstimates": [],
+def _make_best_incentive_row_bc(
+    program: str,
+    rate_gross: float,
+    nationality_requirements: str | None,
+    spv_eligible: bool = False,
+) -> dict:
+    return {
+        "program": program,
+        "program_name": program,
+        "rate_gross": rate_gross,
+        "rate_net": rate_gross,
+        "rate_type": "tax_credit",
+        "nationality_requirements": nationality_requirements,
+        "spv_eligible": spv_eligible,
+        "co_production_eligible": True,
+        "applicable_formats": None,
+        "cap_amount": None,
+        "territory": "British Columbia",
     }
-    warnings: list[str] = []
-    ReportValidator._patch_reliability_warnings(report, by_program, warnings)
-
-    risks = report["locationRankings"][0]["keyRisks"]
-    assert any("investor-bankable" in r.lower() for r in risks)
-    assert len(warnings) > 0
 
 
-def test_reliability_warnings_short_timeline_no_warning():
-    """Territories with <=180 day payment should NOT get reliability warning."""
-    db = _make_incentive_db_full(
-        "Fast Programme",
-        territory="FastLand",
-        payment_timeline_days_min=42,
-        payment_timeline_days_max=56,
-    )
-    by_program = {"Fast Programme": db, "fast programme": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "FastLand",
-            "keyRisks": [],
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_reliability_warnings(report, by_program, warnings)
-
-    risks = report["locationRankings"][0]["keyRisks"]
-    assert not any("investor-bankable" in r.lower() for r in risks)
+def _make_rebate_row_with_cap(
+    rate_gross: float = 25.0,
+    rate_type: str = "cash_rebate",
+    rebate_cap_amount: float | None = None,
+    rebate_cap_currency: str | None = None,
+) -> dict:
+    """Build a DB row with optional rebate_cap_amount for South-Africa-style tests."""
+    row = _make_rebate_row(rate_gross=rate_gross, rate_type=rate_type)
+    row["rebate_cap_amount"] = rebate_cap_amount
+    row["rebate_cap_currency"] = rebate_cap_currency
+    return row
 
 
-# ── _patch_operational_requirements tests ────────────────────────────────────
-
-
-def test_operational_requirements_service_company_injected():
-    """Eligibility rules mentioning 'service company required' should appear in keyRisks."""
-    db = _make_incentive_db_full(
-        "Local Programme",
-        territory="LocalLand",
-        eligibility_rules_json='[{"rule":"Local production service company required","required":true}]',
-    )
-    by_program = {"Local Programme": db, "local programme": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "LocalLand",
-            "keyRisks": [],
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_operational_requirements(report, by_program, warnings)
-
-    risks = report["locationRankings"][0]["keyRisks"]
-    assert any("service company" in r.lower() for r in risks)
-
-
-def test_operational_requirements_minimum_spend_injected():
-    """Eligibility rules mentioning 'minimum spend' should appear in keyRisks."""
-    db = _make_incentive_db_full(
-        "MinSpend Programme",
-        territory="MinLand",
-        eligibility_rules_json='[{"rule":"Minimum qualifying spend of ZAR 12M","required":true}]',
-    )
-    by_program = {"MinSpend Programme": db, "minspend programme": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "MinLand",
-            "keyRisks": [],
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_operational_requirements(report, by_program, warnings)
-
-    risks = report["locationRankings"][0]["keyRisks"]
-    assert any("minimum" in r.lower() for r in risks)
-
-
-def test_operational_requirements_skips_non_required_rules():
-    """Rules with required=false should NOT be injected."""
-    db = _make_incentive_db_full(
-        "Optional Programme",
-        territory="OptLand",
-        eligibility_rules_json='[{"rule":"Local production service company required","required":false}]',
-    )
-    by_program = {"Optional Programme": db, "optional programme": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "OptLand",
-            "keyRisks": [],
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_operational_requirements(report, by_program, warnings)
-
-    risks = report["locationRankings"][0]["keyRisks"]
-    assert len(risks) == 0
-
-
-# ── _patch_comparable_relevance tests ────────────────────────────────────────
-
-
-def test_comparable_relevance_flags_budget_gap():
-    """Comparables with wildly different budgets get a caveat."""
-    report = {
-        "executiveSummary": {"budget": "£10M"},
-        "comparables": [
-            {"title": "Big Budget Film", "budgetRange": "£200M", "relevanceDescription": "Similar genre"},
-            {"title": "Similar Film", "budgetRange": "£12M", "relevanceDescription": "Similar genre and budget"},
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_comparable_relevance(report, [], warnings)
-
-    assert "budget gap" in report["comparables"][0]["relevanceDescription"].lower()
-    assert "budget gap" not in report["comparables"][1]["relevanceDescription"].lower()
-
-
-def test_comparable_relevance_no_budget_no_caveat():
-    """If budget can't be parsed, don't add caveats."""
-    report = {
-        "executiveSummary": {},
-        "comparables": [
-            {"title": "Some Film", "budgetRange": "£200M", "relevanceDescription": "Similar genre"},
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_comparable_relevance(report, [], warnings)
-
-    assert "budget gap" not in report["comparables"][0]["relevanceDescription"].lower()
-
-
-# ── _patch_grant_labelling tests ─────────────────────────────────────────────
-
-
-def test_grant_labelling_adds_up_to_prefix():
-    """Grant fund amounts should be prefixed with 'Up to'."""
-    report = {
-        "fundingOpportunities": [
-            {"type": "Fund", "name": "Test Grant", "notes": "£500,000"},
-            {"type": "Fund", "name": "Another Grant", "notes": "Up to £250,000"},
-            {"type": "Festival", "name": "Test Festival", "notes": "£50 entry fee"},
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_grant_labelling(report, warnings)
-
-    assert report["fundingOpportunities"][0]["notes"] == "Up to £500,000"
-    assert report["fundingOpportunities"][1]["notes"] == "Up to £250,000"  # unchanged
-    assert report["fundingOpportunities"][2]["notes"] == "£50 entry fee"  # festival, unchanged
+def _make_atl_exempt_row(
+    rate_gross: float = 34.0,
+    rate_type: str = "tax_credit",
+    atl_exempt: bool = True,
+    qualifying_spend_cap_pct: float | None = 80.0,
+) -> dict:
+    row = _make_rebate_row(rate_gross=rate_gross, rate_type=rate_type,
+                           qualifying_spend_cap_pct=qualifying_spend_cap_pct)
+    row["atl_exempt"] = atl_exempt
+    return row
 
 
 # ── _parse_money_string tests ────────────────────────────────────────────────
@@ -578,119 +122,6 @@ def test_parse_money_string():
     assert _parse_money_string(None) is None
     assert _parse_money_string("") is None
     assert _parse_money_string("No data") is None
-
-
-def test_location_rankings_rebate_amount_within_tolerance():
-    """rebateAmount should NOT be overridden if within 15% tolerance."""
-    db = _make_incentive_db_full(
-        "AVEC",
-        territory="United Kingdom",
-        rate_gross=34,
-        rate_net=25.5,
-        qualifying_spend_cap_pct=80,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "locationRankings": [{
-            "name": "United Kingdom",
-            "rebatePercent": "34% / 25.5%",
-            "rebateAmount": "~£5,100,000",  # Close to £4,972,500 (within 15%)
-            "score": 72,
-        }],
-        "incentiveEstimates": [],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_location_rankings(
-        report, by_program, warnings, budget_gbp=30_000_000,
-    )
-
-    # Should NOT be corrected — within tolerance (5.1M vs 4.97M = 2.6%)
-    assert "5,100,000" in report["locationRankings"][0]["rebateAmount"]
-    assert not any("rebateAmount corrected" in w for w in warnings)
-
-
-# ── _patch_territory_deep_dives score + rebate tests ────────────────────────
-
-
-def test_deep_dive_score_propagated_from_rankings():
-    """territoryDeepDives scores should match locationRankings after patching."""
-    db = _make_incentive_db_full(
-        "AVEC", territory="United Kingdom", rate_gross=34, rate_net=25.5,
-    )
-    by_program = {"AVEC": db, "avec": db}
-
-    report = {
-        "territoryDeepDives": [{
-            "name": "United Kingdom",
-            "score": 78,  # AI-generated, wrong
-            "estimatedRebate": "£4,590,000",
-        }],
-    }
-    ranking_scores = {"United Kingdom": 72}
-    warnings: list[str] = []
-    ReportValidator._patch_territory_deep_dives(
-        report, by_program, warnings,
-        ranking_scores=ranking_scores,
-    )
-
-    assert report["territoryDeepDives"][0]["score"] == 72
-    assert any("score aligned" in w for w in warnings)
-
-
-# ── crewCostComparison territory filtering tests ─────────────────────────────
-
-
-def test_crew_cost_comparison_removes_extra_territories():
-    """Territories not in locationRankings should be stripped from crew table."""
-    report = {
-        "locationRankings": [
-            {"name": "United Kingdom", "score": 72},
-            {"name": "South Africa", "score": 66},
-        ],
-        "financialAnalysis": {
-            "crewCostComparison": [
-                {
-                    "role": "Director of Photography",
-                    "territories": {
-                        "United Kingdom": "£800-£2,500/day",
-                        "South Africa": "£537-£1,565/day",
-                        "Ireland": "£700-£2,200/day",  # Extra — not in rankings
-                    },
-                },
-            ],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_crew_cost_territories(report, warnings)
-
-    territories = report["financialAnalysis"]["crewCostComparison"][0]["territories"]
-    assert "Ireland" not in territories
-    assert "United Kingdom" in territories
-    assert "South Africa" in territories
-    assert any("Ireland" in w for w in warnings)
-
-
-def test_crew_cost_comparison_noop_when_all_match():
-    """No changes when all crew territories are in locationRankings."""
-    report = {
-        "locationRankings": [
-            {"name": "United Kingdom", "score": 72},
-        ],
-        "financialAnalysis": {
-            "crewCostComparison": [
-                {
-                    "role": "DP",
-                    "territories": {"United Kingdom": "£800/day"},
-                },
-            ],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_crew_cost_territories(report, warnings)
-
-    assert "United Kingdom" in report["financialAnalysis"]["crewCostComparison"][0]["territories"]
-    assert len(warnings) == 0
 
 
 # ── _patch_production_format tests ───────────────────────────────────────────
@@ -737,358 +168,7 @@ def test_production_format_noop_when_none():
     assert len(warnings) == 0
 
 
-# ── _patch_shoot_duration_context tests ──────────────────────────────────────
-
-
-def test_shoot_duration_context_injects_flag_for_long_pilot():
-    """Long shoot duration for a TV Pilot should inject a keyFlag."""
-    report = {
-        "executiveSummary": {
-            "shootDays": 20,  # 20 weeks — exceeds TV Pilot threshold (12 weeks)
-            "keyFlags": ["Some existing flag"],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_shoot_duration_context(report, "TV Pilot", warnings)
-
-    flags = report["executiveSummary"]["keyFlags"]
-    assert len(flags) == 2
-    assert any("shoot timeline" in f.lower() for f in flags)
-    assert "20 weeks" in flags[-1]
-    assert "tv pilot" in flags[-1].lower()
-    assert len(warnings) == 1
-
-
-def test_shoot_duration_context_noop_for_short_shoot():
-    """Normal shoot duration should not trigger a keyFlag."""
-    report = {
-        "executiveSummary": {
-            "shootDays": 8,  # 8 weeks — below TV Pilot threshold (12 weeks)
-            "keyFlags": [],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_shoot_duration_context(report, "TV Pilot", warnings)
-
-    assert len(report["executiveSummary"]["keyFlags"]) == 0
-    assert len(warnings) == 0
-
-
-def test_shoot_duration_context_creates_key_flags_list():
-    """keyFlags should be created if it doesn't exist."""
-    report = {
-        "executiveSummary": {
-            "shootDays": 20,  # 20 weeks — exceeds Feature Film threshold (16 weeks)
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_shoot_duration_context(report, "Feature Film", warnings)
-
-    assert "keyFlags" in report["executiveSummary"]
-    assert len(report["executiveSummary"]["keyFlags"]) == 1
-    assert "20 weeks" in report["executiveSummary"]["keyFlags"][0]
-
-
-def test_shoot_duration_context_no_duplicate():
-    """Should not add duplicate flag if one already mentions shoot timeline."""
-    report = {
-        "executiveSummary": {
-            "shootDays": 20,  # 20 weeks — would normally trigger
-            "keyFlags": ["Extended shoot timeline: already noted by AI"],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_shoot_duration_context(report, "Feature Film", warnings)
-
-    assert len(report["executiveSummary"]["keyFlags"]) == 1
-    assert len(warnings) == 0
-
-
-# ── Deadline proximity flagging ──────────────────────────────────────────────
-
-
-def test_deadline_proximity_flags_imminent_deadlines():
-    """Funding deadlines within 8 weeks should be inserted into actionTimeline."""
-    from datetime import date, timedelta
-    # Create a deadline 14 days from now
-    soon = (date.today() + timedelta(days=14)).isoformat()
-    far = (date.today() + timedelta(days=120)).isoformat()
-
-    report = {
-        "executiveSummary": {
-            "actionTimeline": [
-                {"action": "Register with Georgia Film Office", "deadline": None},
-            ],
-        },
-        "fundingOpportunities": [
-            {
-                "type": "Festival",
-                "name": "DIFF",
-                "deadline": f"Feature Submission: {soon}",
-            },
-            {
-                "type": "Festival",
-                "name": "Venice",
-                "deadline": f"Feature Submission: {far}",
-            },
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_deadline_proximity(report, warnings)
-
-    timeline = report["executiveSummary"]["actionTimeline"]
-    # DIFF should be flagged (14 days away), Venice should not (120 days away)
-    urgent_actions = [a for a in timeline if "URGENT" in a.get("action", "")]
-    assert len(urgent_actions) == 1
-    assert "DIFF" in urgent_actions[0]["action"]
-    assert soon in urgent_actions[0]["deadline"]
-    assert len(warnings) == 1
-
-
-def test_deadline_proximity_noop_when_no_imminent_deadlines():
-    """No action items added when all deadlines are far in the future."""
-    from datetime import date, timedelta
-    far = (date.today() + timedelta(days=120)).isoformat()
-
-    report = {
-        "executiveSummary": {"actionTimeline": []},
-        "fundingOpportunities": [
-            {"type": "Fund", "name": "Telefilm", "deadline": far},
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_deadline_proximity(report, warnings)
-
-    assert len(report["executiveSummary"]["actionTimeline"]) == 0
-    assert len(warnings) == 0
-
-
-def test_deadline_proximity_skips_past_deadlines():
-    """Deadlines that have already passed should not be flagged."""
-    from datetime import date, timedelta
-    past = (date.today() - timedelta(days=5)).isoformat()
-
-    report = {
-        "executiveSummary": {"actionTimeline": []},
-        "fundingOpportunities": [
-            {"type": "Festival", "name": "DIFF", "deadline": past},
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_deadline_proximity(report, warnings)
-
-    assert len(report["executiveSummary"]["actionTimeline"]) == 0
-
-
-def test_deadline_proximity_no_duplicate():
-    """Should not add duplicate if the deadline name is already in the timeline."""
-    from datetime import date, timedelta
-    soon = (date.today() + timedelta(days=10)).isoformat()
-
-    report = {
-        "executiveSummary": {
-            "actionTimeline": [
-                {"action": "Submit to DIFF before deadline", "note": ""},
-            ],
-        },
-        "fundingOpportunities": [
-            {"type": "Festival", "name": "DIFF", "deadline": soon},
-        ],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_deadline_proximity(report, warnings)
-
-    timeline = report["executiveSummary"]["actionTimeline"]
-    assert len(timeline) == 1  # No new item added
-    assert len(warnings) == 0
-
-
-# ── _patch_budget_scenarios tests ────────────────────────────────────────────
-
-
-def test_patch_budget_scenarios_enforces_precomputed_figures():
-    """All monetary fields should be overwritten by pre-computed territory_financials."""
-    report = {
-        "financialAnalysis": {
-            "budgetScenarios": [{
-                "territory": "United Kingdom",
-                "programme": "Independent Film Tax Credit (IFTC)",  # wrong — AI chose IFTC
-                "totalBudget": "£7,000,000",
-                "qualifyingSpendPct": "100%",          # wrong — should be 80%
-                "qualifyingSpend": "£7,000,000",       # wrong
-                "atlDeduction": "-£1,750,000",         # wrong amount
-                "atlDeductionPct": "25%",              # wrong percentage
-                "netQualifyingSpend": "£5,250,000",    # wrong
-                "rateGross": "34%",
-                "rateNet": "25.5%",
-                "grossRebate": "£2,100,000",           # wrong
-                "netRebate": "£1,517,250",             # wrong (based on 100% QS)
-                "netBudget": "£5,482,750",
-            }],
-        },
-    }
-    territory_financials = {
-        "United Kingdom": {
-            "total_budget": "£7,000,000",
-            "qualifying_spend_pct": "80%",
-            "qualifying_spend": "£5,600,000",
-            "atl_deduction": "£1,050,000",
-            "atl_pct": "15%",
-            "net_qualifying_spend": "£4,550,000",
-            "rate_gross": "34%",
-            "rate_net": "25.5%",
-            "gross_rebate": "£1,547,000",
-            "net_rebate": "£1,160,250",
-            "net_budget": "£5,839,750",
-            "programme": "Audio Visual Expenditure Credit (AVEC)",
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_budget_scenarios(report, territory_financials, warnings)
-
-    scenario = report["financialAnalysis"]["budgetScenarios"][0]
-    assert scenario["qualifyingSpendPct"] == "80%"
-    assert scenario["qualifyingSpend"] == "£5,600,000"
-    assert scenario["netQualifyingSpend"] == "£4,550,000"
-    assert scenario["netRebate"] == "£1,160,250"
-    assert scenario["atlDeduction"] == "-£1,050,000"
-    assert scenario["atlDeductionPct"] == "15%"
-    assert scenario["programme"] == "Audio Visual Expenditure Credit (AVEC)"
-    assert len(warnings) >= 4  # Multiple fields overridden
-
-
-def test_patch_budget_scenarios_noop_when_no_territory_financials():
-    """No changes when territory_financials is empty."""
-    report = {
-        "financialAnalysis": {
-            "budgetScenarios": [{
-                "territory": "Unknown",
-                "netRebate": "£999",
-            }],
-        },
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_budget_scenarios(report, {}, warnings)
-
-    assert report["financialAnalysis"]["budgetScenarios"][0]["netRebate"] == "£999"
-    assert len(warnings) == 0
-
-
-# ── _patch_incentive_estimates eligibility_rules_json parsing ─────────────────
-
-
-def test_patch_incentive_estimates_parses_rules_json_string():
-    """eligibility_rules_json stored as JSON string must be parsed and applied."""
-    db = _make_incentive_db_full(
-        "Independent Film Tax Credit (IFTC)",
-        territory="United Kingdom",
-        eligibility_rules_json='[{"rule":"Budget cap of £23.5M","required":true},{"rule":"Theatrical release required","required":true}]',
-    )
-    by_program = {
-        "Independent Film Tax Credit (IFTC)": db,
-        "independent film tax credit (iftc)": db,
-    }
-    report = {
-        "incentiveEstimates": [{
-            "program": "Independent Film Tax Credit (IFTC)",
-            "territory": "United Kingdom",
-            "requirements": ["Budget cap £20M"],  # AI-generated — wrong
-        }],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_incentive_estimates(report, by_program, warnings)
-
-    requirements = report["incentiveEstimates"][0]["requirements"]
-    assert any("£23.5M" in r for r in requirements), \
-        f"Expected £23.5M in requirements, got: {requirements}"
-    assert not any("£20M" in r for r in requirements)
-
-
-# ── _patch_incentive_estimates format applicability (NOT APPLICABLE) ──────────
-
-
-def test_patch_incentive_estimates_marks_not_applicable_for_wrong_format():
-    """IFTC restricted to Feature Film must show NOT APPLICABLE for TV Series."""
-    db = _make_incentive_db_full(
-        "Independent Film Tax Credit (IFTC)",
-        territory="United Kingdom",
-    )
-    db["applicable_formats"] = json.dumps(["Feature Film"])
-
-    by_program = {
-        "Independent Film Tax Credit (IFTC)": db,
-        "independent film tax credit (iftc)": db,
-    }
-    report = {
-        "incentiveEstimates": [{
-            "program": "Independent Film Tax Credit (IFTC)",
-            "territory": "United Kingdom",
-            "bankabilityLabel": "BANKABLE",
-            "estimatedRebate": "£3,500,000",
-        }],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_incentive_estimates(
-        report, by_program, warnings,
-        production_format="TV Series",
-    )
-
-    est = report["incentiveEstimates"][0]
-    assert est["bankabilityLabel"] == "NOT APPLICABLE"
-    assert "Feature Film" in est["estimatedRebate"]
-    assert "TV Series" in est["eligibilityNote"]
-    assert len(warnings) == 1
-
-
-def test_patch_incentive_estimates_not_applicable_not_triggered_for_matching_format():
-    """IFTC must NOT be marked NOT APPLICABLE when format is Feature Film."""
-    db = _make_incentive_db_full(
-        "Independent Film Tax Credit (IFTC)",
-        territory="United Kingdom",
-        rate_gross=53.0,
-        rate_net=39.75,
-    )
-    db["applicable_formats"] = json.dumps(["Feature Film"])
-
-    by_program = {
-        "Independent Film Tax Credit (IFTC)": db,
-        "independent film tax credit (iftc)": db,
-    }
-    report = {
-        "incentiveEstimates": [{
-            "program": "Independent Film Tax Credit (IFTC)",
-            "territory": "United Kingdom",
-            "bankabilityLabel": "BANKABLE",
-            "estimatedRebate": "£3,500,000",
-        }],
-    }
-    warnings: list[str] = []
-    ReportValidator._patch_incentive_estimates(
-        report, by_program, warnings,
-        production_format="Feature Film",
-    )
-
-    est = report["incentiveEstimates"][0]
-    assert est["bankabilityLabel"] != "NOT APPLICABLE"
-
-
 # ── _best_incentive() nationality filtering ───────────────────────────────────
-
-
-def _make_best_incentive_row(
-    rate_gross: float,
-    nationality_requirements: str | None = None,
-    spv_eligible: bool | None = None,
-    applicable_formats: str | None = None,
-) -> dict:
-    """Build a minimal incentive row for _best_incentive() tests."""
-    return {
-        "rate_gross": rate_gross,
-        "rate_net": None,
-        "nationality_requirements": nationality_requirements,
-        "spv_eligible": spv_eligible,
-        "applicable_formats": applicable_formats,
-    }
 
 
 def test_best_incentive_prefers_pstc_over_cptc():
@@ -1133,31 +213,6 @@ def test_best_incentive_multiple_domestic_corp_only_fallback():
 # ── apply_atl / cap_per_person decoupling ─────────────────────────────────────
 
 
-def _make_rebate_row(
-    rate_gross: float = 30.0,
-    rate_type: str = "tax_credit",
-    cap_per_person: float | None = None,
-    cap_per_person_currency: str | None = None,
-    qualifying_spend_cap_pct: float | None = None,
-    cap_amount: float | None = None,
-    currency: str = "GBP",
-) -> dict:
-    """Build a minimal DB row for _compute_corrected_rebate() tests."""
-    return {
-        "rate_gross": rate_gross,
-        "rate_net": rate_gross,
-        "rate_type": rate_type,
-        "cap_per_person": cap_per_person,
-        "cap_per_person_currency": cap_per_person_currency,
-        "qualifying_spend_cap_pct": qualifying_spend_cap_pct,
-        "cap_amount": cap_amount,
-        "currency": currency,
-        "rate_tier_json": None,
-        "payment_timeline_notes": None,
-        "last_verified_at": None,
-    }
-
-
 def test_georgia_cap_per_person_no_atl_deduction():
     """transferable_tax_credit + cap_per_person must NOT trigger 15% ATL deduction."""
     row = _make_rebate_row(
@@ -1178,7 +233,7 @@ def test_georgia_cap_per_person_no_atl_deduction():
 
 
 def test_georgia_rebate_amount_correct_with_cap_per_person():
-    """Rebate = 30% × full budget when cap_per_person is set on transferable_tax_credit."""
+    """Rebate = 30% x full budget when cap_per_person is set on transferable_tax_credit."""
     row = _make_rebate_row(
         rate_gross=30.0,
         rate_type="transferable_tax_credit",
@@ -1193,7 +248,7 @@ def test_georgia_rebate_amount_correct_with_cap_per_person():
 
 
 def test_tax_credit_cap_per_person_still_triggers_atl():
-    """tax_credit type + cap_per_person → ATL deduction still applies (France CIC pattern)."""
+    """tax_credit type + cap_per_person -> ATL deduction still applies (France CIC pattern)."""
     row = _make_rebate_row(
         rate_gross=25.0,
         rate_type="tax_credit",
@@ -1207,10 +262,451 @@ def test_tax_credit_cap_per_person_still_triggers_atl():
 
 
 def test_transferable_tax_credit_without_cap_per_person_no_atl():
-    """transferable_tax_credit without cap_per_person — no ATL deduction, no note."""
+    """transferable_tax_credit without cap_per_person -- no ATL deduction, no note."""
     row = _make_rebate_row(rate_gross=30.0, rate_type="transferable_tax_credit")
     budget_gbp = 37_600_000.0
     result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
     assert result is not None
     assert result["atl_deduction_amount"] == 0.0
     assert result.get("atl_deduction_note") is None
+
+
+# ── qualifying_spend_type logic ────────────────────────────────────────────────
+
+
+def test_labour_type_reduces_qualifying_spend_to_labour_pct():
+    """qualifying_spend_type='labour' with explicit labour_pct reduces qualifying spend."""
+    row = _make_rebate_row(
+        rate_gross=16.0,
+        rate_type="tax_credit",
+        qualifying_spend_type="labour",
+        qualifying_spend_labour_pct=35.0,
+    )
+    budget_gbp = 15_040_000.0  # $20M at 0.7520
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected_qs = budget_gbp * 0.35
+    assert abs(result["qualifying_spend_before_atl"] - expected_qs) < 1.0, (
+        "qualifying_spend_before_atl should reflect 35% labour fraction"
+    )
+    assert result["qualifying_spend_pct"] == 35.0
+    assert "qualifying_spend_note" in result
+    assert "labour" in result["qualifying_spend_note"].lower()
+
+
+def test_labour_type_default_35pct_when_no_labour_pct_set():
+    """qualifying_spend_type='labour' with no qualifying_spend_labour_pct defaults to 35%."""
+    row = _make_rebate_row(
+        rate_gross=16.0,
+        rate_type="tax_credit",
+        qualifying_spend_type="labour",
+        qualifying_spend_labour_pct=None,
+    )
+    budget_gbp = 15_040_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected_qs = budget_gbp * 0.35
+    assert abs(result["qualifying_spend_before_atl"] - expected_qs) < 1.0
+
+
+def test_pstc_rebate_significantly_lower_than_full_budget():
+    """Canada PSTC pattern: 16% on 35% labour = much lower than 16% on full budget.
+
+    ATL deduction is NOT applied to labour-type credits: the 35% labour pct
+    already represents a BTL-weighted estimate of qualifying spend, so a second
+    15% ATL haircut would double-discount the base.
+    Correct: 16% x (35% x 15.04M) = 842K (no ATL deduction)
+    """
+    row = _make_rebate_row(
+        rate_gross=16.0,
+        rate_type="tax_credit",
+        qualifying_spend_type="labour",
+        qualifying_spend_labour_pct=35.0,
+    )
+    budget_gbp = 15_040_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    # No ATL deduction for labour credits — qualifying_spend = 35% x budget
+    expected_qs = budget_gbp * 0.35
+    expected_rebate = expected_qs * 0.16
+    assert abs(result["gross_rebate"] - expected_rebate) < 1.0
+    # Must be well below the full-budget calculation (16% x 100% budget)
+    full_budget_rebate = budget_gbp * 0.16
+    assert result["gross_rebate"] < full_budget_rebate * 0.5, (
+        "Labour-only rebate should be substantially less than full-budget calculation"
+    )
+
+
+def test_pdv_type_reduces_qualifying_spend_to_pdv_pct():
+    """qualifying_spend_type='pdv' with explicit pdv_pct reduces qualifying spend."""
+    row = _make_rebate_row(
+        rate_gross=30.0,
+        rate_type="tax_offset",
+        qualifying_spend_type="pdv",
+        qualifying_spend_labour_pct=15.0,
+    )
+    budget_gbp = 15_040_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected_qs = budget_gbp * 0.15
+    assert abs(result["qualifying_spend_before_atl"] - expected_qs) < 1.0
+    assert result["qualifying_spend_pct"] == 15.0
+    assert "qualifying_spend_note" in result
+    assert "post-production" in result["qualifying_spend_note"].lower()
+
+
+def test_pdv_rebate_significantly_lower_than_full_budget():
+    """Australia PDV Offset pattern: 30% on 15% PDV = much lower than 30% on full budget."""
+    row = _make_rebate_row(
+        rate_gross=30.0,
+        rate_type="tax_offset",
+        qualifying_spend_type="pdv",
+        qualifying_spend_labour_pct=15.0,
+    )
+    budget_gbp = 15_040_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected_rebate = budget_gbp * 0.15 * 0.30
+    assert abs(result["gross_rebate"] - expected_rebate) < 1.0
+    full_budget_rebate = budget_gbp * 0.30
+    assert result["gross_rebate"] < full_budget_rebate * 0.25, (
+        "PDV-only rebate should be much less than full-budget calculation"
+    )
+
+
+def test_local_spend_type_preserves_full_budget_but_adds_note():
+    """qualifying_spend_type='local_spend' with no cap_pct: calculation unchanged, note added."""
+    row = _make_rebate_row(
+        rate_gross=30.0,
+        rate_type="cash_rebate",
+        qualifying_spend_type="local_spend",
+    )
+    budget_gbp = 15_040_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    # Qualifying spend should be the full budget (no cap_pct set)
+    assert abs(result["qualifying_spend_before_atl"] - budget_gbp) < 1.0
+    assert "qualifying_spend_note" in result
+    assert "in-territory" in result["qualifying_spend_note"].lower()
+
+
+def test_local_spend_with_cap_pct_applies_cap():
+    """local_spend + qualifying_spend_cap_pct=75 applies the cap (Italy pattern)."""
+    row = _make_rebate_row(
+        rate_gross=40.0,
+        rate_type="tax_credit",
+        qualifying_spend_type="local_spend",
+        qualifying_spend_cap_pct=75.0,
+    )
+    budget_gbp = 15_040_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected_qs_before_atl = budget_gbp * 0.75
+    assert abs(result["qualifying_spend_before_atl"] - expected_qs_before_atl) < 1.0
+
+
+def test_total_type_with_null_preserves_existing_behaviour():
+    """qualifying_spend_type=None (NULL/default) behaves identically to 'total'."""
+    row_default = _make_rebate_row(rate_gross=30.0, rate_type="cash_rebate")
+    row_explicit = _make_rebate_row(
+        rate_gross=30.0, rate_type="cash_rebate", qualifying_spend_type="total"
+    )
+    budget_gbp = 15_040_000.0
+    r1 = ReportValidator._compute_corrected_rebate(row_default, budget_gbp, {})
+    r2 = ReportValidator._compute_corrected_rebate(row_explicit, budget_gbp, {})
+    assert r1 is not None and r2 is not None
+    assert r1["gross_rebate"] == r2["gross_rebate"]
+    assert r1.get("qualifying_spend_note") is None
+    assert r2.get("qualifying_spend_note") is None
+
+
+# ── Group A: rebate_cap_amount enforcement ────────────────────────────────────
+
+
+def test_rebate_cap_enforced_south_africa_static_fx():
+    """25% x 20M = 5M but R25M cap ~ 1.05M at static rate 23.8 -- cap wins."""
+    row = _make_rebate_row_with_cap(
+        rate_gross=25.0,
+        rate_type="cash_rebate",
+        rebate_cap_amount=25_000_000.0,
+        rebate_cap_currency="ZAR",
+    )
+    budget_gbp = 20_000_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    # Uncapped rebate would be 25% x 20M = 5M; cap = 25M / 23.8 ~ 1_050_420
+    expected_cap_gbp = 25_000_000.0 / 23.8
+    assert abs(result["gross_rebate"] - expected_cap_gbp) < 1.0
+    assert abs(result["net_rebate"] - expected_cap_gbp) < 1.0
+    assert result["gross_rebate"] < 2_000_000  # well below uncapped 5M
+    assert result.get("rebate_cap_note") is not None
+    assert "R25M" in result["rebate_cap_note"] or "25M" in result["rebate_cap_note"]
+
+
+def test_rebate_cap_not_applied_when_below_cap():
+    """Small budget produces a rebate below the R25M cap -- cap does not trigger."""
+    row = _make_rebate_row_with_cap(
+        rate_gross=25.0,
+        rate_type="cash_rebate",
+        rebate_cap_amount=25_000_000.0,
+        rebate_cap_currency="ZAR",
+    )
+    budget_gbp = 100_000.0  # 25% x 100K = 25K -- far below R25M ~ 1.05M
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    assert abs(result["gross_rebate"] - 25_000.0) < 1.0
+    assert result.get("rebate_cap_note") is None
+
+
+def test_rebate_cap_with_explicit_fx_rate():
+    """Explicit fx_rate_to_gbp=24.0 takes precedence over the static fallback."""
+    row = _make_rebate_row_with_cap(
+        rate_gross=25.0,
+        rate_type="cash_rebate",
+        rebate_cap_amount=25_000_000.0,
+        rebate_cap_currency="ZAR",
+    )
+    budget_gbp = 20_000_000.0
+    result = ReportValidator._compute_corrected_rebate(
+        row, budget_gbp, {}, fx_rate_to_gbp=24.0
+    )
+    assert result is not None
+    expected_cap_gbp = 25_000_000.0 / 24.0  # ~ 1_041_666
+    assert abs(result["gross_rebate"] - expected_cap_gbp) < 1.0
+    assert result.get("rebate_cap_note") is not None
+
+
+def test_rebate_cap_no_cap_amount_leaves_rebate_unchanged():
+    """When rebate_cap_amount is None, existing calculation is unchanged."""
+    row = _make_rebate_row_with_cap(
+        rate_gross=25.0,
+        rate_type="cash_rebate",
+        rebate_cap_amount=None,
+        rebate_cap_currency=None,
+    )
+    budget_gbp = 20_000_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    assert abs(result["gross_rebate"] - 5_000_000.0) < 1.0
+    assert result.get("rebate_cap_note") is None
+
+
+# ── Group C: BC PSTC wins over FIBC for foreign producer ─────────────────────
+
+
+def test_bc_pstc_wins_over_fibc_for_foreign_producer():
+    """BC PSTC (NULL nationality) should be selected over FIBC (CA-only) for foreign producers."""
+    fibc = _make_best_incentive_row_bc(
+        "BC Film Incentive BC Tax Credit (FIBC)",
+        rate_gross=40.0,
+        nationality_requirements='["CA"]',
+        spv_eligible=False,
+    )
+    pstc = _make_best_incentive_row_bc(
+        "BC Production Services Tax Credit (PSTC)",
+        rate_gross=36.0,
+        nationality_requirements=None,
+        spv_eligible=False,
+    )
+    result = _best_incentive([fibc, pstc])
+    assert result["program"] == "BC Production Services Tax Credit (PSTC)"
+
+
+def test_bc_fibc_wins_when_only_option():
+    """When PSTC is absent, FIBC is returned (graceful degradation)."""
+    fibc = _make_best_incentive_row_bc(
+        "BC Film Incentive BC Tax Credit (FIBC)",
+        rate_gross=40.0,
+        nationality_requirements='["CA"]',
+        spv_eligible=False,
+    )
+    result = _best_incentive([fibc])
+    assert result["program"] == "BC Film Incentive BC Tax Credit (FIBC)"
+
+
+# ── Group J: atl_exempt flag skips ATL deduction ─────────────────────────────
+
+
+def test_atl_exempt_true_skips_atl_deduction():
+    """atl_exempt=True (AVEC) -> no ATL deduction applied regardless of rate_type."""
+    row = _make_atl_exempt_row(rate_gross=34.0, rate_type="tax_credit", atl_exempt=True)
+    budget_gbp = 25_000_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    assert result["atl_deduction_amount"] == 0.0
+    assert result.get("atl_deduction_note") is None
+
+
+def test_atl_exempt_true_avec_rebate_uses_full_80pct_qualifying_spend():
+    """AVEC: 34% x 80% x 25M = 6,800,000 (no 15% ATL deduction)."""
+    row = _make_atl_exempt_row(
+        rate_gross=34.0, rate_type="tax_credit",
+        atl_exempt=True, qualifying_spend_cap_pct=80.0,
+    )
+    budget_gbp = 25_000_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    expected = 25_000_000.0 * 0.80 * 0.34
+    assert abs(result["gross_rebate"] - expected) < 1.0
+
+
+def test_atl_exempt_false_applies_atl_deduction_as_normal():
+    """atl_exempt=False (or absent) -> ATL deduction applied to tax_credit type.
+
+    ATL deduction = 15% of TOTAL budget (not 15% of qualifying spend).
+    qualifying_spend_before_atl = 80% x 25M = 20M
+    atl_deduction = 15% x 25M = 3.75M
+    net_qualifying_spend = 20M - 3.75M = 16.25M
+    gross_rebate = 16.25M x 34% = 5,525,000
+    """
+    row = _make_atl_exempt_row(
+        rate_gross=34.0, rate_type="tax_credit",
+        atl_exempt=False, qualifying_spend_cap_pct=80.0,
+    )
+    budget_gbp = 25_000_000.0
+    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
+    assert result is not None
+    # ATL deduction = 15% of total budget
+    atl_deduction = budget_gbp * 0.15
+    qs_before_atl = budget_gbp * 0.80
+    expected_rebate = (qs_before_atl - atl_deduction) * 0.34  # = 5,525,000
+    assert abs(result["gross_rebate"] - expected_rebate) < 1.0
+    assert result["atl_deduction_amount"] > 0
+
+
+# ── assert_integrity tests ───────────────────────────────────────────────────
+
+class TestAssertIntegrity:
+    """Tests for ReportValidator.assert_integrity (builder-path assertions)."""
+
+    @staticmethod
+    def _make_builder_report(territories=None):
+        """Minimal report that looks like builder output."""
+        territories = territories or ["United Kingdom"]
+        return {
+            "genre": "Drama",
+            "tone": "Tense",
+            "scale": "Medium",
+            "complexity": "Medium",
+            "locationRankings": [
+                {
+                    "name": t,
+                    "score": 70 - i * 5,
+                    "costEfficiency": 60,
+                    "crewDepth": 65,
+                    "infrastructure": 70,
+                    "incentiveStrength": 75,
+                    "incentiveReliability": 80,
+                    "currencyAdvantage": 55,
+                    "reasoning": ["Good incentives"],
+                    "keyAdvantages": ["Strong crew base"],
+                    "keyRisks": ["Weather risk"],
+                }
+                for i, t in enumerate(territories)
+            ],
+            "incentiveEstimates": [
+                {"programName": "AVEC", "territory": "United Kingdom"}
+            ],
+            "executiveSummary": {
+                "keyInsights": "UK is recommended.",
+                "recommendedTerritory": territories[0],
+                "recommendedTerritoryScore": 70,
+            },
+        }
+
+    @staticmethod
+    def _make_datasets(territories=None):
+        territories = territories or ["United Kingdom"]
+        return {
+            "incentives": [
+                {"program_name": "AVEC", "territory": t, "rate_gross": 25}
+                for t in territories
+            ],
+        }
+
+    def test_clean_report_no_warnings(self):
+        report = self._make_builder_report()
+        datasets = self._make_datasets()
+        result, warnings = ReportValidator.assert_integrity(report, datasets)
+        assert result is report
+        structure_warnings = [
+            w for w in warnings
+            if any(tag in w for tag in ("[structure]", "[scores]", "[financial]", "[coverage]", "[narrative]"))
+        ]
+        assert len(structure_warnings) == 0
+
+    def test_missing_genre_warned(self):
+        report = self._make_builder_report()
+        report["genre"] = None
+        _, warnings = ReportValidator.assert_integrity(report, self._make_datasets())
+        assert any("genre" in w for w in warnings)
+
+    def test_score_out_of_bounds_clamped(self):
+        report = self._make_builder_report()
+        report["locationRankings"][0]["costEfficiency"] = 150
+        result, warnings = ReportValidator.assert_integrity(report, self._make_datasets())
+        assert result["locationRankings"][0]["costEfficiency"] == 100
+        assert any("clamped" in w for w in warnings)
+
+    def test_unknown_programme_warned(self):
+        report = self._make_builder_report()
+        report["incentiveEstimates"].append(
+            {"programName": "Nonexistent Programme", "territory": "UK"}
+        )
+        _, warnings = ReportValidator.assert_integrity(report, self._make_datasets())
+        assert any("Nonexistent Programme" in w for w in warnings)
+
+    def test_territory_without_db_data_warned(self):
+        report = self._make_builder_report(territories=["Atlantis"])
+        datasets = self._make_datasets()  # only has UK
+        _, warnings = ReportValidator.assert_integrity(report, datasets)
+        assert any("Atlantis" in w for w in warnings)
+
+    def test_missing_reasoning_warned(self):
+        report = self._make_builder_report()
+        report["locationRankings"][0]["reasoning"] = None
+        _, warnings = ReportValidator.assert_integrity(report, self._make_datasets())
+        assert any("reasoning" in w for w in warnings)
+
+    def test_rankings_sorted_by_score(self):
+        report = self._make_builder_report(territories=["UK", "Canada", "Ireland"])
+        report["locationRankings"][0]["score"] = 50
+        report["locationRankings"][1]["score"] = 80
+        report["locationRankings"][2]["score"] = 65
+        datasets = self._make_datasets(territories=["UK", "Canada", "Ireland"])
+        result, _ = ReportValidator.assert_integrity(report, datasets)
+        scores = [loc["score"] for loc in result["locationRankings"]]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_executive_summary_updated_after_sort(self):
+        report = self._make_builder_report(territories=["UK", "Canada"])
+        report["locationRankings"][0]["score"] = 50  # UK lower
+        report["locationRankings"][1]["score"] = 80  # Canada higher
+        # Set initial headline data pointing at UK (the original #1)
+        report["executiveSummary"]["recommendedTerritoryRebate"] = "£1,000,000"
+        report["executiveSummary"]["headlineNetBudget"] = "approximately £19,000,000"
+        datasets = self._make_datasets(territories=["UK", "Canada"])
+        # Add territory financials so headline can be refreshed
+        datasets["_territory_financials"] = {
+            "UK": {"gross_rebate": "£1,000,000", "headline_net_budget": "approximately £19,000,000"},
+            "Canada": {"gross_rebate": "C$2,000,000", "headline_net_budget": "approximately C$34,000,000"},
+        }
+        datasets["incentives"] = [
+            {"program_name": "AVEC", "territory": "UK", "rate_gross": 25,
+             "payment_timeline_notes": "6-12 months via HMRC"},
+            {"program_name": "PSTC", "territory": "Canada", "rate_gross": 16,
+             "payment_timeline_notes": "4-12 months via CRA"},
+        ]
+        result, _ = ReportValidator.assert_integrity(report, datasets)
+        assert result["executiveSummary"]["recommendedTerritory"] == "Canada"
+        assert result["executiveSummary"]["recommendedTerritoryScore"] == 80
+        # Financial headline must match Canada, not UK
+        assert result["executiveSummary"]["recommendedTerritoryRebate"] == "C$2,000,000"
+        assert "C$34,000,000" in result["executiveSummary"]["headlineNetBudget"]
+        assert "CRA" in result["executiveSummary"]["recommendedTerritoryPaymentSpeed"]
+
+    def test_null_narrative_dimensions_warned(self):
+        report = self._make_builder_report()
+        report["locationRankings"][0]["costEfficiency"] = None
+        _, warnings = ReportValidator.assert_integrity(report, self._make_datasets())
+        assert any("costEfficiency" in w and "None" in w for w in warnings)

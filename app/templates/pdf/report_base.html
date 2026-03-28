@@ -1416,7 +1416,7 @@
   <div class="card">
     <div class="card-header">
       <div>
-        <h4 style="margin: 0;">{{ comp.title }} ({{ comp.year }})</h4>
+        <h4 style="margin: 0;">{{ comp.title }}{% if comp.year %} ({{ comp.year }}){% endif %}</h4>
         <span class="muted">{{ comp.genre }}</span>
       </div>
       <span class="tag tag-gold">{{ comp.budgetRange }}</span>
@@ -1424,7 +1424,7 @@
     <table style="margin-bottom: 0;">
       <tr><td class="muted" style="width: 100px;">Territory</td><td>{{ comp.location }}</td></tr>
       {% if comp.relevanceDescription %}<tr><td class="muted">Relevance</td><td style="font-size: 9px;">{{ comp.relevanceDescription }}</td></tr>{% endif %}
-      <tr><td class="muted">Source</td><td style="font-size: 9px;">{{ comp.source or "N/A" }}</td></tr>
+      {% if comp.source %}<tr><td class="muted">Source</td><td style="font-size: 9px;">{{ comp.source }}</td></tr>{% endif %}
     </table>
   </div>
   {% endfor %}

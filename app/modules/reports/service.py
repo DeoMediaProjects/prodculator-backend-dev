@@ -336,7 +336,8 @@ class ReportService:
             territories_hint=self._resolve_territories_hint(request_metadata)
         )
         self._inject_derived_data(datasets, script_analysis=None, request_metadata=request_metadata)
-        return script_service.generate_production_analysis(
+        return self._generate_via_builder(
+            script_service=script_service,
             script_analysis=None,
             request_metadata=request_metadata,
             datasets=datasets,
@@ -357,7 +358,8 @@ class ReportService:
             territories_hint=self._resolve_territories_hint(request_metadata)
         )
         self._inject_derived_data(datasets, script_analysis=script_analysis, request_metadata=request_metadata)
-        report_data = script_service.generate_production_analysis(
+        report_data = self._generate_via_builder(
+            script_service=script_service,
             script_analysis=script_analysis,
             request_metadata=request_metadata,
             datasets=datasets,
@@ -369,6 +371,45 @@ class ReportService:
 
         return report_data
 
+    def _generate_via_builder(
+        self,
+        *,
+        script_service: ScriptAnalysisService,
+        script_analysis: ScriptAnalysisResult | None,
+        request_metadata: dict,
+        datasets: dict,
+        is_preview: bool,
+    ) -> dict:
+        """Builder path: deterministic skeleton + narrative-only AI call."""
+        from app.modules.reports.builder import ReportBuilder
+        from app.modules.reports.validator import ReportValidator
+
+        builder = ReportBuilder(
+            datasets=datasets,
+            request_metadata=request_metadata,
+            script_analysis=script_analysis,
+            is_preview=is_preview,
+        )
+        skeleton = builder.build()
+
+        report_data = script_service.generate_production_analysis_v2(
+            skeleton=skeleton,
+            script_analysis=script_analysis,
+            request_metadata=request_metadata,
+            datasets=datasets,
+            is_preview=is_preview,
+        )
+
+        report_data, warnings = ReportValidator.assert_integrity(
+            report_data, datasets
+        )
+        if warnings:
+            logger.info(
+                "Builder path: %d integrity warnings",
+                len(warnings),
+            )
+        return report_data
+
     def _inject_derived_data(
         self,
         datasets: dict,
@@ -378,8 +419,8 @@ class ReportService:
     ) -> None:
         """Compute and inject derived signals into *datasets* in-place.
 
-        These are used by both the AI prompt (via generate_production_analysis)
-        and the post-processing validator (ReportValidator.validate).
+        These are used by the ReportBuilder, the AI narrative prompt, and
+        the post-processing validator (ReportValidator.assert_integrity).
         """
         # Shoot window
         shoot_months = self._compute_shoot_months(
@@ -432,11 +473,49 @@ class ReportService:
         datasets["_producer_country"] = request_metadata.get("producer_country")
         datasets["_co_production_status"] = request_metadata.get("co_production_status")
 
+        # Visa requirements — load DB-backed entries for the user's base country
+        # so the validator can replace AI-generated travelVisa fields with
+        # authoritative data instead of accepting hallucinated advice.
+        base_country = request_metadata.get("country") or "United Kingdom"
+        visa_rows = self._safe_query(
+            "visa_requirements",
+            lambda q: q.select("destination,visa_required,work_permit_required,notes")
+                       .eq("base_country", base_country),
+        )
+        datasets["_visa_requirements"] = {
+            (row.get("destination") or "").strip(): {
+                "visa_required": row.get("visa_required"),
+                "work_permit_required": row.get("work_permit_required"),
+                "notes": row.get("notes") or "",
+            }
+            for row in visa_rows
+            if row.get("destination")
+        }
+
         # v3: Production priority (needed by validator for score recalculation)
         datasets["_production_priority"] = request_metadata.get("production_priority", "full")
 
+        # User-submitted territories — canonical labels for builder territory selection.
+        # Resolved via the same normalisation as _resolve_territories_hint.
+        raw_considering = request_metadata.get("territories_considering") or []
+        user_territories: list[str] = []
+        seen_ut: set[str] = set()
+        for raw in raw_considering:
+            if raw.lower() in ("open to all", "open"):
+                continue
+            t = resolve_territory(raw)
+            label = t.label if t else raw
+            if label not in seen_ut:
+                seen_ut.add(label)
+                user_territories.append(label)
+        datasets["_user_territories"] = user_territories
+
         # v3: Production format (needed by validator for format harmonisation)
         datasets["_production_format"] = request_metadata.get("format")
+
+        # Episode metadata — used by validator for UK AVEC HETV threshold check
+        datasets["_total_episodes"] = request_metadata.get("total_episodes")
+        datasets["_episode_runtime_minutes"] = request_metadata.get("episode_runtime_minutes")
 
         # v3: Budget conversion to GBP
         budget_amount = request_metadata.get("budget_amount")
@@ -546,9 +625,20 @@ class ReportService:
             if not territory or not rows:
                 continue
             best = _best_incentive(rows, production_format)
+
+            # Resolve FX rate for rebate cap enforcement (e.g. South Africa R25M).
+            # When budget_currency is GBP, fx_rates_from_budget gives GBP→cap_currency.
+            rebate_cap_currency = best.get("rebate_cap_currency")
+            fx_rate_to_gbp: float | None = None
+            if rebate_cap_currency and rebate_cap_currency != "GBP" and budget_currency == "GBP":
+                fx_info = fx_rates_from_budget.get(rebate_cap_currency)
+                if fx_info and fx_info.get("rate"):
+                    fx_rate_to_gbp = fx_info["rate"]  # GBP → rebate_cap_currency
+
             corrected = ReportValidator._compute_corrected_rebate(
                 best, budget_gbp, territory_incentives,
                 production_format=production_format,
+                fx_rate_to_gbp=fx_rate_to_gbp,
             )
             if corrected is None:
                 continue
@@ -641,6 +731,8 @@ class ReportService:
                 "programme": programme_name,
                 "programme_note": corrected.get("programme_note"),
                 "atl_deduction_note": corrected.get("atl_deduction_note"),
+                "rebate_cap_note": corrected.get("rebate_cap_note"),
+                "qualifying_spend_note": corrected.get("qualifying_spend_note"),
                 "fx_note": fx_note,
                 "crew_rates": crew_rates,
                 # Budget-currency equivalents for context in prompt

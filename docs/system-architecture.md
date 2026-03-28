@@ -207,9 +207,22 @@ ScriptAnalysisResult:
   rawResponse: str                   # JSON telemetry blob (mode, chunk stats, confidence)
 ```
 
-### 5.2 Stage 2: Production Analysis (`generate_production_analysis()`)
+### 5.2 Stage 2: Production Analysis (Deterministic Builder + AI Narrative Fill)
 
 **Purpose:** Cross-reference script signals + user metadata + admin datasets → comprehensive territory-ranked intelligence report.
+
+#### Architecture: Builder → AI → Merge → Assert
+
+The pipeline uses a **deterministic-first** approach: `ReportBuilder` constructs a complete report skeleton from DB data (all financial figures, scores, structured fields), then the AI fills only ~15 narrative/qualitative fields via a focused prompt.
+
+```
+Datasets → ReportBuilder.build() → skeleton (narratives = null)
+  → AI call (skeleton + script analysis) → narrative-only JSON
+  → merge narratives into skeleton
+  → compute_overall_scores() → weighted 6-dimension scoring
+  → ReportValidator.assert_integrity() → lightweight checks
+  → PDF → persist
+```
 
 #### Inputs
 
@@ -219,52 +232,26 @@ ScriptAnalysisResult:
    - Optional: territories to consider, filming dates, crew size, producer country, co-production status
 3. **Admin Datasets** — Loaded from the database:
    - Incentive programs (with FX freshness annotations)
-   - Crew costs (FX-enriched to GBP)
-   - Cast costs (FX-enriched to GBP)
-   - Comparable productions
-   - Grant opportunities (open/upcoming)
-   - Film festivals (open/upcoming)
-   - Territory weather data
-   - Stacking map (incentive stacking groups)
+   - Crew costs (FX-enriched to budget currency)
+   - Cast costs (FX-enriched to budget currency)
+   - Comparable productions, Grant opportunities, Film festivals
+   - Territory weather data, Stacking map
 
-#### Derived Signals
+#### ReportBuilder (`app/modules/reports/builder.py`)
 
-Before calling Claude, the system computes and injects:
+Constructs the complete report skeleton deterministically. All financial data, incentive rates, scoring (3 of 6 dimensions), eligibility checks, weather risk, stacking logic, and budget scenarios are computed from DB data without any AI involvement.
 
-- **Shoot Window** — From `filming_start_date` + `filming_duration` → specific months, season classification.
-- **Scene Exposure Profile** — ext/int ratio → weather exposure level (high/medium/low).
-- **Producer Eligibility Context** — Producer country + co-production status for nationality checks.
+**Six scoring dimensions** — 3 deterministic from DB, 3 AI-generated:
+- DB: `incentiveStrength`, `incentiveReliability`, `currencyAdvantage`
+- AI: `costEfficiency`, `crewDepth`, `infrastructure`
 
-#### The AI Prompt
+**Territory selection** uses user-submitted `territories_considering`, filtered to those with active incentive data. Supplementary-only territories are excluded from rankings.
 
-A massive, highly structured system prompt (`PRODUCTION_ANALYSIS_PROMPT`, ~450 lines) instructs Claude to act as an **expert production intelligence analyst**. Key rules:
+#### AI Narrative Fill (`_NARRATIVE_FILL_PROMPT`, ~50 lines)
 
-- **Data integrity:** Copy incentive rates, caps, payment timelines, eligibility rules **verbatim** from the dataset — never hallucinate.
-- **Territory-specific rules:** UK AVEC two-tier rates, Hungary VFX uplift, Malta ATL+BTL, Nigeria zero-rate guard, USA state-level only.
-- **Scoring:** 5 sub-scores per territory (costEfficiency, crewDepth, infrastructure, incentiveStrength, currencyAdvantage) → weighted by user's `production_priority`.
-- **Weather integration:** Cross-reference shoot months with territory weather data; flag high-risk overlaps.
-- **Producer eligibility:** Check nationality requirements; flag co-production/SPV needs.
-- **Regional stacking:** Show national + regional incentives when stackable.
-
-The user message assembles all data sections with clear delimiters:
-
-```
-=== PROJECT METADATA ===
-=== SCRIPT ANALYSIS (from script parse) ===
-=== REFERENCE DATASETS ===
-  INCENTIVE PROGRAMS (25 records in prompt):
-  CREW COST BENCHMARKS (25 records):
-  ...
-  TERRITORY WEATHER DATA (180 records):
-=== DERIVED: SHOOT WINDOW ===
-=== DERIVED: SCENE EXPOSURE PROFILE ===
-=== DERIVED: PRODUCER ELIGIBILITY CONTEXT ===
-=== MODE: FULL PAID REPORT ===
-```
+The AI receives the pre-built skeleton (for context) plus script analysis, and returns ONLY narrative fields: `genre`, `tone`, `scale`, `complexity`, location reasoning/advantages/risks, crew narratives, comparable descriptions, weather notes, deep dive narratives, and `alternativeStrategy`.
 
 #### Output: Production Analysis Report
-
-The AI returns a JSON object conforming to the `ScriptAnalysis` schema:
 
 ```
 ScriptAnalysis Report:
@@ -280,29 +267,14 @@ ScriptAnalysis Report:
 ├── fundingOpportunities[]  — grants + festivals matching the project
 ├── alternativeStrategy     — multi-territory or alternative approach recommendation
 ├── attributions[]          — data source citations per territory
-└── crewCostDisclaimer      — mandatory legal disclaimer
+└── sectionExplainers       — hardcoded explanatory text per section
 ```
 
-### 5.3 Stage 3: Post-Processing Validation (`app/modules/reports/validator.py`)
+### 5.3 Stage 3: Integrity Assertions (`ReportValidator.assert_integrity()`)
 
-**Purpose:** Override any AI hallucinations with ground-truth data from the same datasets that were in the prompt.
+**Purpose:** Lightweight structural validation after builder + AI merge. Verifies required fields, score bounds, financial consistency, and fills safe defaults for any missing narrative fields.
 
-The `ReportValidator` runs after Claude returns and performs systematic patches:
-
-| Patch                    | What It Does                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Incentive Estimates**  | Overrides rate, cap, payment timeline, qualifying spend, eligibility rules with exact values from the incentive dataset. Nigeria zero-rate guard. |
-| **Location Rankings**    | Patches rebatePercent, paymentSpeed, data freshness fields on each ranked territory.                                                              |
-| **Territory Deep Dives** | Patches rebate and payment speed fields.                                                                                                          |
-| **Executive Summary**    | Patches recommended territory's payment speed.                                                                                                    |
-| **Crew Insights**        | Patches FX rate, currency, data source from enriched crew cost rows.                                                                              |
-| **Cast Insights**        | Patches FX and source fields.                                                                                                                     |
-| **Stacking Logic**       | Ensures regional+national stacking is correctly represented using `stackable_with` fields.                                                        |
-| **Weather Risk**         | Cross-references weather data with shoot months; adjusts weather risk scores; injects delay estimates.                                            |
-| **Eligibility**          | Checks nationality requirements against producer country; sets eligibility status per incentive.                                                  |
-| **Attributions**         | Injects government data source citations and the mandatory crew cost disclaimer.                                                                  |
-
-Every override generates a warning log entry for auditing.
+Unlike the old architecture (which ran 25+ patch methods to overwrite AI output), the builder constructs correct data upfront, so the validator only asserts correctness rather than correcting it.
 
 ### 5.4 Preview vs Paid Reports
 
@@ -331,10 +303,10 @@ POST /api/reports  (body: {report_type: "preview", metadata...})
   │
   ├─ Email gating check (is email blocked?)
   ├─ Load admin datasets (incentives, crew costs, etc.)
-  ├─ Inject derived data (shoot window, scene exposure)
-  ├─ Call generate_production_analysis(script_analysis=None, is_preview=True)
-  │   └─ Claude generates 3-territory preview report
-  ├─ ReportValidator.validate() — patches hallucinations
+  ├─ Inject derived data (shoot window, scene exposure, territory financials)
+  ├─ ReportBuilder.build() → deterministic skeleton (3 territories, preview mode)
+  ├─ AI narrative fill → merge into skeleton → compute scores
+  ├─ ReportValidator.assert_integrity() → structural checks
   ├─ Record email gating usage
   └─ Return PreviewReportResponse { analysis: {...} }
 ```
@@ -354,11 +326,12 @@ POST /api/reports  (multipart: script_file + body JSON)
       ├─ Load report row + metadata
       ├─ Send "processing started" email
       ├─ Script Analysis (Stage 1) → ScriptAnalysisResult
-      ├─ Production Analysis (Stage 2) → full report JSON
-      │   ├─ Load datasets
-      │   ├─ Inject derived data
-      │   ├─ Claude generates full report
-      │   └─ ReportValidator patches
+      ├─ Production Analysis (Stage 2):
+      │   ├─ Load datasets + inject derived data
+      │   ├─ ReportBuilder.build() → deterministic skeleton
+      │   ├─ AI narrative fill (focused ~50-line prompt)
+      │   ├─ Merge narratives → compute overall scores
+      │   └─ ReportValidator.assert_integrity()
       ├─ PDF Generation
       │   ├─ Render Jinja2 HTML template
       │   ├─ WeasyPrint → PDF bytes

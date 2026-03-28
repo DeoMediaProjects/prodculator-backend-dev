@@ -50,6 +50,9 @@ class CreateReportRequest(BaseModel):
     territories_considering: list[str] | None = None
     filming_start_date: str | None = None
     filming_duration: int | None = None
+    # TV series episode metadata — used for UK AVEC HETV threshold verification
+    total_episodes: int | None = None
+    episode_runtime_minutes: int | None = None
     camera_equipment: list[str] | None = None
     crew_size: int | None = None
     principal_cast: int | None = None
