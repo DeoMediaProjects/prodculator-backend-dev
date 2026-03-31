@@ -372,39 +372,40 @@ class ReportValidator:
                 tiers = []
 
             if isinstance(tiers, list) and len(tiers) >= 2:
-                # Distinguish two tier formats:
+                # tier_type on tiers[0] determines how to interpret the set:
                 #
-                # 1. Spend-boundary tiers (UK IFTC, Spain):
-                #    [{"label":"First GBP15M...","rate_gross":53},
-                #     {"label":"Above GBP15M...","rate_gross":34}]
-                #    -> different rates at different spend thresholds, need blending
+                # "spend_boundary" (UK IFTC, Spain, Canary Islands, Ireland):
+                #   Different rates apply to different portions of the qualifying spend.
+                #   The boundary amount is parsed from the tier label and a blended rate
+                #   is calculated (e.g. 53% on first £15M, 34% on remainder → blended).
                 #
-                # 2. Additive uplift components (Georgia, NM, Czech):
-                #    [{"label":"Base credit","rate_gross":20},
-                #     {"label":"With logo","rate_gross":10}]
-                #    -> components that sum to the headline rate; the DB's
-                #      rate_gross/rate_net already reflects the correct total.
+                # "informational" (France TRIP, Czech, Malta, US states, etc.):
+                #   Tiers describe categories or conditions — the DB headline rate_gross/
+                #   rate_net is the correct rate for the primary calculation scenario.
+                #   No blending — use the headline rate directly.
                 #
-                # We detect spend-boundary tiers by the presence of a monetary
-                # amount (e.g. "EUR1M", "GBP15M") in any tier label.  If none is
-                # found the tiers are informational and we keep the headline rates.
+                # All rows are stamped by migration n6o7p8q9r0s1. A missing tier_type
+                # is a data error; treat as informational (safe default — avoids
+                # fabricating a blended rate from an unclassified label).
                 import re as _re
+                first_tier_type = (tiers[0].get("tier_type") or "").lower()
                 tier_boundary: float | None = None
-                for tier in tiers:
-                    label = str(tier.get("label", "")).lower()
-                    amount_match = _re.search(r'[\u00a3$\u20ac](\d+(?:\.\d+)?)\s*[mM]', label)
-                    if amount_match:
-                        tier_boundary = float(amount_match.group(1)) * 1_000_000
-                        break
+
+                if first_tier_type == "spend_boundary":
+                    for tier in tiers:
+                        label = str(tier.get("label", "")).lower()
+                        amount_match = _re.search(
+                            r'[\u00a3$\u20ac](\d+(?:\.\d+)?)\s*[mM]', label
+                        )
+                        if amount_match:
+                            tier_boundary = float(amount_match.group(1)) * 1_000_000
+                            break
 
                 if tier_boundary is not None:
-                    # Spend-boundary tiers — apply blended rate logic
                     if qualifying_spend <= tier_boundary:
-                        # All spend is in the first (enhanced) tier
                         effective_rate_gross = _to_float(tiers[0].get("rate_gross")) or effective_rate_gross
                         effective_rate_net = _to_float(tiers[0].get("rate_net")) or effective_rate_net
                     else:
-                        # Blended: first tier up to boundary, second tier for remainder
                         t1_gross = _to_float(tiers[0].get("rate_gross")) or 0
                         t1_net = _to_float(tiers[0].get("rate_net")) or 0
                         t2_gross = _to_float(tiers[1].get("rate_gross")) or 0
@@ -417,7 +418,6 @@ class ReportValidator:
                         effective_rate_net = (
                             (t1_net * spend_t1 + t2_net * spend_t2) / qualifying_spend
                         ) if qualifying_spend > 0 else t2_net
-                # else: additive/informational tiers — headline rates are correct
 
         # Step 3 — ATL (above-the-line) deduction
         #

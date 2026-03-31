@@ -20,8 +20,14 @@ STALE_DAYS = 365
 # is a standard conservative assumption used in UK/EU tax credit modelling.
 DEFAULT_ATL_PCT = 0.15
 
-# rate_type values that trigger automatic ATL deduction
-TAX_CREDIT_RATE_TYPES = {"tax_credit", "enhanced_tax_credit"}
+# rate_type values that trigger automatic ATL deduction.
+# "refundable_tax_credit" is included because refundability describes payment
+# mechanics (cash returned vs. tax liability offset) — not qualifying spend
+# rules.  California Program 4.0 and New Mexico are refundable credits that
+# still categorically exclude ATL costs from qualified expenditures by statute
+# (R&TC § 17053.98(b)(21)(B)).  Omitting this type caused California to compute
+# rebates on 100% of budget rather than the BTL-only qualifying base.
+TAX_CREDIT_RATE_TYPES = {"tax_credit", "enhanced_tax_credit", "refundable_tax_credit"}
 
 # Fallback FX rates (GBP→X) when live rates are unavailable
 STATIC_FX_TO_GBP: dict[str, float] = {

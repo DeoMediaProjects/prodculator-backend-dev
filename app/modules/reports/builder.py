@@ -175,9 +175,7 @@ class ReportBuilder:
             "comparables": self._build_comparables(),
             "weatherLogistics": self._build_weather_logistics(territories),
             "fundingOpportunities": self._build_funding_opportunities(),
-            "territoryDeepDives": self._build_territory_deep_dives(
-                territories[:3]
-            ),
+            "territoryDeepDives": self._build_territory_deep_dives(territories),
             "attributions": self._build_attributions(territories),
             # AI fills this
             "alternativeStrategy": None,
@@ -244,6 +242,18 @@ class ReportBuilder:
                         )
                         if best_child not in territories:
                             territories.append(best_child)
+                    else:
+                        # t is a sub-territory (e.g. "Scotland") whose incentives
+                        # are stored under its parent ("United Kingdom").  Look up
+                        # the parent via the Territory enum and use it instead.
+                        enum_t = resolve_territory(t)
+                        if enum_t and enum_t.parent:
+                            parent_label = enum_t.parent.label
+                            if (
+                                parent_label in self._territory_incentives
+                                and parent_label not in territories
+                            ):
+                                territories.append(parent_label)
         else:
             # Fallback: all territories with pre-computed financials
             territories = list(self._territory_financials.keys())

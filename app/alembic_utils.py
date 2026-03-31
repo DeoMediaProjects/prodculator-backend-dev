@@ -71,6 +71,48 @@ def assert_migration(
                     )
 
 
+def validate_rate_tiers(tiers: list[dict], *, context: str = "") -> None:
+    """Raise ValueError if any tier that sets rate_gross is missing an explicit tier_type.
+
+    Call this in migration upgrade() functions before writing rate_tier_json to the DB.
+    Prevents the rate calculator's regex heuristic from silently misclassifying new tiers
+    as spend-boundary thresholds when they are actually informational or conditional.
+
+    Valid tier_type values:
+        "spend_boundary"  — different rates apply to different portions of the same
+                            qualifying spend (e.g. UK IFTC: 53% on first £15M, 34%
+                            on remainder). Triggers blended rate calculation.
+        "informational"   — tiers describe categories or conditions; the headline
+                            rate_gross/rate_net on the programme row is the correct
+                            rate for the primary calculation scenario. No blending.
+
+    Args:
+        tiers: Parsed list of tier dicts (from rate_tier_json).
+        context: Optional label (e.g. "France TRIP") for clearer error messages.
+    """
+    valid_types = {"spend_boundary", "informational"}
+    prefix = f"{context}: " if context else ""
+    for i, tier in enumerate(tiers):
+        if tier.get("rate_gross") is None:
+            continue
+        tier_type = tier.get("tier_type")
+        if not tier_type:
+            label = tier.get("label") or f"tier[{i}]"
+            raise ValueError(
+                f"{prefix}Tier '{label}' sets rate_gross but has no 'tier_type'. "
+                "Set \"tier_type\": \"spend_boundary\" (rates apply to different "
+                "portions of the qualifying spend — blending required) or "
+                "\"tier_type\": \"informational\" (rates describe categories or "
+                "conditions — headline rate is used for calculation)."
+            )
+        if tier_type not in valid_types:
+            label = tier.get("label") or f"tier[{i}]"
+            raise ValueError(
+                f"{prefix}Tier '{label}' has unrecognised tier_type={tier_type!r}. "
+                f"Valid values: {sorted(valid_types)}"
+            )
+
+
 def assert_migration_count(
     conn: Any,
     table: str,

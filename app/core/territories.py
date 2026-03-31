@@ -141,6 +141,66 @@ class Territory(enum.Enum):
         aliases=("NG", "Nollywood"),
         parent=None,
     )
+    BELGIUM = _TerritoryInfo(
+        label="Belgium",
+        iso="BE",
+        aliases=("BE", "Belgique", "België"),
+        parent=None,
+    )
+    INDIA = _TerritoryInfo(
+        label="India",
+        iso="IN",
+        aliases=("IN",),
+        parent=None,
+    )
+    JAPAN = _TerritoryInfo(
+        label="Japan",
+        iso="JP",
+        aliases=("JP",),
+        parent=None,
+    )
+    MOROCCO = _TerritoryInfo(
+        label="Morocco",
+        iso="MA",
+        aliases=("MA", "Maroc"),
+        parent=None,
+    )
+    NETHERLANDS = _TerritoryInfo(
+        label="Netherlands",
+        iso="NL",
+        aliases=("NL", "Holland", "The Netherlands"),
+        parent=None,
+    )
+    PORTUGAL = _TerritoryInfo(
+        label="Portugal",
+        iso="PT",
+        aliases=("PT",),
+        parent=None,
+    )
+    ROMANIA = _TerritoryInfo(
+        label="Romania",
+        iso="RO",
+        aliases=("RO",),
+        parent=None,
+    )
+    SERBIA = _TerritoryInfo(
+        label="Serbia",
+        iso="RS",
+        aliases=("RS",),
+        parent=None,
+    )
+    SINGAPORE = _TerritoryInfo(
+        label="Singapore",
+        iso="SG",
+        aliases=("SG",),
+        parent=None,
+    )
+    SOUTH_KOREA = _TerritoryInfo(
+        label="South Korea",
+        iso="KR",
+        aliases=("KR", "Korea", "Republic of Korea"),
+        parent=None,
+    )
 
     # ── UK sub-territories (nations) ────────────────────────────────────
     ENGLAND = _TerritoryInfo(
