@@ -40,6 +40,7 @@ from app.modules.reports.router import router as reports_router
 from app.modules.scripts.router import router as scripts_router
 from app.modules.subscriptions.router import router as subscriptions_router
 from app.modules.watchlist.router import router as watchlist_router
+from app.modules.calculator.router import router as calculator_router
 
 settings = get_settings()
 
@@ -135,6 +136,7 @@ app.include_router(grants_router)
 app.include_router(festivals_router)
 app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
+app.include_router(calculator_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)
