@@ -396,6 +396,11 @@ class TableQuery:
     def _execute_insert(self) -> QueryResult:
         if not self._payload:
             raise ValueError("Insert payload is required")
+        if isinstance(self._payload, list):
+            stmt = insert(self.table).values(self._payload)
+            self.client.session.execute(stmt)
+            self.client.session.commit()
+            return self._reload_bulk_insert(self._payload)
         stmt = insert(self.table).values(**self._payload)
         self.client.session.execute(stmt)
         self.client.session.commit()
@@ -442,6 +447,15 @@ class TableQuery:
 
         self.client.session.commit()
         return self._reload_after_write(self._payload)
+
+    def _reload_bulk_insert(self, payloads: list[dict[str, Any]]) -> QueryResult:
+        ids = [p["id"] for p in payloads if "id" in p]
+        if ids:
+            stmt = select(self.table).where(self.table.c.id.in_(ids))
+        else:
+            return QueryResult(data=payloads)
+        rows = [self._project_row(dict(r._mapping)) for r in self.client.session.execute(stmt).all()]
+        return QueryResult(data=rows)
 
     def _reload_after_write(self, payload: dict[str, Any]) -> QueryResult:
         if self._filters:

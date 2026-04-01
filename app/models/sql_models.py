@@ -133,6 +133,38 @@ class DataSource(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ProductionMilestone(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "production_milestones"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    user_id: str = Field(index=True, nullable=False)
+    report_id: str | None = Field(default=None, index=True)
+    title: str
+    description: str | None = None
+    status: str = Field(default="upcoming")  # completed, in-progress, upcoming
+    due_date: str | None = None
+    sort_order: int = Field(default=0)
+    is_template: bool = Field(default=False)
+    is_custom: bool = Field(default=False)
+    completed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MilestoneTask(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "milestone_tasks"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    milestone_id: str = Field(index=True, nullable=False)
+    text: str
+    completed: bool = Field(default=False)
+    territory: str | None = None
+    deadline: str | None = None
+    sort_order: int = Field(default=0)
+    completed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ProcessedWebhookEvent(SQLModel, table=True):
     """Deduplication table for Stripe webhook events (at-least-once delivery)."""
 

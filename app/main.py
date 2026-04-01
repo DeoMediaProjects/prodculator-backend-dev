@@ -41,6 +41,8 @@ from app.modules.scripts.router import router as scripts_router
 from app.modules.subscriptions.router import router as subscriptions_router
 from app.modules.watchlist.router import router as watchlist_router
 from app.modules.calculator.router import router as calculator_router
+from app.modules.territories.router import router as territories_router
+from app.modules.milestones.router import router as milestones_router
 
 settings = get_settings()
 
@@ -137,6 +139,8 @@ app.include_router(festivals_router)
 app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
 app.include_router(calculator_router)
+app.include_router(territories_router)
+app.include_router(milestones_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)
