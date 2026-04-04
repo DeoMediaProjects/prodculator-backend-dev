@@ -1,0 +1,233 @@
+"""add processed_webhook_events table
+
+Revision ID: 7d17c136f7f8
+Revises: z3d4e5f6g7h8
+Create Date: 2026-03-18 08:44:59.019746
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = '7d17c136f7f8'
+down_revision = 'z3d4e5f6g7h8'
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS processed_webhook_events (
+            event_id VARCHAR NOT NULL,
+            processed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            PRIMARY KEY (event_id)
+        )
+    """)
+
+
+def downgrade() -> None:
+    op.drop_table('processed_webhook_events')
+    op.create_table('incentive_programs',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('territory', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('program', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('rate', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('cap', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_updated', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('status', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('source_url', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('auto_sync_enabled', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('last_auto_check', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('rate_gross', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('rate_net', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('rate_type', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('rate_tier_json', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('cap_amount', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('cap_currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('cap_per_person', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('cap_per_person_currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('qualifying_spend_min', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('qualifying_spend_cap_pct', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('qualifying_spend_currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('payment_timeline_days_min', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('payment_timeline_days_max', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('payment_timeline_notes', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('eligibility_rules_json', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('expiry_date', sa.DATE(), autoincrement=False, nullable=True),
+    sa.Column('currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('warnings_json', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_verified_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('source_name', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('scope', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('parent_territory', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('stacking_group', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('stackable_with', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('nationality_requirements', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('co_production_eligible', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('co_production_treaties', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('spv_eligible', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('vfx_uplift_pct', sa.NUMERIC(precision=5, scale=2), autoincrement=False, nullable=True),
+    sa.Column('programme_level', sa.TEXT(), server_default=sa.text("'national'::text"), autoincrement=False, nullable=True),
+    sa.Column('eligibility_notes', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('payment_reliability', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('incentive_programs_pkey'))
+    )
+    op.create_table('crew_costs',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('territory', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('role', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('category', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('day_rate', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('week_rate', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('union', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_updated', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('source', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('source_url', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('budget_band', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('rate_notes', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_verified_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('country', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('region', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('role_category', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('department', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('union_rate_cents', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('non_union_rate_cents', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('rate_currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('working_day_hours', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('fringe_rate_pct', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('fringe_description', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('source_name', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('source_type', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('confidence_score', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('effective_from', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('notes', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('crew_costs_pkey'))
+    )
+    op.create_table('scrape_runs',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('triggered_by', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('resource_type', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('started_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=False),
+    sa.Column('finished_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('status', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('pages_scraped', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('changes_detected', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('error_message', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('scrape_runs_pkey'))
+    )
+    op.create_table('scrape_sources',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('resource_type', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('url', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('label', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('territory', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('enabled', sa.BOOLEAN(), server_default=sa.text('true'), autoincrement=False, nullable=False),
+    sa.Column('use_bls_api', sa.BOOLEAN(), server_default=sa.text('false'), autoincrement=False, nullable=False),
+    sa.Column('last_scraped_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('last_status', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_error', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('is_pdf', sa.BOOLEAN(), server_default=sa.text('false'), autoincrement=False, nullable=False),
+    sa.Column('use_rest_api', sa.BOOLEAN(), server_default=sa.text('false'), autoincrement=False, nullable=True),
+    sa.Column('api_slug', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('source_authority', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('scrape_sources_pkey'))
+    )
+    op.create_table('film_festivals',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('name', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('location', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('submission_deadline', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('website_url', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('filmfreeway_url', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('year', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('genres', postgresql.JSON(astext_type=sa.Text()), autoincrement=False, nullable=True),
+    sa.Column('budget_tiers', postgresql.JSON(astext_type=sa.Text()), autoincrement=False, nullable=True),
+    sa.Column('festival_dates', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('premiere_requirement', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('tier', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('acceptance_rate', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('data_source', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('verified', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('is_new', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('deadlines', postgresql.JSON(astext_type=sa.Text()), autoincrement=False, nullable=True),
+    sa.Column('notable_alumni', postgresql.JSON(astext_type=sa.Text()), autoincrement=False, nullable=True),
+    sa.Column('average_budget_of_accepted_films', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('notes', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_verified_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('film_festivals_pkey'))
+    )
+    op.create_table('grant_opportunities',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('title', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('territory', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('funding_body', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('max_amount', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('currency', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('application_opens', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('application_deadline', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('status', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('days_until_deadline', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('eligibility', postgresql.JSON(astext_type=sa.Text()), autoincrement=False, nullable=True),
+    sa.Column('website_url', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('data_source', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('verified', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('is_new', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('last_verified_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('grant_opportunities_pkey'))
+    )
+    op.create_table('pending_changes',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('resource_type', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('resource_id', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('territory', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('field', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('current_value', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('detected_value', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('confidence', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('source', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('status', sa.TEXT(), server_default=sa.text("'pending'::text"), autoincrement=False, nullable=False),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('resolved_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('resolved_by', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('record_label', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('pending_changes_pkey'))
+    )
+    op.create_table('territory_weather',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('territory', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('month', sa.INTEGER(), autoincrement=False, nullable=False),
+    sa.Column('avg_temp_high_c', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('avg_temp_low_c', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('avg_rainfall_mm', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('avg_daylight_hours', sa.DOUBLE_PRECISION(precision=53), autoincrement=False, nullable=True),
+    sa.Column('storm_risk', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('weather_notes', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('exterior_shoot_score', sa.INTEGER(), autoincrement=False, nullable=True),
+    sa.Column('source', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('last_verified_at', postgresql.TIMESTAMP(timezone=True), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('now()'), autoincrement=False, nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('territory_weather_pkey'))
+    )
+    op.create_index(op.f('ix_territory_weather_territory_month'), 'territory_weather', ['territory', 'month'], unique=True)
+    op.create_table('sync_settings',
+    sa.Column('id', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('resource_type', sa.TEXT(), autoincrement=False, nullable=False),
+    sa.Column('schedule', sa.TEXT(), autoincrement=False, nullable=True),
+    sa.Column('enabled', sa.BOOLEAN(), server_default=sa.text('true'), autoincrement=False, nullable=False),
+    sa.Column('last_sync_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('next_scheduled', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('created_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('sync_settings_pkey')),
+    sa.UniqueConstraint('resource_type', name=op.f('sync_settings_resource_type_key'), postgresql_include=[], postgresql_nulls_not_distinct=False)
+    )
+    # ### end Alembic commands ###

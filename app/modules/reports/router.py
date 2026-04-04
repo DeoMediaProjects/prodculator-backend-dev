@@ -96,8 +96,9 @@ async def create_report(
     )
 
     if body_data.report_type == "preview":
-        # Email gating: check if blocked, then record usage
-        gate_email = body_data.email or (user.email if user else None)
+        # Email gating: always use the authenticated user's email; fall back to provided email
+        # for anonymous requests only. This prevents DoS via spoofed email.
+        gate_email = user.email if user else body_data.email
         if gate_email:
             if email_gating_service.is_blocked(gate_email):
                 raise HTTPException(
@@ -374,6 +375,7 @@ def _compact_script_analysis_meta(meta: dict | None) -> dict:
     return compact
 
 
+
 def process_report_task(
     report_id: str,
     user_id: str,
@@ -447,10 +449,10 @@ def process_report_task(
             compact_meta = _compact_script_analysis_meta(script_analysis_meta)
             failed_chunks = ((compact_meta.get("chunkTelemetry") or {}).get("failedChunks") or 0)
             logger.info(
-                "Script analysis complete: report_id=%s locations=%s budget_range=%s elapsed_ms=%s meta=%s",
+                "Script analysis complete: report_id=%s locations=%s budget_estimate=%s elapsed_ms=%s meta=%s",
                 report_id,
                 len(analysis.locations),
-                analysis.budgetEstimate.range,
+                analysis.budgetEstimate.range,  # AI-estimated range from script content
                 int((perf_counter() - step_started) * 1000),
                 compact_meta,
             )
@@ -461,6 +463,26 @@ def process_report_task(
                     bool(compact_meta.get("fallbackUsed")),
                     failed_chunks,
                     compact_meta.get("mode"),
+                )
+
+            # Non-blocking write into production_signals for admin analytics.
+            try:
+                signal_row = report_service.upsert_production_signal(
+                    report_id=report_id,
+                    report_row=report_row,
+                    request_metadata=request_metadata,
+                    script_analysis=analysis,
+                )
+                logger.info(
+                    "Production signal upserted: report_id=%s row_written=%s",
+                    report_id,
+                    bool(signal_row),
+                )
+            except Exception:
+                logger.warning(
+                    "Production signal upsert failed: report_id=%s",
+                    report_id,
+                    exc_info=True,
                 )
 
             # Step 3: Full production analysis
@@ -491,6 +513,7 @@ def process_report_task(
                 script_title=script_title,
                 report_type=report_type,
                 created_at=str(report_row.get("created_at", "")),
+                request_config=request_metadata,
             )
             logger.debug(
                 "Rendered PDF HTML: report_id=%s html_chars=%s elapsed_ms=%s",
@@ -574,4 +597,3 @@ def process_report_task(
                 logger.debug("Sent failure email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send failure email for report_id=%s", report_id)
-

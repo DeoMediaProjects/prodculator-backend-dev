@@ -308,7 +308,7 @@ def test_list_incentives_materializes_approved_changes_without_resource_id(clien
             "current_value": None,
             "detected_value": "$6.5 million annual cap",
             "confidence": "medium",
-            "source": "https://www.wrapbook.com/blog/film-industry-tax-incentives",
+            "source": "https://www.tax.virginia.gov/film-tax-credit",
             "status": "approved",
             "created_at": "2026-03-05T18:36:23.355800",
             "resolved_at": "2026-03-05T19:24:12.570129",
@@ -432,7 +432,7 @@ def test_approve_pending_change_without_resource_id_creates_incentive(client):
             "current_value": None,
             "detected_value": "$6.5 million annual cap",
             "confidence": "medium",
-            "source": "https://www.wrapbook.com/blog/film-industry-tax-incentives",
+            "source": "https://www.tax.virginia.gov/film-tax-credit",
             "status": "pending",
             "created_at": "2026-03-05T18:36:23.355800",
             "resolved_at": None,
@@ -453,7 +453,7 @@ def test_approve_pending_change_without_resource_id_creates_incentive(client):
 
     row = next(r for r in fake.store["incentive_programs"] if r["id"] == data["resourceId"])
     assert row["territory"] == "Virginia"
-    assert row["source_url"] == "https://www.wrapbook.com/blog/film-industry-tax-incentives"
+    assert row["source_url"] == "https://www.tax.virginia.gov/film-tax-credit"
     assert row["cap"] == "$6.5 million annual cap"
 
 

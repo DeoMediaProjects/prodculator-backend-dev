@@ -14,8 +14,27 @@ class WebhookHandler:
         self.supabase = supabase
         self.email_service = EmailService(settings) if settings else None
 
-    def handle_event(self, event_type: str, data_object: dict) -> None:
-        """Dispatch webhook event to appropriate handler."""
+    def handle_event(self, event_id: str, event_type: str, data_object: dict) -> None:
+        """Dispatch webhook event to appropriate handler.
+
+        event_id is the Stripe event ID used for idempotency deduplication.
+        """
+        # Deduplication: skip events we've already processed.
+        existing = (
+            self.supabase.table("processed_webhook_events")
+            .select("event_id")
+            .eq("event_id", event_id)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            logger.info("Skipping duplicate webhook event: %s", event_id)
+            return
+
+        self.supabase.table("processed_webhook_events").insert(
+            {"event_id": event_id, "processed_at": datetime.now(timezone.utc).isoformat()}
+        ).execute()
+
         handlers = {
             "checkout.session.completed": self._handle_checkout_completed,
             "payment_intent.succeeded": self._handle_payment_succeeded,

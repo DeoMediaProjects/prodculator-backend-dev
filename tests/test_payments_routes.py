@@ -117,6 +117,7 @@ def test_webhook_dispatches_when_signature_valid(client, monkeypatch):
     client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
 
     class FakeEvent:
+        id = "evt_test_123"
         type = "checkout.session.completed"
 
         class Data:
@@ -129,7 +130,7 @@ def test_webhook_dispatches_when_signature_valid(client, monkeypatch):
 
     handled = {"called": False}
 
-    def fake_handle(self, event_type, data_object):
+    def fake_handle(self, event_id, event_type, data_object):
         handled["called"] = True
         handled["event_type"] = event_type
         handled["data_object"] = data_object

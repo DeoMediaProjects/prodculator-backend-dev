@@ -134,6 +134,10 @@ async def get_production_signals(
         )
         return ProductionSignalsResponse(items=items, total=total)
     except Exception:
+        logger.exception(
+            "Failed to fetch production signals",
+            extra={"territory": territory, "start_date": start_date, "end_date": end_date},
+        )
         raise HTTPException(status_code=500, detail="Failed to fetch production signals")
 
 

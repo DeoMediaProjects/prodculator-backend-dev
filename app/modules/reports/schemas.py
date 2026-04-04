@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.core.territories import Territory, resolve_territory
 
@@ -17,15 +17,20 @@ class CreateReportRequest(BaseModel):
 
     # Project metadata (required)
     genre: list[str]
-    budget_range: Literal["<500k", "500k-2m", "2m-5m", "5m-15m", "15m-30m", "30m+"]
+    budget_amount: float  # Actual budget figure (replaces budget_range in v3)
+    budget_currency: Literal[
+        "GBP", "USD", "EUR", "ZAR", "CAD", "AUD", "NGN",
+        "HUF", "CZK", "MAD", "NZD", "RON", "RSD", "OTHER",
+    ] = "GBP"
     format: Literal[
         "Feature Film",
-        "Short",
+        "Short Film",
         "TV Series",
         "Limited Series",
         "Mini-Series",
         "Documentary",
         "Docuseries",
+        "Animation",
         "Animated Feature",
         "Animation Series",
         "Commercial",
@@ -45,6 +50,9 @@ class CreateReportRequest(BaseModel):
     territories_considering: list[str] | None = None
     filming_start_date: str | None = None
     filming_duration: int | None = None
+    # TV series episode metadata — used for UK AVEC HETV threshold verification
+    total_episodes: int | None = None
+    episode_runtime_minutes: int | None = None
     camera_equipment: list[str] | None = None
     crew_size: int | None = None
     principal_cast: int | None = None
@@ -60,6 +68,13 @@ class CreateReportRequest(BaseModel):
         "co_production_informal",
         "undecided",
     ] | None = None
+
+    @field_validator("budget_amount", mode="before")
+    @classmethod
+    def validate_budget_amount(cls, v: float) -> float:
+        if v is not None and v <= 0:
+            raise ValueError("budget_amount must be greater than 0")
+        return v
 
     @field_validator("country", mode="before")
     @classmethod
@@ -113,6 +128,9 @@ class LocationRanking(BaseModel):
     paymentSpeed: str | None = None
     keyAdvantages: list[str] | None = None
     keyRisks: list[str] | None = None
+    # v3 scoring dimensions
+    incentiveReliability: int | None = None   # 0-100 (new 6th dimension)
+    bankabilityLabel: Literal["BANKABLE", "VERIFY FIRST", "NOT BANKABLE"] | None = None
     # Weather-schedule integration (populated by ReportValidator)
     weatherRiskImpact: int | None = None  # negative score deduction from weather risk
     # Enriched data-integrity fields (populated by ReportValidator)
@@ -151,6 +169,8 @@ class IncentiveEstimate(BaseModel):
     dataFreshness: str | None = None          # e.g. "Verified 45 days ago"
     warnings: list[str] | None = None         # warnings_json + staleness warnings
     stalenessWarning: str | None = None       # set by validator if data_freshness_days > 365
+    # v3 bankability
+    bankabilityLabel: Literal["BANKABLE", "VERIFY FIRST", "NOT BANKABLE"] | None = None
 
 
 class CrewInsight(BaseModel):
@@ -239,7 +259,7 @@ class ScoringColorKey(BaseModel):
 
 class ScoringMethodology(BaseModel):
     overview: str                        # Brief paragraph on scoring approach
-    dimensions: list[ScoringDimension]   # The five scoring dimensions
+    dimensions: list[ScoringDimension]   # The six scoring dimensions (v3)
     weightingNote: str                   # How weights change per priority mode
     colorKey: ScoringColorKey            # Legend for colour bands
 
@@ -247,6 +267,12 @@ class ScoringMethodology(BaseModel):
 class ShootWindow(BaseModel):
     months: list[str]
     weatherNote: str | None = None
+
+
+class ActionTimelineItem(BaseModel):
+    action: str
+    deadline: str | None = None
+    note: str | None = None
 
 
 class ExecutiveSummary(BaseModel):
@@ -258,17 +284,33 @@ class ExecutiveSummary(BaseModel):
     recommendedTerritoryPaymentSpeed: str | None = None
     shootDays: int | None = None
     budget: str | None = None
-    budgetRange: str | None = None
     primaryLocations: list[str] | None = None
     shootWindow: ShootWindow | None = None
+    # v3 additions
+    headlineNetBudget: str | None = None
+    actionTimeline: list[ActionTimelineItem] | None = None
+    keyFlags: list[str] | None = None  # max 3 top-level flags
 
 
 class FinancialScenario(BaseModel):
     territory: str
-    localSpend: str
-    rebateRate: str
-    grossRebate: str
-    netBudget: str
+    # v3 6-step working fields
+    totalBudget: str | None = None
+    qualifyingSpendPct: str | None = None
+    qualifyingSpend: str | None = None
+    atlDeduction: str | None = None
+    atlDeductionPct: str | None = None  # e.g. "15%" — set by validator from territory_financials
+    netQualifyingSpend: str | None = None
+    programme: str | None = None
+    rateGross: str | None = None
+    rateNet: str | None = None
+    grossRebate: str | None = None
+    netRebate: str | None = None
+    netBudget: str | None = None
+    notes: str | None = None
+    # Legacy fields (kept for transition)
+    localSpend: str | None = None
+    rebateRate: str | None = None
 
 
 class CrewCostRow(BaseModel):
@@ -314,6 +356,8 @@ class ScriptAnalysis(BaseModel):
     scoringMethodology: ScoringMethodology | None = None
     attributions: list[Attribution] | None = None
     crewCostDisclaimer: str | None = None
+    # v3 additions
+    sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated
 
 
 class ProductionIntelligence(BaseModel):

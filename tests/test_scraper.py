@@ -164,7 +164,6 @@ class FakeSupabase(DatabaseClient):
         }
         self.session = MagicMock()
         self.settings = FakeSettings()
-        self.metadata = MagicMock()
         self.storage = MagicMock()
         self.auth = MagicMock()
 
@@ -176,6 +175,7 @@ class FakeSupabase(DatabaseClient):
 
 
 class FakeSettings(Settings):
+    JWT_SECRET_KEY: str = "test-secret-key-for-unit-tests-only-32ch"
     ANTHROPIC_API_KEY: str = "test-key"
     ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
     ANTHROPIC_MAX_TOKENS: int = 8000
@@ -520,7 +520,7 @@ class TestScraperService:
         sources = db.store["scrape_sources"]
         assert len(sources) == len(DEFAULT_SOURCES)
         labels = {s["label"] for s in sources}
-        assert "BFI UK Film Tax Relief" in labels
+        assert "BFI Cultural Test & Certification" in labels
         assert "BLS Occupational Employment & Wage Statistics (OEWS) — NAICS 5121" in labels
 
     def test_seed_sources_syncs_existing_defaults_and_inserts_missing(self):
@@ -530,7 +530,7 @@ class TestScraperService:
                 "id": "existing-1",
                 "resource_type": "incentives",
                 "url": "https://old.example.com",
-                "label": "BFI UK Film Tax Relief",
+                "label": "BFI Cultural Test & Certification",
                 "territory": "United Kingdom",
                 "enabled": True,
                 "use_bls_api": False,
@@ -542,7 +542,7 @@ class TestScraperService:
 
         # Existing labeled source should be updated, and missing defaults inserted
         assert len(db.store["scrape_sources"]) == len(DEFAULT_SOURCES)
-        bfi = next(s for s in db.store["scrape_sources"] if s["label"] == "BFI UK Film Tax Relief")
+        bfi = next(s for s in db.store["scrape_sources"] if s["label"] == "BFI Cultural Test & Certification")
         assert bfi["url"] == "https://www.bfi.org.uk/apply-british-certification-tax-relief"
 
     def test_run_disabled_returns_skipped(self):
@@ -875,12 +875,11 @@ class TestSources:
         assert len(bls_sources) == 1
         assert bls_sources[0]["resource_type"] == "crew_costs"
 
-    def test_pdf_sources_are_flagged(self):
+    def test_no_pdf_sources_in_defaults(self):
+        # All PDF sources (Screen Malta, BECTU rate cards) were unofficial/third-party
+        # and have been removed. Official sources use HTML or REST APIs.
         pdf_sources = [s for s in DEFAULT_SOURCES if s.get("is_pdf")]
-        assert len(pdf_sources) >= 1  # At least incentive PDFs (e.g. Screen Malta)
-        # Union/CBA PDF rate cards removed — crew_costs now uses gov stats APIs only
-        crew_pdf = [s for s in pdf_sources if s["resource_type"] == "crew_costs"]
-        assert len(crew_pdf) == 0  # No crew cost PDFs — all government API sources
+        assert len(pdf_sources) == 0
 
     def test_no_filmfreeway_source(self):
         urls = {s["url"] for s in DEFAULT_SOURCES}

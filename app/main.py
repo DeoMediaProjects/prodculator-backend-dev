@@ -4,10 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from app.core.cache import close_redis, init_redis
 from app.core.config import get_settings
 from app.core.database_client import create_client
 from app.core.db import init_db
+from app.core.limiter import limiter
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.modules.scraper.service import ScraperService
 
@@ -36,6 +40,9 @@ from app.modules.reports.router import router as reports_router
 from app.modules.scripts.router import router as scripts_router
 from app.modules.subscriptions.router import router as subscriptions_router
 from app.modules.watchlist.router import router as watchlist_router
+from app.modules.calculator.router import router as calculator_router
+from app.modules.territories.router import router as territories_router
+from app.modules.milestones.router import router as milestones_router
 
 settings = get_settings()
 
@@ -55,6 +62,7 @@ configure_logging()
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
     # Startup
+    init_redis(settings)
     if settings.AUTO_CREATE_DB_SCHEMA:
         init_db()
     # Seed scrape sources on startup
@@ -67,6 +75,7 @@ async def lifespan(app_: FastAPI):
     yield
     # Shutdown
     stop_scheduler()
+    await close_redis()
 
 
 app = FastAPI(
@@ -78,13 +87,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 
@@ -126,6 +138,9 @@ app.include_router(grants_router)
 app.include_router(festivals_router)
 app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
+app.include_router(calculator_router)
+app.include_router(territories_router)
+app.include_router(milestones_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)

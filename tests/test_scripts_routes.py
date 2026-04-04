@@ -89,7 +89,7 @@ def test_upload_rejects_invalid_file_type(client, auth_user):
     client.app.dependency_overrides[get_current_user] = lambda: auth_user
     client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase()
     response = client.post(
-        "/api/scripts/upload",
+        "/api/scripts/analyze",
         headers={"Authorization": "Bearer token"},
         files={"file": ("script.exe", b"bad", "application/octet-stream")},
     )

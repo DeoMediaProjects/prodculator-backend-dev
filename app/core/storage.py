@@ -19,6 +19,7 @@ class S3StorageBucket:
 
     def __init__(self, bucket_label: str, settings: Settings):
         import boto3  # imported lazily so local-fallback dev environments don't need boto3
+        from botocore.config import Config
 
         self.bucket_label = bucket_label
         self.settings = settings
@@ -27,6 +28,11 @@ class S3StorageBucket:
             region_name=settings.AWS_S3_REGION,
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            config=Config(
+                connect_timeout=10,
+                read_timeout=60,
+                retries={"max_attempts": 2, "mode": "standard"},
+            ),
         )
         self._bucket_name = settings.AWS_S3_BUCKET_NAME
         self._prefix = settings.AWS_S3_REPORTS_PREFIX

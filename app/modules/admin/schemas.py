@@ -1,4 +1,6 @@
+from datetime import date, datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
@@ -42,8 +44,26 @@ class BusinessMetricsResponse(BaseModel):
     conversion_rate_percent: float
 
 
+class ProductionSignalRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str | UUID
+    script_id: str | UUID | None = None
+    territory: str | None = None
+    state: str | None = None
+    submission_date: str | date | datetime | None = None
+    camera_equipment: Any | None = None
+    crew_size: int | None = None
+    principal_cast: int | None = None
+    supporting_cast: int | None = None
+    background_extras: int | None = None
+    budget_range: str | None = None
+    format: str | None = None
+    genres: Any | None = None
+
+
 class ProductionSignalsResponse(BaseModel):
-    items: list[dict[str, Any]]
+    items: list[ProductionSignalRecord]
     total: int
 
 
@@ -115,4 +135,3 @@ class AdminUserUpdateRequest(BaseModel):
 class AdminUserCreateResponse(BaseModel):
     admin: AdminUserDetail
     temporary_password: str
-

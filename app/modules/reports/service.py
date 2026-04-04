@@ -52,6 +52,42 @@ _SECTION_CONFIDENCE_KEYS = (
     "challenges",
 )
 
+_CREW_SCALE_TO_COUNT = {
+    "small": 25,
+    "medium": 60,
+    "large": 120,
+    "extra_large": 220,
+}
+
+_PRINCIPAL_SCALE_TO_COUNT = {
+    "small": 3,
+    "medium": 6,
+    "large": 12,
+    "extra_large": 20,
+}
+
+_SUPPORTING_SCALE_TO_COUNT = {
+    "small": 8,
+    "medium": 18,
+    "large": 35,
+    "extra_large": 60,
+}
+
+_EXTRAS_SCALE_TO_COUNT = {
+    "small": 25,
+    "medium": 80,
+    "large": 200,
+    "extra_large": 500,
+}
+
+_BUDGET_BUCKETS_USD = (
+    (500_000, "micro"),
+    (5_000_000, "low"),
+    (30_000_000, "medium"),
+    (100_000_000, "high"),
+    (float("inf"), "tentpole"),
+)
+
 
 class ReportService:
     def __init__(self, supabase: DatabaseClient):
@@ -104,6 +140,164 @@ class ReportService:
         self.supabase.table("reports").update({"pdf_url": pdf_url}).eq(
             "id", report_id
         ).execute()
+
+    @staticmethod
+    def _coerce_string_list(value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return [cleaned] if cleaned else None
+        if isinstance(value, list):
+            out = [str(item).strip() for item in value if str(item).strip()]
+            return out or None
+        return None
+
+    @staticmethod
+    def _derive_submission_date(value: Any) -> str:
+        if value is None:
+            return date.today().isoformat()
+        raw = str(value).strip()
+        if not raw:
+            return date.today().isoformat()
+        return raw[:10]
+
+    @staticmethod
+    def _scale_label_to_count(value: Any, mapping: dict[str, int]) -> int | None:
+        if value is None:
+            return None
+        key = str(value).strip().lower()
+        if not key:
+            return None
+        return mapping.get(key)
+
+    @staticmethod
+    def _budget_amount_to_range(value: Any) -> str | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return None
+        if amount <= 0:
+            return None
+        for upper_bound, label in _BUDGET_BUCKETS_USD:
+            if amount < upper_bound:
+                return label
+        return None
+
+    def _build_production_signal_payload(
+        self,
+        *,
+        report_id: str,
+        report_row: dict[str, Any],
+        request_metadata: dict[str, Any],
+        script_analysis: ScriptAnalysisResult | None,
+    ) -> dict[str, Any]:
+        report_data = report_row.get("report_data")
+        production_details: dict[str, Any] = {}
+        if isinstance(report_data, dict):
+            maybe_production_details = report_data.get("productionDetails")
+            if isinstance(maybe_production_details, dict):
+                production_details = maybe_production_details
+
+        analysis_camera: Any | None = None
+        analysis_genres: Any | None = None
+        analysis_format: str | None = None
+        analysis_budget_range: str | None = None
+        scale = None
+        if script_analysis is not None:
+            analysis_camera = script_analysis.equipment.cameraEquipment
+            analysis_genres = script_analysis.metadata.genres
+            analysis_format = script_analysis.metadata.format
+            analysis_budget_range = script_analysis.budgetEstimate.range
+            scale = script_analysis.productionScale
+
+        crew_size = self._coerce_int(request_metadata.get("crew_size"))
+        principal_cast = self._coerce_int(request_metadata.get("principal_cast"))
+        supporting_cast = self._coerce_int(request_metadata.get("supporting_cast"))
+        background_extras = self._coerce_int(request_metadata.get("background_extras"))
+
+        if crew_size is None and scale is not None:
+            crew_size = self._scale_label_to_count(getattr(scale, "crewSize", None), _CREW_SCALE_TO_COUNT)
+        if principal_cast is None and scale is not None:
+            principal_cast = self._scale_label_to_count(
+                getattr(scale, "principalCast", None),
+                _PRINCIPAL_SCALE_TO_COUNT,
+            )
+        if supporting_cast is None and scale is not None:
+            supporting_cast = self._scale_label_to_count(
+                getattr(scale, "supportingCast", None),
+                _SUPPORTING_SCALE_TO_COUNT,
+            )
+        if background_extras is None and scale is not None:
+            background_extras = self._scale_label_to_count(
+                getattr(scale, "backgroundExtras", None),
+                _EXTRAS_SCALE_TO_COUNT,
+            )
+        if crew_size is None:
+            crew_size = self._scale_label_to_count(production_details.get("crewSize"), _CREW_SCALE_TO_COUNT)
+        if principal_cast is None:
+            principal_cast = self._scale_label_to_count(
+                production_details.get("castSize"),
+                _PRINCIPAL_SCALE_TO_COUNT,
+            )
+
+        camera_equipment = self._coerce_string_list(request_metadata.get("camera_equipment"))
+        if camera_equipment is None:
+            camera_equipment = self._coerce_string_list(analysis_camera)
+
+        genres = self._coerce_string_list(request_metadata.get("genre"))
+        if genres is None:
+            genres = self._coerce_string_list(analysis_genres)
+        if genres is None:
+            genres = self._coerce_string_list(production_details.get("genres"))
+
+        budget_range = analysis_budget_range or self._budget_amount_to_range(request_metadata.get("budget_amount"))
+
+        return {
+            "id": report_id,
+            "script_id": report_row.get("id") or report_id,
+            "territory": request_metadata.get("country"),
+            "state": request_metadata.get("state_province"),
+            "submission_date": self._derive_submission_date(report_row.get("created_at")),
+            "camera_equipment": camera_equipment,
+            "crew_size": crew_size,
+            "principal_cast": principal_cast,
+            "supporting_cast": supporting_cast,
+            "background_extras": background_extras,
+            "budget_range": budget_range,
+            "format": request_metadata.get("format") or analysis_format or production_details.get("format"),
+            "genres": genres,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def upsert_production_signal(
+        self,
+        *,
+        report_id: str,
+        report_row: dict[str, Any],
+        request_metadata: dict[str, Any],
+        script_analysis: ScriptAnalysisResult | None = None,
+    ) -> dict[str, Any] | None:
+        payload = self._build_production_signal_payload(
+            report_id=report_id,
+            report_row=report_row,
+            request_metadata=request_metadata,
+            script_analysis=script_analysis,
+        )
+        try:
+            result = (
+                self.supabase.table("production_signals")
+                .upsert(payload, on_conflict="id")
+                .select("*")
+                .single()
+                .execute()
+            )
+            return result.data
+        except NoSuchTableError:
+            logger.warning("production_signals table is missing; skipping signal write")
+            return None
 
     def fail_report(
         self,
@@ -286,6 +480,45 @@ class ReportService:
 
     # --- New analysis report generation ---
 
+    def _resolve_territories_hint(self, request_metadata: dict) -> list[str] | None:
+        """Build the territory hint list for dataset loading from all relevant metadata fields.
+
+        Priority order:
+        1. If location_strategy == "domestic": restrict to home country + state_province only.
+        2. If territories_considering is set: use those (+ state_province if provided).
+        3. If only state_province is set: use country + state_province.
+        4. Otherwise: None (load full dataset, no priority-boost).
+        """
+        location_strategy = (request_metadata.get("location_strategy") or "open").lower()
+        raw_territories = request_metadata.get("territories_considering") or []
+        country = request_metadata.get("country") or ""
+        state_province = request_metadata.get("state_province") or ""
+
+        # Strip "open to all" sentinel values
+        strict_territories = [
+            t for t in raw_territories if t.lower() not in ("open to all", "open")
+        ]
+
+        if location_strategy == "domestic":
+            # Domestic: only the home territory (+ state for state-level incentives)
+            hint: list[str] = []
+            if country:
+                hint.append(country)
+            if state_province and state_province not in hint:
+                hint.append(state_province)
+            return hint or None
+
+        # Open or international — start from user-selected territories
+        hint = list(strict_territories)
+
+        # Always add state_province to hint so state-level incentives get priority-boosted
+        if state_province and state_province not in hint:
+            hint.append(state_province)
+            if country and country not in hint:
+                hint.append(country)
+
+        return hint or None
+
     def generate_preview_report(
         self,
         *,
@@ -294,10 +527,11 @@ class ReportService:
     ) -> dict:
         """Generate a free preview report synchronously (no script, no DB row)."""
         datasets = self._load_analysis_datasets(
-            territories_hint=request_metadata.get("territories_considering")
+            territories_hint=self._resolve_territories_hint(request_metadata)
         )
         self._inject_derived_data(datasets, script_analysis=None, request_metadata=request_metadata)
-        return script_service.generate_production_analysis(
+        return self._generate_via_builder(
+            script_service=script_service,
             script_analysis=None,
             request_metadata=request_metadata,
             datasets=datasets,
@@ -315,10 +549,11 @@ class ReportService:
     ) -> dict:
         """Generate a full paid/b2b analysis report."""
         datasets = self._load_analysis_datasets(
-            territories_hint=request_metadata.get("territories_considering")
+            territories_hint=self._resolve_territories_hint(request_metadata)
         )
         self._inject_derived_data(datasets, script_analysis=script_analysis, request_metadata=request_metadata)
-        report_data = script_service.generate_production_analysis(
+        report_data = self._generate_via_builder(
+            script_service=script_service,
             script_analysis=script_analysis,
             request_metadata=request_metadata,
             datasets=datasets,
@@ -330,6 +565,45 @@ class ReportService:
 
         return report_data
 
+    def _generate_via_builder(
+        self,
+        *,
+        script_service: ScriptAnalysisService,
+        script_analysis: ScriptAnalysisResult | None,
+        request_metadata: dict,
+        datasets: dict,
+        is_preview: bool,
+    ) -> dict:
+        """Builder path: deterministic skeleton + narrative-only AI call."""
+        from app.modules.reports.builder import ReportBuilder
+        from app.modules.reports.validator import ReportValidator
+
+        builder = ReportBuilder(
+            datasets=datasets,
+            request_metadata=request_metadata,
+            script_analysis=script_analysis,
+            is_preview=is_preview,
+        )
+        skeleton = builder.build()
+
+        report_data = script_service.generate_production_analysis_v2(
+            skeleton=skeleton,
+            script_analysis=script_analysis,
+            request_metadata=request_metadata,
+            datasets=datasets,
+            is_preview=is_preview,
+        )
+
+        report_data, warnings = ReportValidator.assert_integrity(
+            report_data, datasets
+        )
+        if warnings:
+            logger.info(
+                "Builder path: %d integrity warnings",
+                len(warnings),
+            )
+        return report_data
+
     def _inject_derived_data(
         self,
         datasets: dict,
@@ -339,8 +613,8 @@ class ReportService:
     ) -> None:
         """Compute and inject derived signals into *datasets* in-place.
 
-        These are used by both the AI prompt (via generate_production_analysis)
-        and the post-processing validator (ReportValidator.validate).
+        These are used by the ReportBuilder, the AI narrative prompt, and
+        the post-processing validator (ReportValidator.assert_integrity).
         """
         # Shoot window
         shoot_months = self._compute_shoot_months(
@@ -367,10 +641,305 @@ class ReportService:
                 ext_int_ratio = getattr(challenges, "extIntRatio", None)
         datasets["_ext_int_ratio"] = ext_int_ratio
 
+        # Authoritative shoot days — stored so the validator can override
+        # any AI-hallucinated value in executiveSummary.shootDays.
+        #
+        # filming_duration (weeks, user-decided) is the primary source because
+        # it reflects the producer's actual planned schedule.  Script analysis
+        # estimatedShootingDays is only a fallback for when filming_duration
+        # is not provided.
+        filming_duration_weeks = request_metadata.get("filming_duration")
+        if filming_duration_weeks and int(filming_duration_weeks) > 0:
+            # filming_duration is the user-decided shoot schedule in weeks —
+            # store it directly (no conversion)
+            datasets["_shoot_weeks"] = int(filming_duration_weeks)
+        else:
+            # Fallback: derive weeks from script analysis estimated days
+            _script_days = getattr(
+                getattr(script_analysis, "productionScale", None),
+                "estimatedShootingDays",
+                None,
+            ) if script_analysis is not None else None
+            if _script_days and int(_script_days) > 0:
+                datasets["_shoot_weeks"] = max(1, round(int(_script_days) / 5))
+
         # Producer eligibility inputs
         datasets["_producer_country"] = request_metadata.get("producer_country")
         datasets["_co_production_status"] = request_metadata.get("co_production_status")
 
+        # Visa requirements — load DB-backed entries for the user's base country
+        # so the validator can replace AI-generated travelVisa fields with
+        # authoritative data instead of accepting hallucinated advice.
+        base_country = request_metadata.get("country") or "United Kingdom"
+        visa_rows = self._safe_query(
+            "visa_requirements",
+            lambda q: q.select("destination,visa_required,work_permit_required,notes")
+                       .eq("base_country", base_country),
+        )
+        datasets["_visa_requirements"] = {
+            (row.get("destination") or "").strip(): {
+                "visa_required": row.get("visa_required"),
+                "work_permit_required": row.get("work_permit_required"),
+                "notes": row.get("notes") or "",
+            }
+            for row in visa_rows
+            if row.get("destination")
+        }
+
+        # v3: Production priority (needed by validator for score recalculation)
+        datasets["_production_priority"] = request_metadata.get("production_priority", "full")
+
+        # User-submitted territories — canonical labels for builder territory selection.
+        # Resolved via the same normalisation as _resolve_territories_hint.
+        raw_considering = request_metadata.get("territories_considering") or []
+        user_territories: list[str] = []
+        seen_ut: set[str] = set()
+        for raw in raw_considering:
+            if raw.lower() in ("open to all", "open"):
+                continue
+            t = resolve_territory(raw)
+            label = t.label if t else raw
+            if label not in seen_ut:
+                seen_ut.add(label)
+                user_territories.append(label)
+        datasets["_user_territories"] = user_territories
+
+        # v3: Production format (needed by validator for format harmonisation)
+        datasets["_production_format"] = request_metadata.get("format")
+
+        # Episode metadata — used by validator for UK AVEC HETV threshold check
+        datasets["_total_episodes"] = request_metadata.get("total_episodes")
+        datasets["_episode_runtime_minutes"] = request_metadata.get("episode_runtime_minutes")
+
+        # v3: Budget conversion to GBP
+        budget_amount = request_metadata.get("budget_amount")
+        budget_currency = request_metadata.get("budget_currency", "GBP")
+        if budget_amount and budget_amount > 0:
+            fx_service = FXService(self.supabase.settings)
+            budget_data = fx_service.convert_budget(budget_amount, budget_currency, "GBP")
+            datasets["_budget_gbp"] = budget_data
+            datasets["_budget_amount"] = budget_amount
+            datasets["_budget_currency"] = budget_currency
+
+            # v3: Currency advantage scores for all territories
+            territory_labels = set()
+            for inc in datasets.get("incentives", []):
+                t = inc.get("territory")
+                if t:
+                    territory_labels.add(t)
+            # Also include territories from weather data
+            for w in datasets.get("weather", []):
+                t = w.get("territory")
+                if t:
+                    territory_labels.add(t)
+            if territory_labels:
+                datasets["_currency_advantage_scores"] = (
+                    fx_service.compute_currency_advantage_batch(
+                        budget_currency, list(territory_labels)
+                    )
+                )
+
+            # v3: FX rates from budget currency → each territory's incentive
+            # currency.  Used by the validator to convert budget amounts for
+            # display in budget scenarios and territory deep-dives.
+            from app.modules.fx.service import TERRITORY_CURRENCY
+            target_currencies: set[str] = set()
+            for t in territory_labels:
+                tc = TERRITORY_CURRENCY.get(t)
+                if tc and tc != budget_currency:
+                    target_currencies.add(tc)
+            fx_rates: dict[str, dict] = {}
+            for tc in target_currencies:
+                rate, rate_date = fx_service.get_rate(budget_currency, tc)
+                fx_rates[tc] = {
+                    "rate": rate,
+                    "rate_date": rate_date.isoformat(),
+                    "from_currency": budget_currency,
+                }
+            datasets["_fx_rates_from_budget"] = fx_rates
+
+        # Pre-compute territory financials — authoritative monetary figures
+        # that the AI should use verbatim instead of computing its own.
+        self._pre_compute_territory_financials(datasets)
+
+    def _pre_compute_territory_financials(self, datasets: dict) -> None:
+        """Build datasets["_territory_financials"] with authoritative monetary figures.
+
+        The AI copies these verbatim instead of doing its own rebate arithmetic.
+        Uses the exact same calculation logic as ReportValidator._compute_corrected_rebate.
+        """
+        from app.modules.reports.validator import (
+            ReportValidator,
+            _index_incentives_by_territory,
+            _best_incentive,
+            _budget_to_display,
+            _format_rate,
+            _currency_symbol,
+            _DEFAULT_ATL_PCT,
+        )
+
+        budget_gbp_data = datasets.get("_budget_gbp")
+        if not isinstance(budget_gbp_data, dict):
+            return
+        budget_gbp = budget_gbp_data.get("converted")
+        if not budget_gbp or budget_gbp <= 0:
+            return
+
+        budget_currency = datasets.get("_budget_currency", "GBP")
+        budget_original_amount = datasets.get("_budget_amount")
+        fx_rates_from_budget = datasets.get("_fx_rates_from_budget") or {}
+        incentives = datasets.get("incentives", [])
+        crew_costs = datasets.get("crew_costs", [])
+
+        territory_incentives = _index_incentives_by_territory(incentives)
+        budget_symbol = _currency_symbol(budget_currency)
+
+        # Index crew costs by territory — full name, ISO code, and canonical label.
+        # Crew rows may use ISO codes ("GB"), full names ("United Kingdom"), or
+        # regional labels ("England").  Index all variants so lookups always hit.
+        crew_by_territory: dict[str, list[dict]] = {}
+        for row in crew_costs:
+            for raw_key in (row.get("territory") or "", row.get("country") or ""):
+                if not raw_key:
+                    continue
+                crew_by_territory.setdefault(raw_key, []).append(row)
+                # Resolve to canonical label to handle ISO ↔ full-name mismatches
+                t_obj = resolve_territory(raw_key)
+                if t_obj:
+                    canonical = t_obj.label
+                    if canonical != raw_key:
+                        crew_by_territory.setdefault(canonical, []).append(row)
+                    if t_obj.parent and t_obj.parent.label != raw_key:
+                        crew_by_territory.setdefault(t_obj.parent.label, []).append(row)
+
+        production_format: str | None = datasets.get("_production_format")
+        territory_financials: dict[str, dict] = {}
+
+        for territory, rows in territory_incentives.items():
+            if not territory or not rows:
+                continue
+            best = _best_incentive(rows, production_format)
+
+            # Resolve FX rate for rebate cap enforcement (e.g. South Africa R25M).
+            # When budget_currency is GBP, fx_rates_from_budget gives GBP→cap_currency.
+            rebate_cap_currency = best.get("rebate_cap_currency")
+            fx_rate_to_gbp: float | None = None
+            if rebate_cap_currency and rebate_cap_currency != "GBP" and budget_currency == "GBP":
+                fx_info = fx_rates_from_budget.get(rebate_cap_currency)
+                if fx_info and fx_info.get("rate"):
+                    fx_rate_to_gbp = fx_info["rate"]  # GBP → rebate_cap_currency
+
+            corrected = ReportValidator._compute_corrected_rebate(
+                best, budget_gbp, territory_incentives,
+                production_format=production_format,
+                fx_rate_to_gbp=fx_rate_to_gbp,
+            )
+            if corrected is None:
+                continue
+
+            territory_currency = best.get("currency") or "GBP"
+
+            def _disp(gbp_amount: float) -> tuple[float, str, str | None]:
+                return _budget_to_display(
+                    gbp_amount, territory_currency, budget_currency,
+                    budget_original_amount, budget_gbp, fx_rates_from_budget,
+                )
+
+            d_total, sym, fx_note = _disp(budget_gbp)
+            d_qs, _, _ = _disp(corrected["qualifying_spend_before_atl"])
+            d_net_qs, _, _ = _disp(corrected["qualifying_spend"])
+            d_gross_rebate, _, _ = _disp(corrected["gross_rebate"])
+            d_net_rebate, _, _ = _disp(corrected["net_rebate"])
+            d_net_budget = d_total - d_net_rebate
+
+            atl_str = None
+            atl_amount = corrected.get("atl_deduction_amount", 0)
+            if atl_amount > 0:
+                d_atl, _, _ = _disp(atl_amount)
+                atl_str = f"{sym}{d_atl:,.0f}"
+
+            rate_str = _format_rate(corrected["rate_gross"], corrected["rate_net"])
+            qs_pct = corrected["qualifying_spend_pct"]
+
+            programme_name = (
+                corrected.get("switched_programme")
+                or best.get("program_name")
+                or best.get("program")
+                or ""
+            )
+
+            # Build crew rate strings for this territory in budget currency
+            t_crew_rows = crew_by_territory.get(territory, [])
+            if not t_crew_rows:
+                # Try ISO lookup
+                from app.core.territories import territory_to_iso as _build_iso
+                iso_map = _build_iso()
+                iso = iso_map.get(territory, "")
+                if iso:
+                    t_crew_rows = crew_by_territory.get(iso, [])
+
+            crew_rates: dict[str, str] = {}
+            for crew_row in t_crew_rows:
+                role = crew_row.get("role_category") or crew_row.get("role") or ""
+                if not role:
+                    continue
+                union_gbp = crew_row.get("union_rate_gbp")
+                non_union_gbp = crew_row.get("non_union_rate_gbp")
+                if union_gbp is None and non_union_gbp is None:
+                    continue
+
+                def _crew_disp(gbp_val: float) -> str:
+                    d, s, _ = _budget_to_display(
+                        gbp_val, budget_currency, budget_currency,
+                        budget_original_amount, budget_gbp, fx_rates_from_budget,
+                    )
+                    return f"{s}{d:,.0f}"
+
+                if union_gbp and non_union_gbp:
+                    lo, hi = sorted([union_gbp, non_union_gbp])
+                    rate_text = f"{_crew_disp(lo)}–{_crew_disp(hi)}/day"
+                elif union_gbp:
+                    rate_text = f"{_crew_disp(union_gbp)}/day"
+                else:
+                    rate_text = f"{_crew_disp(non_union_gbp)}/day"  # type: ignore[arg-type]
+
+                if role not in crew_rates:
+                    crew_rates[role] = rate_text
+
+            territory_financials[territory] = {
+                "currency": territory_currency,
+                "currency_symbol": sym,
+                "total_budget": f"{sym}{d_total:,.0f}",
+                "qualifying_spend_pct": f"{qs_pct:.0f}%",
+                "qualifying_spend": f"{sym}{d_qs:,.0f}",
+                "atl_deduction": atl_str,
+                "atl_pct": f"{_DEFAULT_ATL_PCT:.0%}" if atl_amount > 0 else None,
+                "net_qualifying_spend": f"{sym}{d_net_qs:,.0f}",
+                "rate": rate_str or "N/A",
+                "rate_gross": f"{corrected['rate_gross']:g}%",
+                "rate_net": f"{corrected['rate_net']:g}%" if corrected.get("rate_net") else None,
+                "gross_rebate": f"{sym}{d_gross_rebate:,.0f}",
+                "net_rebate": f"{sym}{d_net_rebate:,.0f}",
+                "net_budget": f"{sym}{d_net_budget:,.0f}",
+                "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
+                "programme": programme_name,
+                "programme_note": corrected.get("programme_note"),
+                "atl_deduction_note": corrected.get("atl_deduction_note"),
+                "rebate_cap_note": corrected.get("rebate_cap_note"),
+                "qualifying_spend_note": corrected.get("qualifying_spend_note"),
+                "fx_note": fx_note,
+                "crew_rates": crew_rates,
+                # Budget-currency equivalents for context in prompt
+                "budget_currency": budget_currency,
+                "budget_symbol": budget_symbol,
+                "budget_display": f"{budget_symbol}{budget_original_amount:,.0f}" if budget_original_amount else None,
+            }
+
+        datasets["_territory_financials"] = territory_financials
+        logger.info(
+            "Pre-computed territory financials: territories=%s",
+            list(territory_financials.keys()),
+        )
 
     # --- Dataset loading ---
 
@@ -548,7 +1117,9 @@ class ReportService:
         for inc in incentives:
             group = inc.get("stacking_group")
             if group:
-                stacking_map.setdefault(group, []).append(inc.get("program_name", ""))
+                stacking_map.setdefault(group, []).append(
+                    inc.get("program_name") or inc.get("program") or ""
+                )
 
         logger.info(
             "Loaded analysis datasets counts: incentives=%s crew_costs=%s cast_costs=%s comparables=%s grants=%s festivals=%s weather=%s",
@@ -584,10 +1155,12 @@ class ReportService:
                 currencies.add(ccy.upper())
 
         if not currencies:
-            # All GBP — annotate and return
+            # All GBP — convert pence to pounds and annotate
             for c in crew_costs:
-                c["union_rate_gbp"] = c.get("union_rate_cents")
-                c["non_union_rate_gbp"] = c.get("non_union_rate_cents")
+                union_cents = c.get("union_rate_cents")
+                non_union_cents = c.get("non_union_rate_cents")
+                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
                 c["fx_rate"] = 1.0
                 c["fx_date"] = date.today().isoformat()
             return crew_costs
@@ -602,16 +1175,19 @@ class ReportService:
         for c in crew_costs:
             currency = (c.get("rate_currency") or c.get("currency") or "").upper()
             if currency == "GBP":
-                c["union_rate_gbp"] = c.get("union_rate_cents")
-                c["non_union_rate_gbp"] = c.get("non_union_rate_cents")
+                union_cents = c.get("union_rate_cents")
+                non_union_cents = c.get("non_union_rate_cents")
+                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
                 c["fx_rate"] = 1.0
                 c["fx_date"] = date.today().isoformat()
             elif currency in rates:
                 rate, fx_date = rates[currency]
                 union_cents = c.get("union_rate_cents")
                 non_union_cents = c.get("non_union_rate_cents")
-                c["union_rate_gbp"] = round(union_cents / rate) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / rate) if non_union_cents else None
+                # Convert from local currency cents to GBP pounds: ÷100 for cents→units, ÷rate for FX
+                c["union_rate_gbp"] = round(union_cents / 100 / rate) if union_cents else None
+                c["non_union_rate_gbp"] = round(non_union_cents / 100 / rate) if non_union_cents else None
                 c["fx_rate"] = round(rate, 4)
                 c["fx_date"] = fx_date.isoformat() if hasattr(fx_date, "isoformat") else str(fx_date)
             else:
