@@ -52,6 +52,42 @@ _SECTION_CONFIDENCE_KEYS = (
     "challenges",
 )
 
+_CREW_SCALE_TO_COUNT = {
+    "small": 25,
+    "medium": 60,
+    "large": 120,
+    "extra_large": 220,
+}
+
+_PRINCIPAL_SCALE_TO_COUNT = {
+    "small": 3,
+    "medium": 6,
+    "large": 12,
+    "extra_large": 20,
+}
+
+_SUPPORTING_SCALE_TO_COUNT = {
+    "small": 8,
+    "medium": 18,
+    "large": 35,
+    "extra_large": 60,
+}
+
+_EXTRAS_SCALE_TO_COUNT = {
+    "small": 25,
+    "medium": 80,
+    "large": 200,
+    "extra_large": 500,
+}
+
+_BUDGET_BUCKETS_USD = (
+    (500_000, "micro"),
+    (5_000_000, "low"),
+    (30_000_000, "medium"),
+    (100_000_000, "high"),
+    (float("inf"), "tentpole"),
+)
+
 
 class ReportService:
     def __init__(self, supabase: DatabaseClient):
@@ -104,6 +140,164 @@ class ReportService:
         self.supabase.table("reports").update({"pdf_url": pdf_url}).eq(
             "id", report_id
         ).execute()
+
+    @staticmethod
+    def _coerce_string_list(value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return [cleaned] if cleaned else None
+        if isinstance(value, list):
+            out = [str(item).strip() for item in value if str(item).strip()]
+            return out or None
+        return None
+
+    @staticmethod
+    def _derive_submission_date(value: Any) -> str:
+        if value is None:
+            return date.today().isoformat()
+        raw = str(value).strip()
+        if not raw:
+            return date.today().isoformat()
+        return raw[:10]
+
+    @staticmethod
+    def _scale_label_to_count(value: Any, mapping: dict[str, int]) -> int | None:
+        if value is None:
+            return None
+        key = str(value).strip().lower()
+        if not key:
+            return None
+        return mapping.get(key)
+
+    @staticmethod
+    def _budget_amount_to_range(value: Any) -> str | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return None
+        if amount <= 0:
+            return None
+        for upper_bound, label in _BUDGET_BUCKETS_USD:
+            if amount < upper_bound:
+                return label
+        return None
+
+    def _build_production_signal_payload(
+        self,
+        *,
+        report_id: str,
+        report_row: dict[str, Any],
+        request_metadata: dict[str, Any],
+        script_analysis: ScriptAnalysisResult | None,
+    ) -> dict[str, Any]:
+        report_data = report_row.get("report_data")
+        production_details: dict[str, Any] = {}
+        if isinstance(report_data, dict):
+            maybe_production_details = report_data.get("productionDetails")
+            if isinstance(maybe_production_details, dict):
+                production_details = maybe_production_details
+
+        analysis_camera: Any | None = None
+        analysis_genres: Any | None = None
+        analysis_format: str | None = None
+        analysis_budget_range: str | None = None
+        scale = None
+        if script_analysis is not None:
+            analysis_camera = script_analysis.equipment.cameraEquipment
+            analysis_genres = script_analysis.metadata.genres
+            analysis_format = script_analysis.metadata.format
+            analysis_budget_range = script_analysis.budgetEstimate.range
+            scale = script_analysis.productionScale
+
+        crew_size = self._coerce_int(request_metadata.get("crew_size"))
+        principal_cast = self._coerce_int(request_metadata.get("principal_cast"))
+        supporting_cast = self._coerce_int(request_metadata.get("supporting_cast"))
+        background_extras = self._coerce_int(request_metadata.get("background_extras"))
+
+        if crew_size is None and scale is not None:
+            crew_size = self._scale_label_to_count(getattr(scale, "crewSize", None), _CREW_SCALE_TO_COUNT)
+        if principal_cast is None and scale is not None:
+            principal_cast = self._scale_label_to_count(
+                getattr(scale, "principalCast", None),
+                _PRINCIPAL_SCALE_TO_COUNT,
+            )
+        if supporting_cast is None and scale is not None:
+            supporting_cast = self._scale_label_to_count(
+                getattr(scale, "supportingCast", None),
+                _SUPPORTING_SCALE_TO_COUNT,
+            )
+        if background_extras is None and scale is not None:
+            background_extras = self._scale_label_to_count(
+                getattr(scale, "backgroundExtras", None),
+                _EXTRAS_SCALE_TO_COUNT,
+            )
+        if crew_size is None:
+            crew_size = self._scale_label_to_count(production_details.get("crewSize"), _CREW_SCALE_TO_COUNT)
+        if principal_cast is None:
+            principal_cast = self._scale_label_to_count(
+                production_details.get("castSize"),
+                _PRINCIPAL_SCALE_TO_COUNT,
+            )
+
+        camera_equipment = self._coerce_string_list(request_metadata.get("camera_equipment"))
+        if camera_equipment is None:
+            camera_equipment = self._coerce_string_list(analysis_camera)
+
+        genres = self._coerce_string_list(request_metadata.get("genre"))
+        if genres is None:
+            genres = self._coerce_string_list(analysis_genres)
+        if genres is None:
+            genres = self._coerce_string_list(production_details.get("genres"))
+
+        budget_range = analysis_budget_range or self._budget_amount_to_range(request_metadata.get("budget_amount"))
+
+        return {
+            "id": report_id,
+            "script_id": report_row.get("id") or report_id,
+            "territory": request_metadata.get("country"),
+            "state": request_metadata.get("state_province"),
+            "submission_date": self._derive_submission_date(report_row.get("created_at")),
+            "camera_equipment": camera_equipment,
+            "crew_size": crew_size,
+            "principal_cast": principal_cast,
+            "supporting_cast": supporting_cast,
+            "background_extras": background_extras,
+            "budget_range": budget_range,
+            "format": request_metadata.get("format") or analysis_format or production_details.get("format"),
+            "genres": genres,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def upsert_production_signal(
+        self,
+        *,
+        report_id: str,
+        report_row: dict[str, Any],
+        request_metadata: dict[str, Any],
+        script_analysis: ScriptAnalysisResult | None = None,
+    ) -> dict[str, Any] | None:
+        payload = self._build_production_signal_payload(
+            report_id=report_id,
+            report_row=report_row,
+            request_metadata=request_metadata,
+            script_analysis=script_analysis,
+        )
+        try:
+            result = (
+                self.supabase.table("production_signals")
+                .upsert(payload, on_conflict="id")
+                .select("*")
+                .single()
+                .execute()
+            )
+            return result.data
+        except NoSuchTableError:
+            logger.warning("production_signals table is missing; skipping signal write")
+            return None
 
     def fail_report(
         self,

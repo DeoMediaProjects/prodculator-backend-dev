@@ -5,6 +5,7 @@ from sqlalchemy.exc import NoSuchTableError
 
 from app.core.database_client import DatabaseClient
 from app.modules.reports.service import ReportService
+from app.modules.scripts.schemas import ScriptAnalysisResult
 
 
 def _as_db(fake: Any) -> DatabaseClient:
@@ -303,3 +304,185 @@ def test_inject_derived_data_producer_country():
     )
     assert datasets["_producer_country"] == "ZA"
     assert datasets["_co_production_status"] == "sole_producer"
+
+
+def _sample_script_analysis() -> ScriptAnalysisResult:
+    return ScriptAnalysisResult.model_validate(
+        {
+            "locations": [
+                {
+                    "name": "Lagos",
+                    "country": "Nigeria",
+                    "territory": "Nigeria",
+                    "frequency": 5,
+                    "isMainLocation": True,
+                }
+            ],
+            "budgetEstimate": {
+                "range": "medium",
+                "minUSD": 5000000,
+                "maxUSD": 30000000,
+                "confidence": 0.8,
+                "indicators": ["large cast"],
+            },
+            "productionScale": {
+                "crewSize": "large",
+                "principalCast": "medium",
+                "supportingCast": "large",
+                "backgroundExtras": "extra_large",
+                "estimatedShootingDays": 45,
+            },
+            "equipment": {
+                "cameraEquipment": "arri",
+                "specialEquipment": [],
+                "vfxRequirements": "moderate",
+            },
+            "metadata": {
+                "genres": ["Drama", "Thriller"],
+                "format": "feature",
+                "tone": "Dark",
+                "targetAudience": "Adults",
+            },
+            "challenges": {
+                "weatherDependent": False,
+                "historicalPeriod": False,
+                "specialPermits": False,
+                "stunts": False,
+                "animalWrangling": False,
+                "waterWork": False,
+                "nightShooting": False,
+                "notes": [],
+            },
+        }
+    )
+
+
+class CaptureUpsertQuery:
+    def __init__(self):
+        self.upsert_payload: dict | None = None
+        self.on_conflict: str | None = None
+
+    def upsert(self, payload, on_conflict=None):
+        self.upsert_payload = payload
+        self.on_conflict = on_conflict
+        return self
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def single(self):
+        return self
+
+    def execute(self):
+        return FakeResult(self.upsert_payload)
+
+
+class CaptureUpsertSupabase:
+    def __init__(self):
+        self.query = CaptureUpsertQuery()
+
+    def table(self, table_name: str):
+        assert table_name == "production_signals"
+        return self.query
+
+
+def test_upsert_production_signal_prefers_request_metadata_values():
+    supabase = CaptureUpsertSupabase()
+    service = ReportService(_as_db(supabase))
+    analysis = _sample_script_analysis()
+
+    result = service.upsert_production_signal(
+        report_id="report-123",
+        report_row={"id": "report-123", "created_at": "2026-04-01T12:30:00+00:00"},
+        request_metadata={
+            "country": "United Kingdom",
+            "state_province": "England",
+            "camera_equipment": ["sony", "arri"],
+            "crew_size": "140",
+            "principal_cast": "10",
+            "supporting_cast": 35,
+            "genre": ["Action", "Thriller"],
+            "format": "Feature Film",
+        },
+        script_analysis=analysis,
+    )
+
+    payload = supabase.query.upsert_payload
+    assert result is not None
+    assert payload is not None
+    assert supabase.query.on_conflict == "id"
+    assert payload["id"] == "report-123"
+    assert payload["script_id"] == "report-123"
+    assert payload["territory"] == "United Kingdom"
+    assert payload["state"] == "England"
+    assert payload["submission_date"] == "2026-04-01"
+    assert payload["camera_equipment"] == ["sony", "arri"]
+    assert payload["crew_size"] == 140
+    assert payload["principal_cast"] == 10
+    assert payload["supporting_cast"] == 35
+    assert payload["background_extras"] == 500
+    assert payload["budget_range"] == "medium"
+    assert payload["format"] == "Feature Film"
+    assert payload["genres"] == ["Action", "Thriller"]
+
+
+def test_upsert_production_signal_falls_back_to_analysis_values():
+    supabase = CaptureUpsertSupabase()
+    service = ReportService(_as_db(supabase))
+    analysis = _sample_script_analysis()
+
+    result = service.upsert_production_signal(
+        report_id="report-456",
+        report_row={"id": "report-456", "created_at": "2026-02-10T09:00:00Z"},
+        request_metadata={"country": "United Kingdom"},
+        script_analysis=analysis,
+    )
+
+    payload = supabase.query.upsert_payload
+    assert result is not None
+    assert payload is not None
+    assert payload["submission_date"] == "2026-02-10"
+    assert payload["camera_equipment"] == ["arri"]
+    assert payload["crew_size"] == 120
+    assert payload["principal_cast"] == 6
+    assert payload["supporting_cast"] == 35
+    assert payload["background_extras"] == 500
+    assert payload["format"] == "feature"
+    assert payload["genres"] == ["Drama", "Thriller"]
+
+
+def test_upsert_production_signal_without_script_analysis_uses_report_and_metadata_fallbacks():
+    supabase = CaptureUpsertSupabase()
+    service = ReportService(_as_db(supabase))
+
+    result = service.upsert_production_signal(
+        report_id="report-789",
+        report_row={
+            "id": "report-789",
+            "created_at": "2026-03-20T08:00:00Z",
+            "report_data": {
+                "productionDetails": {
+                    "format": "Feature Film",
+                    "genres": ["Mystery"],
+                    "crewSize": "medium",
+                    "castSize": "large",
+                }
+            },
+        },
+        request_metadata={
+            "country": "United Kingdom",
+            "budget_amount": 2_000_000,
+        },
+        script_analysis=None,
+    )
+
+    payload = supabase.query.upsert_payload
+    assert result is not None
+    assert payload is not None
+    assert payload["submission_date"] == "2026-03-20"
+    assert payload["territory"] == "United Kingdom"
+    assert payload["budget_range"] == "low"
+    assert payload["format"] == "Feature Film"
+    assert payload["genres"] == ["Mystery"]
+    assert payload["crew_size"] == 60
+    assert payload["principal_cast"] == 12

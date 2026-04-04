@@ -465,6 +465,26 @@ def process_report_task(
                     compact_meta.get("mode"),
                 )
 
+            # Non-blocking write into production_signals for admin analytics.
+            try:
+                signal_row = report_service.upsert_production_signal(
+                    report_id=report_id,
+                    report_row=report_row,
+                    request_metadata=request_metadata,
+                    script_analysis=analysis,
+                )
+                logger.info(
+                    "Production signal upserted: report_id=%s row_written=%s",
+                    report_id,
+                    bool(signal_row),
+                )
+            except Exception:
+                logger.warning(
+                    "Production signal upsert failed: report_id=%s",
+                    report_id,
+                    exc_info=True,
+                )
+
             # Step 3: Full production analysis
             current_step = "production_analysis"
             step_started = perf_counter()
@@ -577,4 +597,3 @@ def process_report_task(
                 logger.debug("Sent failure email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send failure email for report_id=%s", report_id)
-

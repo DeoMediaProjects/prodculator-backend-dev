@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import HTTPException
 
 from app.core.dependencies import get_current_admin, get_supabase
@@ -101,7 +103,7 @@ class FakeSupabase:
             "users": [{"id": "u1", "email": "a@example.com"}],
             "reports": [{"id": "r1", "user_id": "u1", "created_at": "2026-02-01T00:00:00Z"}],
             "subscriptions": [{"id": "s1", "status": "active", "amount_cents": 1000, "currency": "usd"}],
-            "production_signals": [{"id": "p1", "territory": "UK", "submission_date": "2026-01-01"}],
+            "production_signals": [{"id": "p1", "territory": "UK", "submission_date": date(2026, 1, 1)}],
             "incentive_programs": [{"id": "i1", "program_name": "Incentive 1"}],
             "crew_costs": [{"id": "c1", "role": "Producer"}],
             "comparable_productions": [{"id": "cp1", "title": "Comp"}],
@@ -144,6 +146,15 @@ def test_admin_metrics_and_resource_crud(client):
     metrics = client.get("/api/admin/metrics", headers={"Authorization": "Bearer token"})
     assert metrics.status_code == 200
     assert metrics.json()["total_users"] == 1
+
+    production_signals = client.get(
+        "/api/admin/production-signals",
+        headers={"Authorization": "Bearer token"},
+    )
+    assert production_signals.status_code == 200
+    assert production_signals.json()["total"] == 1
+    assert production_signals.json()["items"][0]["id"] == "p1"
+    assert production_signals.json()["items"][0]["submission_date"] == "2026-01-01"
 
     list_response = client.get("/api/admin/incentives", headers={"Authorization": "Bearer token"})
     assert list_response.status_code == 200
