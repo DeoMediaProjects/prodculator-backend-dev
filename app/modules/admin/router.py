@@ -10,11 +10,17 @@ from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.core.territories import resolve_territory
 from app.modules.admin.schemas import (
+    ActivityItem,
+    ActivityResponse,
     AdminListResponse,
     AdminUpsertRequest,
     AdminUser,
     BusinessMetricsResponse,
     ProductionSignalsResponse,
+    ServiceStatusItem,
+    SystemStatusResponse,
+    TaskItem,
+    TasksResponse,
 )
 from app.modules.admin.service import AdminService
 from app.modules.reports.pdf_service import PDFService
@@ -104,13 +110,71 @@ async def list_reports(
 
 @router.get("/metrics", response_model=BusinessMetricsResponse)
 async def get_metrics(
-    _: AdminUser = Depends(RequirePermission("canViewBusinessMetrics")),
+    _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
 ):
     try:
         return BusinessMetricsResponse(**service.get_business_metrics())
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch business metrics")
+
+
+@router.get("/activity", response_model=ActivityResponse)
+async def get_recent_activity(
+    limit: int = Query(10, ge=1, le=50),
+    _: AdminUser = Depends(get_current_admin),
+    service: AdminService = Depends(get_admin_service),
+):
+    try:
+        items = service.get_recent_activity(limit=limit)
+        return ActivityResponse(items=[ActivityItem(**i) for i in items])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to fetch recent activity")
+
+
+@router.get("/system-status", response_model=SystemStatusResponse)
+async def get_system_status(
+    _: AdminUser = Depends(get_current_admin),
+    service: AdminService = Depends(get_admin_service),
+):
+    from app.core.cache import get_redis
+
+    now = datetime.now(timezone.utc).isoformat()
+    services: list[dict] = []
+
+    db_ok = service.check_db_health()
+    services.append({
+        "name": "Primary Database",
+        "status": "operational" if db_ok else "down",
+        "last_checked": now,
+    })
+
+    try:
+        redis_client = get_redis()
+        await redis_client.ping()
+        services.append({"name": "Redis Cache", "status": "operational", "last_checked": now})
+    except Exception:
+        services.append({"name": "Redis Cache", "status": "degraded", "last_checked": now})
+
+    for name in ["OpenAI API", "Stripe Payment Processing", "SendGrid Email Delivery"]:
+        services.append({"name": name, "status": "unknown", "last_checked": now})
+
+    return SystemStatusResponse(
+        services=[ServiceStatusItem(**s) for s in services],
+        checked_at=now,
+    )
+
+
+@router.get("/tasks", response_model=TasksResponse)
+async def get_derived_tasks(
+    _: AdminUser = Depends(get_current_admin),
+    service: AdminService = Depends(get_admin_service),
+):
+    try:
+        items = service.get_derived_tasks()
+        return TasksResponse(items=[TaskItem(**i) for i in items])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to fetch tasks")
 
 
 @router.get("/production-signals", response_model=ProductionSignalsResponse)

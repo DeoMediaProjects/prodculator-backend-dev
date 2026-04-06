@@ -89,6 +89,132 @@ class AdminService:
             "conversion_rate_percent": round(conversion_rate, 2),
         }
 
+    def _get_user_email(self, user_id: str | None) -> str | None:
+        if not user_id:
+            return None
+        try:
+            result = (
+                self.supabase.table("users")
+                .select("email")
+                .eq("id", user_id)
+                .single()
+                .execute()
+            )
+            return (result.data or {}).get("email")
+        except Exception:
+            return None
+
+    def get_recent_activity(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Return the most recent platform events across reports, users, and subscriptions."""
+        events: list[dict[str, Any]] = []
+
+        try:
+            reports = (
+                self.supabase.table("reports")
+                .select("id, script_title, created_at, user_id")
+                .eq("status", "completed")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+            for r in reports:
+                events.append({
+                    "id": str(r["id"]),
+                    "type": "report_generated",
+                    "description": f"Report generated: {r.get('script_title') or 'Untitled'}",
+                    "user_email": self._get_user_email(r.get("user_id")),
+                    "timestamp": str(r["created_at"]) if r.get("created_at") else None,
+                })
+        except Exception:
+            pass
+
+        try:
+            users = (
+                self.supabase.table("users")
+                .select("id, email, created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+            for u in users:
+                events.append({
+                    "id": str(u["id"]),
+                    "type": "user_registered",
+                    "description": "New user registered",
+                    "user_email": u.get("email"),
+                    "timestamp": str(u["created_at"]) if u.get("created_at") else None,
+                })
+        except Exception:
+            pass
+
+        try:
+            subs = (
+                self.supabase.table("subscriptions")
+                .select("id, user_id, plan_type, created_at")
+                .eq("status", "active")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+                .data
+                or []
+            )
+            for s in subs:
+                events.append({
+                    "id": str(s["id"]),
+                    "type": "subscription_activated",
+                    "description": f"{(s.get('plan_type') or 'Unknown').title()} plan activated",
+                    "user_email": self._get_user_email(s.get("user_id")),
+                    "timestamp": str(s["created_at"]) if s.get("created_at") else None,
+                })
+        except Exception:
+            pass
+
+        events.sort(key=lambda e: e.get("timestamp") or "", reverse=True)
+        return events[:limit]
+
+    def check_db_health(self) -> bool:
+        """Return True if the database is reachable."""
+        try:
+            self.supabase.table("users").select("id", count="exact", head=True).limit(1).execute()
+            return True
+        except Exception:
+            return False
+
+    def get_derived_tasks(self) -> list[dict[str, Any]]:
+        """Derive maintenance tasks from actual data staleness (last update > 30 days)."""
+        from datetime import datetime, timedelta, timezone
+
+        tasks: list[dict[str, Any]] = []
+        stale_threshold = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+
+        checks: list[tuple[str, str, str, str]] = [
+            ("incentives", "Review and update incentive data", "high", "This week"),
+            ("crew_costs", "Verify crew cost rates are current", "medium", "This week"),
+            ("grants", "Sync grants database", "low", "Next week"),
+        ]
+
+        for table, task_label, priority, due in checks:
+            try:
+                result = (
+                    self.supabase.table(table)
+                    .select("updated_at")
+                    .order("updated_at", desc=True)
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+                latest = (result or [{}])[0].get("updated_at") or ""
+                if not result or str(latest) < stale_threshold:
+                    tasks.append({"task": task_label, "priority": priority, "due": due})
+            except Exception:
+                pass
+
+        return tasks
+
     def get_production_signals(
         self,
         *,
