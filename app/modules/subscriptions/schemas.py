@@ -17,3 +17,10 @@ class CanGenerateResponse(BaseModel):
     can_generate: bool
     reason: str
 
+
+class SubscriptionStatusResponse(BaseModel):
+    plan: str
+    subscription: SubscriptionRecord | None = None
+    can_generate: bool
+    reason: str
+

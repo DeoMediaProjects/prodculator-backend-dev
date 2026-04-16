@@ -376,6 +376,7 @@ class ReportResponse(BaseModel):
     createdAt: str
     analysis: dict | None = None
     pdfUrl: str | None = None
+    userPlan: str | None = None
 
 
 class ReportStatusResponse(BaseModel):

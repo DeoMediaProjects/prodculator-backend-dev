@@ -28,9 +28,14 @@ class StripeService:
         return {"session_id": session.id, "url": session.url}
 
     def create_subscription_checkout(
-        self, price_id: str, user_email: str, user_id: str
+        self,
+        price_id: str,
+        user_email: str,
+        user_id: str,
+        metadata: dict | None = None,
     ) -> dict:
         """Create a Stripe Checkout session for subscription."""
+        combined_metadata = {"userId": user_id, **(metadata or {})}
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
@@ -38,7 +43,8 @@ class StripeService:
             customer_email=user_email,
             success_url=f"{self.settings.FRONTEND_URL}/dashboard?subscription=success",
             cancel_url=f"{self.settings.FRONTEND_URL}/pricing?subscription=cancelled",
-            metadata={"userId": user_id},
+            metadata=combined_metadata,
+            subscription_data={"metadata": combined_metadata},
         )
         return {"session_id": session.id, "url": session.url}
 

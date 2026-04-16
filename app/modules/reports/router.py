@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.db import get_db_context
-from app.core.dependencies import get_supabase, get_current_user, get_optional_user
+from app.core.dependencies import get_supabase, get_current_user, get_optional_user, RequirePlan
 from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
 from app.modules.email.service import EmailService
@@ -20,6 +20,7 @@ from app.modules.reports.schemas import (
 from app.modules.reports.service import ReportService
 from app.modules.scripts.service import ScriptAnalysisService
 from app.modules.email_gating.service import EmailGatingService
+from app.modules.subscriptions.service import SubscriptionService
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
@@ -142,6 +143,17 @@ async def create_report(
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required for paid reports")
 
+    # Subscription / usage check — enforced on every non-preview report.
+    sub_service = SubscriptionService(service.supabase)
+    can_generate, reason = sub_service.can_generate_report(user.id)
+    if not can_generate:
+        raise HTTPException(status_code=403, detail=reason)
+
+    # Non-subscribed users get their first free full report stored as
+    # report_type="free" so the limit is enforced on subsequent attempts.
+    has_subscription = sub_service.get_active_subscription(user.id) is not None
+    effective_report_type = body_data.report_type if has_subscription else "free"
+
     if not script_file:
         raise HTTPException(status_code=400, detail="script_file is required for paid/b2b reports")
 
@@ -173,7 +185,7 @@ async def create_report(
         report_id = service.create_report(
             user_id=user.id,
             script_title=body_data.script_title,
-            report_type=body_data.report_type,
+            report_type=effective_report_type,
             script_file_path=None,  # never stored
             request_metadata=metadata,
         )
@@ -191,7 +203,7 @@ async def create_report(
             "Queued paid report processing: report_id=%s user_id=%s report_type=%s elapsed_ms=%s",
             report_id,
             user.id,
-            body_data.report_type,
+            effective_report_type,
             elapsed_ms,
         )
         return ReportStatusResponse(
@@ -203,7 +215,7 @@ async def create_report(
         logger.exception(
             "Failed to create report: user_id=%s report_type=%s title=%s",
             user.id,
-            body_data.report_type,
+            effective_report_type,
             body_data.script_title,
         )
         raise HTTPException(status_code=500, detail="Failed to create report")
@@ -228,12 +240,14 @@ async def get_report(
     settings: Settings = Depends(get_settings),
 ):
     """Get a single report by ID."""
+    from app.models.enums import normalize_plan
+
     report = service.get_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     if report["user_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return _format_report_response(report, settings)
+    return _format_report_response(report, settings, user_plan=normalize_plan(user.plan))
 
 
 @router.get("/shared/{share_token}", response_model=ReportResponse)
@@ -286,7 +300,7 @@ async def get_report_status(
 @router.get("/{report_id}/pdf")
 async def download_pdf(
     report_id: str,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(RequirePlan("professional")),
     service: ReportService = Depends(get_report_service),
     supabase: DatabaseClient = Depends(get_supabase),
     settings: Settings = Depends(get_settings),
@@ -323,19 +337,44 @@ async def download_pdf(
     )
 
 
-def _format_report_response(report: dict, settings: Settings) -> dict:
+def _format_report_response(report: dict, settings: Settings, user_plan: str = "free") -> dict:
     """Format a DB report row into the API response shape.
 
     ``pdf_url`` in the DB holds the raw S3 object key.  A fresh presigned URL is
     generated here so the frontend always receives a non-expired link.
+
+    For free users, premium sections are stripped and territory rankings are
+    limited to the top 3.
     """
+    import copy
+
+    analysis = report.get("report_data")
+    is_free = user_plan == "free"
+
+    if analysis and is_free:
+        analysis = copy.deepcopy(analysis)
+        # Limit location rankings to top 3 for free users
+        if "locationRankings" in analysis:
+            analysis["locationRankings"] = analysis["locationRankings"][:3]
+        # Strip premium sections
+        for key in (
+            "financialAnalysis",
+            "crewInsights",
+            "comparables",
+            "weatherLogistics",
+            "fundingOpportunities",
+            "investorSummary",
+        ):
+            analysis.pop(key, None)
+
     return {
         "id": report["id"],
         "title": report.get("script_title", ""),
         "reportType": report.get("report_type", "paid"),
         "createdAt": str(report.get("created_at", "")),
-        "analysis": report.get("report_data"),
-        "pdfUrl": _resolve_pdf_url(report.get("pdf_url"), settings),
+        "analysis": analysis,
+        "pdfUrl": None if is_free else _resolve_pdf_url(report.get("pdf_url"), settings),
+        "userPlan": user_plan,
     }
 
 

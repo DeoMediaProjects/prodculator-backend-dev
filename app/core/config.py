@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_SINGLE_USD: str = ""
     STRIPE_PRICE_SINGLE_GBP: str = ""
+    STRIPE_PRICE_PROFESSIONAL_USD: str = ""
+    STRIPE_PRICE_PROFESSIONAL_GBP: str = ""
     STRIPE_PRICE_STUDIO_USD: str = ""
     STRIPE_PRICE_STUDIO_GBP: str = ""
 

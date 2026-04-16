@@ -4,7 +4,15 @@ from datetime import datetime, timezone
 from app.core.database_client import DatabaseClient
 
 from app.core.config import Settings
+from app.models.enums import normalize_plan
 from app.modules.email.service import EmailService
+
+# Map plan types to their report limits per billing period
+PLAN_REPORT_LIMITS: dict[str, int] = {
+    "free": 1,
+    "professional": 3,
+    "studio": -1,  # unlimited
+}
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +65,11 @@ class WebhookHandler:
             logger.warning("checkout.session.completed missing metadata.userId")
             return
 
-        plan_type = session.get("metadata", {}).get("planType", "single")
+        raw_plan = session.get("metadata", {}).get("planType", "professional")
+        plan_type = normalize_plan(raw_plan)
         stripe_subscription_id = session.get("subscription")
+        report_limit = PLAN_REPORT_LIMITS.get(plan_type, 3)
+
         self.supabase.table("subscriptions").upsert(
             {
                 "user_id": user_id,
@@ -66,10 +77,17 @@ class WebhookHandler:
                 "stripe_subscription_id": stripe_subscription_id,
                 "plan_type": plan_type,
                 "status": "active",
+                "report_limit": report_limit,
                 "current_period_start": datetime.now(timezone.utc).isoformat(),
             },
             on_conflict="stripe_subscription_id",
         ).execute()
+
+        # Update user record so /api/auth/me reflects the new plan
+        user_type = "paid" if plan_type != "free" else "free"
+        self.supabase.table("users").update(
+            {"plan": plan_type, "user_type": user_type}
+        ).eq("id", user_id).execute()
 
         self._send_email_to_user_id(
             user_id,
@@ -128,12 +146,21 @@ class WebhookHandler:
         if not subscription_id:
             logger.warning("customer.subscription.deleted missing id")
             return
-        self.supabase.table("subscriptions").update(
+        result = self.supabase.table("subscriptions").update(
             {
                 "status": "cancelled",
                 "cancelled_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("stripe_subscription_id", subscription_id).execute()
+
+        # Downgrade user back to free plan
+        rows = result.data or []
+        if rows:
+            user_id = rows[0].get("user_id")
+            if user_id:
+                self.supabase.table("users").update(
+                    {"plan": "free", "user_type": "free"}
+                ).eq("id", user_id).execute()
 
     def _handle_invoice_paid(self, invoice: dict) -> None:
         logger.info("Invoice paid: %s", invoice.get("id"))

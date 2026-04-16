@@ -65,10 +65,12 @@ async def lifespan(app_: FastAPI):
     init_redis(settings)
     if settings.AUTO_CREATE_DB_SCHEMA:
         init_db()
-    # Seed scrape sources on startup
+    # Seed scrape sources on startup (skip gracefully if table missing)
     db = create_client()
     try:
         ScraperService(db, settings).seed_sources()
+    except Exception as e:
+        logger.warning("Could not seed scrape sources: %s", e)
     finally:
         db.close()
     start_scheduler()

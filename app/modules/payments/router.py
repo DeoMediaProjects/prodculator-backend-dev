@@ -81,6 +81,7 @@ async def create_subscription_checkout(
             price_id=body.price_id,
             user_email=user.email,
             user_id=user.id,
+            metadata={"planType": body.plan_type},
         )
         return CheckoutResponse(**result)
     except stripe_lib.StripeError:

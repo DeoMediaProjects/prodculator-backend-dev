@@ -17,8 +17,14 @@ class AdminRole(StrEnum):
 
 class PlanType(StrEnum):
     FREE = "free"
-    SINGLE = "single"
+    SINGLE = "single"  # legacy alias — treat as "professional"
+    PROFESSIONAL = "professional"
     STUDIO = "studio"
+
+
+def normalize_plan(plan: str) -> str:
+    """Normalize legacy 'single' to 'professional'."""
+    return "professional" if plan == "single" else plan
 
 
 class ReportStatus(StrEnum):
