@@ -80,21 +80,25 @@ depends_on = None
 
 def upgrade() -> None:
     conn = op.get_bind()
+    inspector = sa.inspect(conn)
 
     # ── Add columns ──────────────────────────────────────────────────────────
-    op.add_column(
-        "incentive_programs",
-        sa.Column("cultural_test_required", sa.Boolean(), nullable=True),
-    )
-    op.add_column(
-        "incentive_programs",
-        sa.Column(
-            "admin_complexity",
-            sa.Text(),
-            nullable=True,
-            comment="Low | Medium | High",
-        ),
-    )
+    existing_cols = {c["name"] for c in inspector.get_columns("incentive_programs")}
+    if "cultural_test_required" not in existing_cols:
+        op.add_column(
+            "incentive_programs",
+            sa.Column("cultural_test_required", sa.Boolean(), nullable=True),
+        )
+    if "admin_complexity" not in existing_cols:
+        op.add_column(
+            "incentive_programs",
+            sa.Column(
+                "admin_complexity",
+                sa.Text(),
+                nullable=True,
+                comment="Low | Medium | High",
+            ),
+        )
     op.create_check_constraint(
         "ck_incentive_programs_admin_complexity",
         "incentive_programs",

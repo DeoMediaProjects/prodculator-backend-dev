@@ -2,7 +2,18 @@
 
 from datetime import datetime, timezone
 
+from app.core.config import Settings
 from app.modules.payments.webhook_handler import WebhookHandler, PLAN_REPORT_LIMITS
+
+
+def _settings_with_prices() -> Settings:
+    return Settings(
+        _env_file=None,
+        JWT_SECRET_KEY="x" * 64,
+        STRIPE_PRICE_PROFESSIONAL_GBP="price_pro",
+        STRIPE_PRICE_PRODUCER_GBP="price_producer",
+        STRIPE_PRICE_STUDIO_GBP="price_studio",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -89,14 +100,17 @@ class FakeSupabase:
 
 
 class TestPlanReportLimits:
-    def test_professional_limit_is_3(self):
-        assert PLAN_REPORT_LIMITS["professional"] == 3
-
-    def test_studio_limit_is_unlimited(self):
-        assert PLAN_REPORT_LIMITS["studio"] == -1
-
     def test_free_limit_is_1(self):
         assert PLAN_REPORT_LIMITS["free"] == 1
+
+    def test_professional_limit_is_1(self):
+        assert PLAN_REPORT_LIMITS["professional"] == 1
+
+    def test_producer_limit_is_3(self):
+        assert PLAN_REPORT_LIMITS["producer"] == 3
+
+    def test_studio_limit_is_10(self):
+        assert PLAN_REPORT_LIMITS["studio"] == 10
 
 
 class TestCheckoutCompleted:
@@ -116,8 +130,19 @@ class TestCheckoutCompleted:
         assert len(sub_upserts) == 1
         sub = sub_upserts[0]["data"]
         assert sub["plan_type"] == "professional"
-        assert sub["report_limit"] == 3
+        assert sub["report_limit"] == 1
         assert sub["status"] == "active"
+
+    def test_creates_subscription_with_producer_limits(self):
+        db = FakeSupabase()
+        handler = WebhookHandler(db)
+        handler.handle_event("evt_2a", "checkout.session.completed", self._make_session("producer"))
+
+        sub_upserts = db.writes.get("subscriptions:upsert", [])
+        assert len(sub_upserts) == 1
+        sub = sub_upserts[0]["data"]
+        assert sub["plan_type"] == "producer"
+        assert sub["report_limit"] == 3
 
     def test_creates_subscription_with_studio_limits(self):
         db = FakeSupabase()
@@ -126,7 +151,7 @@ class TestCheckoutCompleted:
 
         sub_upserts = db.writes.get("subscriptions:upsert", [])
         assert len(sub_upserts) == 1
-        assert sub_upserts[0]["data"]["report_limit"] == -1
+        assert sub_upserts[0]["data"]["report_limit"] == 10
 
     def test_normalizes_legacy_single_to_professional(self):
         db = FakeSupabase()
@@ -135,7 +160,7 @@ class TestCheckoutCompleted:
 
         sub_upserts = db.writes.get("subscriptions:upsert", [])
         assert sub_upserts[0]["data"]["plan_type"] == "professional"
-        assert sub_upserts[0]["data"]["report_limit"] == 3
+        assert sub_upserts[0]["data"]["report_limit"] == 1
 
     def test_updates_user_plan_and_user_type(self):
         db = FakeSupabase()
@@ -169,7 +194,7 @@ class TestCheckoutCompleted:
 
         sub_upserts = db.writes.get("subscriptions:upsert", [])
         assert sub_upserts[0]["data"]["plan_type"] == "professional"
-        assert sub_upserts[0]["data"]["report_limit"] == 3
+        assert sub_upserts[0]["data"]["report_limit"] == 1
 
 
 class TestSubscriptionDeleted:
@@ -212,6 +237,41 @@ class TestSubscriptionUpdated:
         data = sub_updates[0]["data"]
         assert data["status"] == "active"
         assert data["cancel_at_period_end"] is False
+
+    def test_writes_plan_from_price_id_and_mirrors_to_user(self):
+        """The single fix that unlocks Subscription.modify upgrades."""
+        db = FakeSupabase()
+        handler = WebhookHandler(db, _settings_with_prices())
+        handler.handle_event("evt_upgrade", "customer.subscription.updated", {
+            "id": "sub_123",
+            "status": "active",
+            "current_period_start": 1700000000,
+            "current_period_end": 1702592000,
+            "cancel_at_period_end": False,
+            "items": {"data": [{"price": {"id": "price_producer"}}]},
+        })
+
+        sub_updates = db.writes.get("subscriptions:update", [])
+        sub_payload = sub_updates[0]["data"]
+        assert sub_payload["plan_type"] == "producer"
+        assert sub_payload["report_limit"] == PLAN_REPORT_LIMITS["producer"]
+
+        user_updates = db.writes.get("users:update", [])
+        assert any(u["data"].get("plan") == "producer" for u in user_updates)
+        assert any(u["data"].get("user_type") == "paid" for u in user_updates)
+
+    def test_unknown_price_id_skips_plan_update(self):
+        db = FakeSupabase()
+        handler = WebhookHandler(db, _settings_with_prices())
+        handler.handle_event("evt_unknown", "customer.subscription.updated", {
+            "id": "sub_123",
+            "status": "active",
+            "items": {"data": [{"price": {"id": "price_not_in_catalog"}}]},
+        })
+        sub_updates = db.writes.get("subscriptions:update", [])
+        assert "plan_type" not in sub_updates[0]["data"]
+        # No mirror to user when plan can't be resolved.
+        assert "users:update" not in db.writes
 
 
 class TestWebhookDeduplication:

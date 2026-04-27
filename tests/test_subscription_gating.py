@@ -26,6 +26,7 @@ class FakeQuery:
         self.rows = rows
         self.table_name = table_name
         self.filters = {}
+        self._in: dict = {}
         self._single = False
 
     def select(self, _v):
@@ -33,6 +34,10 @@ class FakeQuery:
 
     def eq(self, key, value):
         self.filters[key] = value
+        return self
+
+    def in_(self, key, values):
+        self._in[key] = list(values)
         return self
 
     def gte(self, _k, _v):
@@ -55,6 +60,7 @@ class FakeQuery:
         filtered = [
             row for row in self.rows
             if all(row.get(k) == v for k, v in self.filters.items())
+            and all(row.get(k) in vs for k, vs in self._in.items())
         ]
         if self._single:
             result_data = filtered[0] if filtered else None
@@ -108,14 +114,44 @@ class FakeStripeService:
         return None
 
 
+# Shared report fixture with 6 territories and all premium sections
+_FULL_REPORT = {
+    "id": "report-1",
+    "user_id": "user-1",
+    "script_title": "Test Script",
+    "status": "completed",
+    "report_type": "paid",
+    "pdf_url": "reports/user-1/report-1.pdf",
+    "created_at": "2026-01-01",
+    "report_data": {
+        "locationRankings": [
+            {"name": "UK", "score": 95},
+            {"name": "Canada", "score": 90},
+            {"name": "Ireland", "score": 85},
+            {"name": "Germany", "score": 80},
+            {"name": "France", "score": 75},
+            {"name": "Australia", "score": 70},
+        ],
+        "financialAnalysis": {"netBudget": 1000000},
+        "crewInsights": [{"role": "Director"}],
+        "comparables": [{"title": "Film A"}],
+        "weatherLogistics": {"bestMonth": "June"},
+        "fundingOpportunities": [{"name": "Grant A"}],
+        "investorSummary": {"roi": "12%"},
+        "scriptSummary": {"genre": "Drama"},
+    },
+}
+
+
 # ---------------------------------------------------------------------------
 # PDF Download Gating Tests
 # ---------------------------------------------------------------------------
 
 class TestPDFDownloadGating:
-    """PDF download requires professional plan or higher."""
+    """All authenticated users can download PDF; Explorer gets watermarked version."""
 
-    def test_free_user_blocked_from_pdf_download(self, client):
+    def test_free_user_gets_watermarked_pdf(self, client):
+        """Free users now receive a PDF (watermarked) — not a 403."""
         free_user = _make_user(plan="free")
         report = {
             "id": "report-1",
@@ -135,8 +171,10 @@ class TestPDFDownloadGating:
             "/api/reports/report-1/pdf",
             headers={"Authorization": "Bearer token"},
         )
-        assert response.status_code == 403
-        assert "professional" in response.json()["detail"].lower()
+        # Watermark may fail silently in test env (no reportlab/pypdf) — either
+        # way the response should be 200 with a PDF content-type.
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
 
     def test_professional_user_can_download_pdf(self, client):
         pro_user = _make_user(plan="professional")
@@ -160,6 +198,28 @@ class TestPDFDownloadGating:
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
+
+    def test_producer_user_can_download_pdf(self, client):
+        producer_user = _make_user(plan="producer")
+        report = {
+            "id": "report-1",
+            "user_id": "user-1",
+            "script_title": "Test Script",
+            "status": "completed",
+            "report_type": "paid",
+            "pdf_url": "reports/user-1/report-1.pdf",
+            "report_data": {"locationRankings": []},
+            "created_at": "2026-01-01",
+        }
+        db = FakeSupabase({"reports": [report]})
+        client.app.dependency_overrides[get_current_user] = lambda: producer_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get(
+            "/api/reports/report-1/pdf",
+            headers={"Authorization": "Bearer token"},
+        )
+        assert response.status_code == 200
 
     def test_studio_user_can_download_pdf(self, client):
         studio_user = _make_user(plan="studio")
@@ -185,64 +245,56 @@ class TestPDFDownloadGating:
 
 
 # ---------------------------------------------------------------------------
-# Report Data Filtering Tests
+# Report Data Filtering Tests — Territory Caps & Section Gating
 # ---------------------------------------------------------------------------
 
 class TestReportDataFiltering:
-    """Free users get limited data; professional users get full data."""
-
-    _FULL_REPORT = {
-        "id": "report-1",
-        "user_id": "user-1",
-        "script_title": "Test Script",
-        "status": "completed",
-        "report_type": "paid",
-        "pdf_url": "reports/user-1/report-1.pdf",
-        "created_at": "2026-01-01",
-        "report_data": {
-            "locationRankings": [
-                {"name": "UK", "score": 95},
-                {"name": "Canada", "score": 90},
-                {"name": "Ireland", "score": 85},
-                {"name": "Germany", "score": 80},
-                {"name": "France", "score": 75},
-                {"name": "Australia", "score": 70},
-            ],
-            "financialAnalysis": {"netBudget": 1000000},
-            "crewInsights": [{"role": "Director"}],
-            "comparables": [{"title": "Film A"}],
-            "weatherLogistics": {"bestMonth": "June"},
-            "fundingOpportunities": [{"name": "Grant A"}],
-            "investorSummary": {"roi": "12%"},
-            "scriptSummary": {"genre": "Drama"},
-        },
-    }
+    """Territory rankings and premium sections are filtered by plan."""
 
     def test_free_user_gets_only_3_territories(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [self._FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
-        response = client.get(
-            "/api/reports/report-1",
-            headers={"Authorization": "Bearer token"},
-        )
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
         assert response.status_code == 200
-        data = response.json()
-        analysis = data["analysis"]
-        assert len(analysis["locationRankings"]) == 3
+        assert len(response.json()["analysis"]["locationRankings"]) == 3
+
+    def test_professional_user_gets_5_territories(self, client):
+        pro_user = _make_user(plan="professional")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: pro_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        assert len(response.json()["analysis"]["locationRankings"]) == 5
+
+    def test_producer_user_gets_all_territories(self, client):
+        producer_user = _make_user(plan="producer")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: producer_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        assert len(response.json()["analysis"]["locationRankings"]) == 6
+
+    def test_studio_user_gets_all_territories(self, client):
+        studio_user = _make_user(plan="studio")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: studio_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        assert len(response.json()["analysis"]["locationRankings"]) == 6
 
     def test_free_user_gets_no_premium_sections(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [self._FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
-        response = client.get(
-            "/api/reports/report-1",
-            headers={"Authorization": "Bearer token"},
-        )
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
         analysis = response.json()["analysis"]
         assert "financialAnalysis" not in analysis
         assert "crewInsights" not in analysis
@@ -251,61 +303,142 @@ class TestReportDataFiltering:
         assert "fundingOpportunities" not in analysis
         assert "investorSummary" not in analysis
 
+    def test_professional_user_gets_full_report_but_no_investor_summary(self, client):
+        pro_user = _make_user(plan="professional")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: pro_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        analysis = response.json()["analysis"]
+        # Professional gets the full 13-section report
+        assert "financialAnalysis" in analysis
+        assert "crewInsights" in analysis
+        assert "comparables" in analysis
+        # But investorSummary is Producer+ only
+        assert "investorSummary" not in analysis
+
+    def test_producer_user_gets_investor_summary(self, client):
+        producer_user = _make_user(plan="producer")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: producer_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        analysis = response.json()["analysis"]
+        assert "financialAnalysis" in analysis
+        assert "investorSummary" in analysis
+
     def test_free_user_gets_no_pdf_url(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [self._FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
-        response = client.get(
-            "/api/reports/report-1",
-            headers={"Authorization": "Bearer token"},
-        )
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
         assert response.json()["pdfUrl"] is None
 
     def test_free_user_still_gets_non_premium_sections(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [self._FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: free_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        analysis = response.json()["analysis"]
+        assert "scriptSummary" in analysis
+
+    def test_response_includes_user_plan(self, client):
+        pro_user = _make_user(plan="professional")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: pro_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        assert response.json()["userPlan"] == "professional"
+
+    def test_producer_response_includes_correct_plan(self, client):
+        producer_user = _make_user(plan="producer")
+        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: producer_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
+        assert response.json()["userPlan"] == "producer"
+
+
+# ---------------------------------------------------------------------------
+# Investor Summary Endpoint Gating
+# ---------------------------------------------------------------------------
+
+class TestInvestorSummaryGating:
+    """Investor Summary PDF is Producer+ only."""
+
+    _REPORT = {
+        "id": "report-1",
+        "user_id": "user-1",
+        "script_title": "Test Script",
+        "status": "completed",
+        "report_type": "paid",
+        "pdf_url": "reports/user-1/report-1.pdf",
+        "created_at": "2026-01-01",
+        "report_data": {
+            "locationRankings": [{"name": "UK", "score": 95}],
+            "financialAnalysis": {"netBudget": 1000000},
+            "scriptSummary": {"genre": "Drama"},
+        },
+    }
+
+    def test_free_user_blocked_from_investor_summary(self, client):
+        free_user = _make_user(plan="free")
+        db = FakeSupabase({"reports": [self._REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
         response = client.get(
-            "/api/reports/report-1",
+            "/api/reports/report-1/investor-summary",
             headers={"Authorization": "Bearer token"},
         )
-        analysis = response.json()["analysis"]
-        # scriptSummary is NOT a premium section — should be preserved
-        assert "scriptSummary" in analysis
+        assert response.status_code == 403
+        assert "producer" in response.json()["detail"].lower()
 
-    def test_professional_user_gets_full_data(self, client):
+    def test_professional_user_blocked_from_investor_summary(self, client):
         pro_user = _make_user(plan="professional")
-        db = FakeSupabase({"reports": [self._FULL_REPORT]})
+        db = FakeSupabase({"reports": [self._REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: pro_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
         response = client.get(
-            "/api/reports/report-1",
+            "/api/reports/report-1/investor-summary",
             headers={"Authorization": "Bearer token"},
         )
-        data = response.json()
-        analysis = data["analysis"]
-        assert len(analysis["locationRankings"]) == 6
-        assert "financialAnalysis" in analysis
-        assert "crewInsights" in analysis
-        assert "comparables" in analysis
-        assert data["pdfUrl"] is not None or data["pdfUrl"] == ""  # not None for pro
+        assert response.status_code == 403
 
-    def test_response_includes_user_plan(self, client):
-        pro_user = _make_user(plan="professional")
-        db = FakeSupabase({"reports": [self._FULL_REPORT]})
-        client.app.dependency_overrides[get_current_user] = lambda: pro_user
+    def test_producer_user_can_access_investor_summary(self, client):
+        producer_user = _make_user(plan="producer")
+        db = FakeSupabase({"reports": [self._REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: producer_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
         response = client.get(
-            "/api/reports/report-1",
+            "/api/reports/report-1/investor-summary",
             headers={"Authorization": "Bearer token"},
         )
-        assert response.json()["userPlan"] == "professional"
+        # WeasyPrint may not be available in test env — 200 or 500 are acceptable;
+        # the key assertion is that it does NOT return 403.
+        assert response.status_code != 403
+
+    def test_studio_user_can_access_investor_summary(self, client):
+        studio_user = _make_user(plan="studio")
+        db = FakeSupabase({"reports": [self._REPORT]})
+        client.app.dependency_overrides[get_current_user] = lambda: studio_user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get(
+            "/api/reports/report-1/investor-summary",
+            headers={"Authorization": "Bearer token"},
+        )
+        assert response.status_code != 403
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +454,29 @@ class TestSubscriptionStatus:
                 "user_id": "user-1",
                 "status": "active",
                 "plan_type": "professional",
+                "report_limit": 1,
+                "current_period_start": "2026-04-01",
+                "current_period_end": "2026-05-01",
+            }],
+            "reports": [],
+        })
+        client.app.dependency_overrides[get_current_user] = lambda: user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/subscriptions/status", headers={"Authorization": "Bearer token"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["plan"] == "professional"
+        assert data["can_generate"] is True
+
+    def test_producer_plan_returns_correct_limit(self, client):
+        user = _make_user(plan="producer")
+        db = FakeSupabase({
+            "subscriptions": [{
+                "id": "sub-2",
+                "user_id": "user-1",
+                "status": "active",
+                "plan_type": "producer",
                 "report_limit": 3,
                 "current_period_start": "2026-04-01",
                 "current_period_end": "2026-05-01",
@@ -330,14 +486,10 @@ class TestSubscriptionStatus:
         client.app.dependency_overrides[get_current_user] = lambda: user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
-        response = client.get(
-            "/api/subscriptions/status",
-            headers={"Authorization": "Bearer token"},
-        )
+        response = client.get("/api/subscriptions/status", headers={"Authorization": "Bearer token"})
         assert response.status_code == 200
-        data = response.json()
-        assert data["plan"] == "professional"
-        assert data["can_generate"] is True
+        assert response.json()["plan"] == "producer"
+        assert response.json()["can_generate"] is True
 
     def test_free_user_with_no_reports_can_generate(self, client):
         user = _make_user(plan="free")
@@ -345,10 +497,7 @@ class TestSubscriptionStatus:
         client.app.dependency_overrides[get_current_user] = lambda: user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
-        response = client.get(
-            "/api/subscriptions/status",
-            headers={"Authorization": "Bearer token"},
-        )
+        response = client.get("/api/subscriptions/status", headers={"Authorization": "Bearer token"})
         data = response.json()
         assert data["plan"] == "free"
         assert data["can_generate"] is True
@@ -362,12 +511,62 @@ class TestSubscriptionStatus:
         client.app.dependency_overrides[get_current_user] = lambda: user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
-        response = client.get(
-            "/api/subscriptions/status",
-            headers={"Authorization": "Bearer token"},
-        )
-        data = response.json()
-        assert data["can_generate"] is False
+        response = client.get("/api/subscriptions/status", headers={"Authorization": "Bearer token"})
+        assert response.json()["can_generate"] is False
+
+    def test_subscriber_at_limit_but_with_credit_can_generate(self, client):
+        """Regression: credits_remaining must be checked even when the user has
+        an active subscription that has hit its monthly report cap.
+
+        Scenario: user buys a pay-as-you-go credit, then subscribes to
+        Professional (1 report/month), uses their 1 monthly report, but still
+        has the unspent credit — they should still be able to generate.
+        """
+        user = _make_user(plan="professional", credits_remaining=1)
+        db = FakeSupabase({
+            "subscriptions": [{
+                "id": "sub-1",
+                "user_id": "user-1",
+                "status": "active",
+                "plan_type": "professional",
+                "report_limit": 1,
+                "current_period_start": "2026-04-01",
+                "current_period_end": "2026-05-01",
+            }],
+            # One paid report already used this period — hits the monthly cap.
+            "reports": [{"id": "r-1", "user_id": "user-1", "report_type": "paid", "created_at": "2026-04-10"}],
+            "users": [{"id": "user-1", "credits_remaining": 1}],
+        })
+        client.app.dependency_overrides[get_current_user] = lambda: user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/subscriptions/status", headers={"Authorization": "Bearer token"})
+        assert response.status_code == 200
+        assert response.json()["can_generate"] is True
+        assert "pay-per-report" in response.json()["reason"]
+
+    def test_subscriber_at_limit_without_credit_cannot_generate(self, client):
+        """Subscriber at monthly cap with no credits is correctly blocked."""
+        user = _make_user(plan="professional", credits_remaining=0)
+        db = FakeSupabase({
+            "subscriptions": [{
+                "id": "sub-1",
+                "user_id": "user-1",
+                "status": "active",
+                "plan_type": "professional",
+                "report_limit": 1,
+                "current_period_start": "2026-04-01",
+                "current_period_end": "2026-05-01",
+            }],
+            "reports": [{"id": "r-1", "user_id": "user-1", "report_type": "paid", "created_at": "2026-04-10"}],
+            "users": [{"id": "user-1", "credits_remaining": 0}],
+        })
+        client.app.dependency_overrides[get_current_user] = lambda: user
+        client.app.dependency_overrides[get_supabase] = lambda: db
+
+        response = client.get("/api/subscriptions/status", headers={"Authorization": "Bearer token"})
+        assert response.status_code == 200
+        assert response.json()["can_generate"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -393,11 +592,11 @@ class TestSubscriptionCheckoutPlanType:
         response = client.post(
             "/api/payments/subscription-checkout",
             headers={"Authorization": "Bearer token"},
-            json={"price_id": "price_xxx", "plan_type": "professional"},
+            json={"price_id": "price_xxx", "plan_type": "producer"},
         )
         assert response.status_code == 200
         assert len(calls) == 1
-        assert calls[0]["metadata"] == {"planType": "professional"}
+        assert calls[0]["metadata"] == {"planType": "producer"}
 
     def test_subscription_checkout_defaults_to_professional(self, client):
         user = _make_user(plan="free")

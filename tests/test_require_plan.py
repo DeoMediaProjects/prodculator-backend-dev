@@ -38,6 +38,14 @@ async def test_professional_user_passes_professional_gate():
 
 
 @pytest.mark.asyncio
+async def test_producer_user_passes_professional_gate():
+    dep = RequirePlan("professional")
+    user = _make_user(plan="producer")
+    result = await dep(user)
+    assert result.plan == "producer"
+
+
+@pytest.mark.asyncio
 async def test_studio_user_passes_professional_gate():
     dep = RequirePlan("professional")
     user = _make_user(plan="studio")
@@ -63,9 +71,55 @@ async def test_free_user_passes_free_gate():
 
 
 @pytest.mark.asyncio
+async def test_free_user_blocked_from_producer():
+    dep = RequirePlan("producer")
+    user = _make_user(plan="free")
+    with pytest.raises(HTTPException) as exc_info:
+        await dep(user)
+    assert exc_info.value.status_code == 403
+    assert "producer" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_professional_user_blocked_from_producer():
+    dep = RequirePlan("producer")
+    user = _make_user(plan="professional")
+    with pytest.raises(HTTPException) as exc_info:
+        await dep(user)
+    assert exc_info.value.status_code == 403
+    assert "producer" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_producer_user_passes_producer_gate():
+    dep = RequirePlan("producer")
+    user = _make_user(plan="producer")
+    result = await dep(user)
+    assert result.plan == "producer"
+
+
+@pytest.mark.asyncio
+async def test_studio_user_passes_producer_gate():
+    dep = RequirePlan("producer")
+    user = _make_user(plan="studio")
+    result = await dep(user)
+    assert result.plan == "studio"
+
+
+@pytest.mark.asyncio
 async def test_professional_user_blocked_from_studio():
     dep = RequirePlan("studio")
     user = _make_user(plan="professional")
+    with pytest.raises(HTTPException) as exc_info:
+        await dep(user)
+    assert exc_info.value.status_code == 403
+    assert "studio" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_producer_user_blocked_from_studio():
+    dep = RequirePlan("studio")
+    user = _make_user(plan="producer")
     with pytest.raises(HTTPException) as exc_info:
         await dep(user)
     assert exc_info.value.status_code == 403

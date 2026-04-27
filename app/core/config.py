@@ -45,8 +45,14 @@ class Settings(BaseSettings):
     STRIPE_PRICE_SINGLE_GBP: str = ""
     STRIPE_PRICE_PROFESSIONAL_USD: str = ""
     STRIPE_PRICE_PROFESSIONAL_GBP: str = ""
+    STRIPE_PRICE_PRODUCER_USD: str = ""
+    STRIPE_PRICE_PRODUCER_GBP: str = ""
     STRIPE_PRICE_STUDIO_USD: str = ""
     STRIPE_PRICE_STUDIO_GBP: str = ""
+    # Annual billing prices
+    STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP: str = ""
+    STRIPE_PRICE_PRODUCER_ANNUAL_GBP: str = ""
+    STRIPE_PRICE_STUDIO_ANNUAL_GBP: str = ""
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""

@@ -1,6 +1,101 @@
-<html>
-  <body>
-    <h1>Your report is ready</h1>
-    <p>{{ script_title | default('Your project') }} has finished processing.</p>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Prodculator report is ready</title>
+  <style>
+    body { margin:0; padding:0; background:#0d0d0d; font-family:Arial, Helvetica, sans-serif; }
+    .wrapper { background:#0d0d0d; padding:24px 12px; }
+    .container { max-width:620px; margin:0 auto; background:#111111; border:1px solid #272727; border-radius:8px; overflow:hidden; }
+    .header { background:linear-gradient(135deg,#0a0a0a 0%, #1a1a1a 100%); padding:28px 24px; text-align:center; border-bottom:3px solid #D4AF37; }
+    .logo { margin:0; color:#D4AF37; font-weight:800; letter-spacing:3px; font-size:24px; }
+    .tagline { margin:8px 0 0 0; color:#777; font-size:11px; letter-spacing:1.3px; text-transform:uppercase; }
+    .hero { padding:30px 24px; background:linear-gradient(135deg,#1a1500 0%,#0f0f0f 100%); border-bottom:1px solid #272727; }
+    .hero-title { margin:0 0 10px 0; color:#fff; font-size:28px; line-height:1.25; }
+    .hero-copy { margin:0; color:#b8b8b8; font-size:15px; line-height:1.65; }
+    .content { padding:28px 24px; }
+    .section-title { margin:0 0 10px 0; color:#D4AF37; font-size:12px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; }
+    .body { margin:0 0 16px 0; color:#cfcfcf; font-size:14px; line-height:1.7; }
+    .list { margin:0 0 20px 18px; padding:0; color:#cfcfcf; }
+    .list li { margin:0 0 8px 0; line-height:1.6; }
+    .box { background:#141414; border:1px solid #2b2b2b; border-left:4px solid #D4AF37; border-radius:6px; padding:16px; margin:18px 0; }
+    .cta-wrap { text-align:center; margin:24px 0; }
+    .cta { display:inline-block; background:#D4AF37; color:#000 !important; text-decoration:none !important; font-weight:700; padding:12px 24px; border-radius:4px; }
+    .link { color:#D4AF37 !important; text-decoration:none !important; }
+    .hr { border:none; border-top:1px solid #222; margin:20px 0; }
+    .footer { background:#0a0a0a; border-top:1px solid #1f1f1f; padding:22px 24px; text-align:center; }
+    .footer a { color:#D4AF37 !important; text-decoration:none !important; margin:0 8px; font-size:12px; }
+    .fine { margin-top:14px; color:#575757; font-size:11px; line-height:1.6; }
+    .status-error { color:#f5b5b5; background:#2a1111; border:1px solid #6d2c2c; border-left:4px solid #dd5757; }
+  </style>
+</head>
+<body>
+  {% set app = app_url | default("https://prodculator.com") %}
+  {% set project_title = script_title | default("Your project") %}
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <p class="logo">PRODCULATOR</p>
+        <p class="tagline">Scripteligence &mdash; Production Intelligence</p>
+      </div>
+
+      <div class="hero">
+        <h1 class="hero-title">{{ "Report update available" if error else "Your Report Is Ready" }}</h1>
+        <p class="hero-copy">
+          {% if error %}
+            We hit an issue while processing <strong style="color:#ffffff;">{{ project_title }}</strong>. Our team has been notified.
+          {% else %}
+            Your production intelligence report for <strong style="color:#ffffff;">{{ project_title }}</strong> is now available.
+          {% endif %}
+        </p>
+      </div>
+
+      <div class="content">
+        <div class="box{% if error %} status-error{% endif %}">
+          <p class="section-title">Run Summary</p>
+          <p class="body" style="margin-bottom:6px;"><strong>Project:</strong> {{ project_title }}</p>
+          <p class="body" style="margin-bottom:6px;"><strong>Status:</strong> {{ "Attention required" if error else "Completed" }}</p>
+          <p class="body" style="margin-bottom:6px;"><strong>Processing Time:</strong> {{ processing_time | default("A few minutes") }}</p>
+          <p class="body" style="margin:0;"><strong>Top Recommendation:</strong> {{ top_recommendation | default("See full report") }}</p>
+          {% if estimated_incentive %}
+            <p class="body" style="margin:6px 0 0 0;"><strong>Estimated Incentive:</strong> {{ estimated_incentive }}</p>
+          {% endif %}
+          {% if error %}
+            <p class="body" style="margin:10px 0 0 0;"><strong>Error:</strong> {{ error }}</p>
+          {% endif %}
+        </div>
+
+        <div class="cta-wrap">
+          <a class="cta" href="{{ report_url | default(app ~ '/reports') }}">{{ "Open Report" if not error else "View Dashboard" }}</a>
+          {% if pdf_url and not error %}
+            <p class="body" style="margin-top:12px;"><a class="link" href="{{ pdf_url }}">Download PDF copy</a></p>
+          {% endif %}
+        </div>
+
+        <hr class="hr" />
+
+        <p class="section-title">Recommended Next Actions</p>
+        <ul class="list">
+          <li>Review the top territories with your production and finance leads.</li>
+          <li>Validate legal and tax assumptions before commitments.</li>
+          <li>Use the report summary to support stakeholder and investor updates.</li>
+          <li>Keep this email as part of your project planning audit trail.</li>
+        </ul>
+
+        <p class="body">
+          Questions? Contact <a class="link" href="mailto:{{ support_email | default('support@prodculator.com') }}">{{ support_email | default('support@prodculator.com') }}</a> with your report ID{% if report_id %} <strong>{{ report_id }}</strong>{% endif %}.
+        </p>
+      </div>
+
+      <div class="footer">
+        <a href="{{ app }}/dashboard">Dashboard</a>
+        <a href="{{ app }}/faq">FAQ</a>
+        <a href="{{ app }}/terms">Terms</a>
+        <a href="{{ app }}/privacy">Privacy</a>
+        <p class="fine">&copy; 2026 Prodculator. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
 </html>

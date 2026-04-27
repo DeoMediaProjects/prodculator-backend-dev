@@ -38,9 +38,14 @@ _TERRITORY_COLUMNS = [
 
 def upgrade() -> None:
     conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = set(inspector.get_table_names())
 
     # ── 1. Fix territory name inconsistencies ───────────────────────────
     for table, column in _TERRITORY_COLUMNS:
+        if table not in existing_tables:
+            print(f"  Skipping {table}.{column}: table does not exist")
+            continue
         for old_val, new_val in _TERRITORY_FIXES.items():
             result = conn.execute(
                 sa.text(
@@ -76,9 +81,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = set(inspector.get_table_names())
 
     # Reverse territory fixes
     for table, column in _TERRITORY_COLUMNS:
+        if table not in existing_tables:
+            continue
         for old_val, new_val in _TERRITORY_FIXES.items():
             conn.execute(
                 sa.text(

@@ -1,19 +1,24 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
+from sendgrid.helpers.mail import Attachment, Disposition, FileContent, FileName, FileType, Mail
 
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
+_CAMEL_CASE_BOUNDARY_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
 EMAIL_SUBJECTS: dict[str, str] = {
     "welcome": "Welcome to Prodculator",
     "report_ready": "Your Prodculator report is ready",
     "payment_confirmation": "Payment confirmation",
+    "payment_failed": "Action required: your payment failed",
+    "subscription_recovered": "Your subscription is back to active",
+    "subscription_downgraded": "Your subscription has been downgraded",
     "processing_started": "We started processing your report",
     "grant_alert": "New grant opportunity for your watchlist",
     "festival_deadline": "Festival deadline reminder",
@@ -31,7 +36,7 @@ class EmailService:
         )
 
     def render(self, template_name: str, context: dict[str, Any] | None = None) -> tuple[str, str]:
-        context = context or {}
+        context = self._normalise_context(context or {})
         template_key = template_name.replace(".html", "")
         filename = f"{template_key}.html"
         subject = EMAIL_SUBJECTS.get(template_key, "Prodculator Notification")
@@ -41,7 +46,13 @@ class EmailService:
             raise ValueError(f"Unknown email template: {template_name}") from exc
         return subject, template.render(**context)
 
-    def send(self, to_email: str, template_name: str, context: dict[str, Any] | None = None) -> None:
+    def send(
+        self,
+        to_email: str,
+        template_name: str,
+        context: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> None:
         subject, html = self.render(template_name, context)
         if not self.settings.SENDGRID_API_KEY:
             logger.warning("SENDGRID_API_KEY not configured; email send skipped (to=%s)", to_email)
@@ -53,6 +64,57 @@ class EmailService:
             subject=subject,
             html_content=html,
         )
+        for attachment in attachments or []:
+            message.add_attachment(
+                Attachment(
+                    file_content=FileContent(attachment["content"]),
+                    file_name=FileName(attachment["filename"]),
+                    file_type=FileType(attachment["type"]),
+                    disposition=Disposition("attachment"),
+                )
+            )
         client = SendGridAPIClient(self.settings.SENDGRID_API_KEY)
         client.send(message)
 
+    @staticmethod
+    def _camel_to_snake(key: str) -> str:
+        return _CAMEL_CASE_BOUNDARY_RE.sub("_", key).lower()
+
+    def _normalise_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        normalised = dict(context)
+        for key, value in context.items():
+            snake_key = self._camel_to_snake(key)
+            if snake_key != key and snake_key not in normalised:
+                normalised[snake_key] = value
+
+        if "userName" in context and "name" not in normalised:
+            normalised["name"] = context["userName"]
+
+        app_url = self.settings.FRONTEND_URL.rstrip("/")
+        normalised.setdefault("app_url", app_url)
+        normalised.setdefault("dashboard_url", f"{app_url}/dashboard")
+        normalised.setdefault("login_url", f"{app_url}/login")
+        normalised.setdefault("support_email", "support@prodculator.com")
+        normalised.setdefault("billing_email", "billing@prodculator.com")
+        normalised.setdefault("currency", "USD")
+
+        report_id = normalised.get("report_id")
+        if report_id and "report_url" not in normalised:
+            normalised["report_url"] = f"{app_url}/reports/{report_id}"
+
+        if report_id and "pdf_url" not in normalised:
+            normalised["pdf_url"] = f"{app_url}/reports/{report_id}"
+
+        plan_type = normalised.get("plan_type")
+        if plan_type and "plan_name" not in normalised:
+            normalised["plan_name"] = f"{str(plan_type).replace('_', ' ').title()} Plan"
+
+        amount_paid = normalised.get("amount_paid")
+        if amount_paid is not None and "amount" not in normalised:
+            try:
+                value = float(amount_paid)
+                normalised["amount"] = f"{(value / 100):.2f}" if value > 200 else f"{value:.2f}"
+            except (TypeError, ValueError):
+                pass
+
+        return normalised

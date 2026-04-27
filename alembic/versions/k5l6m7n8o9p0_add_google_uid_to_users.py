@@ -21,21 +21,28 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
-        sa.Column("google_uid", sa.String(), nullable=True),
-    )
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
+    existing_cols = {c["name"] for c in inspector.get_columns("users")}
+    if "google_uid" not in existing_cols:
+        op.add_column(
+            "users",
+            sa.Column("google_uid", sa.String(), nullable=True),
+        )
 
     # Unique index that ignores NULLs (only enforced when google_uid IS NOT NULL).
     # SQLite and PostgreSQL both support this pattern.
-    op.create_index(
-        "ix_users_google_uid",
-        "users",
-        ["google_uid"],
-        unique=True,
-        postgresql_where=sa.text("google_uid IS NOT NULL"),
-        sqlite_where=sa.text("google_uid IS NOT NULL"),
-    )
+    existing_idx = {i["name"] for i in inspector.get_indexes("users")}
+    if "ix_users_google_uid" not in existing_idx:
+        op.create_index(
+            "ix_users_google_uid",
+            "users",
+            ["google_uid"],
+            unique=True,
+            postgresql_where=sa.text("google_uid IS NOT NULL"),
+            sqlite_where=sa.text("google_uid IS NOT NULL"),
+        )
 
 
 def downgrade() -> None:

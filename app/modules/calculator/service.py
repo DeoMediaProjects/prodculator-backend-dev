@@ -35,8 +35,11 @@ from app.modules.reports.validator import ReportValidator
 
 logger = logging.getLogger(__name__)
 
-# UK baseline day rate for cost-efficiency anchor (same as builder.py)
-_UK_BASELINE_DAY_RATE = 900
+# Crew cost-efficiency anchor constants
+_BASELINE_CREW_COUNTRY: dict[str, str] = {
+    "GB": "GB",
+    "US": "US",
+}
 _ANCHOR_MID = 50
 
 
@@ -130,7 +133,15 @@ class CalculatorService:
             fx_date_str = info.get("rate_date")
             break
 
-        # ── 6. Compute per-territory scenarios ─────────────────────────────
+        # ── 6. Resolve baseline for crew cost & currency advantage ────────
+        baseline = getattr(request, "baseline", "GB")
+        baseline_country = _BASELINE_CREW_COUNTRY.get(baseline, baseline)
+        baseline_rate_gbp = self._compute_baseline_rate(
+            baseline_country, crew_by_territory,
+        )
+        baseline_currency = {"GB": "GBP", "US": "USD"}.get(baseline, request.budget_currency)
+
+        # ── 7. Compute per-territory scenarios ─────────────────────────────
         weights = SCORE_WEIGHTS.get(request.production_priority, SCORE_WEIGHTS["full"])
         territory_scenarios: list[TerritoryScenario] = []
 
@@ -143,6 +154,8 @@ class CalculatorService:
                 request=request,
                 fx_rates_from_budget=fx_rates_from_budget,
                 weights=weights,
+                baseline_rate_gbp=baseline_rate_gbp,
+                baseline_currency=baseline_currency,
             )
             if scenario is not None:
                 territory_scenarios.append(scenario)
@@ -172,6 +185,8 @@ class CalculatorService:
         request: ScenarioRequest,
         fx_rates_from_budget: dict[str, dict],
         weights: dict[str, float],
+        baseline_rate_gbp: float = 900,
+        baseline_currency: str = "GBP",
     ) -> TerritoryScenario | None:
         rows = territory_incentives.get(territory, [])
         if not rows:
@@ -232,7 +247,7 @@ class CalculatorService:
 
         # ── Currency advantage ─────────────────────────────────────────────
         ca_score, ca_warning = self.fx.compute_currency_advantage_score(
-            request.budget_currency, territory_currency,
+            baseline_currency, territory_currency,
         )
 
         # FX rate for this territory
@@ -241,7 +256,7 @@ class CalculatorService:
         fx_rate_date = fx_info.get("rate_date") if fx_info else None
 
         # ── Crew cost index ────────────────────────────────────────────────
-        crew_cost_index = self._crew_rate_anchor(territory, crew_by_territory)
+        crew_cost_index = self._crew_rate_anchor(territory, crew_by_territory, baseline_rate_gbp)
 
         # Build crew rate strings in budget currency
         crew_rates = self._build_crew_rates(
@@ -433,6 +448,7 @@ class CalculatorService:
 
     def _crew_rate_anchor(
         self, territory: str, crew_by_territory: dict[str, list[dict]],
+        baseline_rate_gbp: float = 900,
     ) -> int | None:
         """Compute costEfficiency anchor (0-100). Same formula as ReportBuilder."""
         rows = crew_by_territory.get(territory, [])
@@ -455,8 +471,40 @@ class CalculatorService:
             return None
 
         avg_rate = sum(rates_gbp) / len(rates_gbp)
-        anchor = int(_UK_BASELINE_DAY_RATE * _ANCHOR_MID / avg_rate)
+        anchor = int(baseline_rate_gbp * _ANCHOR_MID / avg_rate)
         return max(20, min(85, anchor))
+
+    def _compute_baseline_rate(
+        self, country_code: str, crew_by_territory: dict[str, list[dict]],
+    ) -> float:
+        """Compute the average crew day rate (GBP) for a baseline country.
+
+        Dynamically derived from actual crew_costs data so the baseline
+        stays current as rates are updated.  Falls back to 900 only if
+        no crew data exists at all (should not happen in production).
+        """
+        _FALLBACK = 900  # last-resort if DB has no crew data
+
+        rows = crew_by_territory.get(country_code, [])
+        if not rows:
+            t_obj = resolve_territory(country_code)
+            if t_obj:
+                rows = crew_by_territory.get(t_obj.label, [])
+        if not rows:
+            return _FALLBACK
+
+        rates_gbp: list[float] = []
+        for row in rows:
+            union = to_float(row.get("union_rate_gbp"))
+            non_union = to_float(row.get("non_union_rate_gbp"))
+            rate = union or non_union
+            if rate and rate > 0:
+                rates_gbp.append(rate)
+
+        if not rates_gbp:
+            return _FALLBACK
+
+        return sum(rates_gbp) / len(rates_gbp)
 
     def _build_crew_rates(
         self,

@@ -22,6 +22,7 @@ def test_openapi_includes_core_paths(client):
     assert "/api/watchlist" in paths
     assert "/api/subscriptions/active" in paths
     assert "/api/subscriptions/can-generate" in paths
+    assert "/api/emails" in paths
     assert "/api/admin/users" in paths
     assert "/api/admin/metrics" in paths
     assert "/api/admin/incentives" in paths

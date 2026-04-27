@@ -17,8 +17,9 @@ class AdminRole(StrEnum):
 
 class PlanType(StrEnum):
     FREE = "free"
-    SINGLE = "single"  # legacy alias — treat as "professional"
+    SINGLE = "single"          # legacy alias — normalize to "professional"
     PROFESSIONAL = "professional"
+    PRODUCER = "producer"
     STUDIO = "studio"
 
 

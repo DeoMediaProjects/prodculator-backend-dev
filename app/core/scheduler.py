@@ -96,26 +96,88 @@ def _check_and_run_syncs() -> None:
         db.close()
 
 
+def _run_subscription_dunning() -> None:
+    """Hourly: downgrade users past the dunning grace window."""
+    from app.core.config import get_settings
+    from app.core.database_client import create_client
+    from app.modules.payments.dunning import run_dunning_grace_check
+
+    settings = get_settings()
+    if not settings.STRIPE_SECRET_KEY:
+        return
+
+    db = create_client()
+    try:
+        run_dunning_grace_check(db, settings)
+    except Exception:
+        logger.exception("Scheduler: dunning grace check failed")
+    finally:
+        db.close()
+
+
+def _run_subscription_reconciler() -> None:
+    """Hourly: detect and fix drift between local subscriptions and Stripe."""
+    from app.core.config import get_settings
+    from app.core.database_client import create_client
+    from app.modules.payments.reconciler import run_subscription_reconciler as _run
+
+    settings = get_settings()
+    if not settings.STRIPE_SECRET_KEY:
+        return
+
+    db = create_client()
+    try:
+        _run(db, settings)
+    except Exception:
+        logger.exception("Scheduler: subscription reconciler failed")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     global _scheduler
     from app.core.config import get_settings
 
     settings = get_settings()
-    if not settings.SCRAPER_ENABLED:
-        logger.info("SCRAPER_ENABLED=False — scheduler not started")
+    _scheduler = BackgroundScheduler(timezone="UTC")
+
+    if settings.SCRAPER_ENABLED:
+        # Daily check at 03:00 UTC — reads sync_settings to decide what to run
+        _scheduler.add_job(
+            _check_and_run_syncs,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="sync_check",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+
+    if settings.STRIPE_SECRET_KEY:
+        # Hourly subscription jobs — Stripe-driven, only register if Stripe configured.
+        _scheduler.add_job(
+            _run_subscription_dunning,
+            trigger=CronTrigger(minute=15),
+            id="subscription_dunning",
+            replace_existing=True,
+            misfire_grace_time=900,
+        )
+        _scheduler.add_job(
+            _run_subscription_reconciler,
+            trigger=CronTrigger(minute=45),
+            id="subscription_reconciler",
+            replace_existing=True,
+            misfire_grace_time=900,
+        )
+
+    if not _scheduler.get_jobs():
+        logger.info("APScheduler: no jobs registered (no SCRAPER_ENABLED, no STRIPE_SECRET_KEY)")
+        _scheduler = None
         return
 
-    _scheduler = BackgroundScheduler(timezone="UTC")
-    # Daily check at 03:00 UTC — reads sync_settings to decide what to run
-    _scheduler.add_job(
-        _check_and_run_syncs,
-        trigger=CronTrigger(hour=3, minute=0),
-        id="sync_check",
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
     _scheduler.start()
-    logger.info("APScheduler started: daily sync check at 03:00 UTC")
+    logger.info(
+        "APScheduler started with jobs: %s",
+        ", ".join(job.id for job in _scheduler.get_jobs()),
+    )
 
 
 def stop_scheduler() -> None:

@@ -14,8 +14,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column('admins', sa.Column('role', sa.String(), nullable=False, server_default='master_admin'))
-    op.add_column('admins', sa.Column('last_login', sa.DateTime(), nullable=True))
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
+    existing_cols = {c["name"] for c in inspector.get_columns("admins")}
+    if "role" not in existing_cols:
+        op.add_column('admins', sa.Column('role', sa.String(), nullable=False, server_default='master_admin'))
+    if "last_login" not in existing_cols:
+        op.add_column('admins', sa.Column('last_login', sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:

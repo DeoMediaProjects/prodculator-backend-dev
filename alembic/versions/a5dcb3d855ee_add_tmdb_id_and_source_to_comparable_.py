@@ -14,9 +14,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column('comparable_productions', sa.Column('tmdb_id', sa.String(), nullable=True))
-    op.add_column('comparable_productions', sa.Column('source', sa.String(), nullable=False, server_default='Manual'))
-    op.create_index('ix_comparable_productions_tmdb_id', 'comparable_productions', ['tmdb_id'])
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_cols = {c["name"] for c in inspector.get_columns("comparable_productions")}
+    existing_idx = {i["name"] for i in inspector.get_indexes("comparable_productions")}
+    if "tmdb_id" not in existing_cols:
+        op.add_column('comparable_productions', sa.Column('tmdb_id', sa.String(), nullable=True))
+    if "source" not in existing_cols:
+        op.add_column('comparable_productions', sa.Column('source', sa.String(), nullable=False, server_default='Manual'))
+    if "ix_comparable_productions_tmdb_id" not in existing_idx:
+        op.create_index('ix_comparable_productions_tmdb_id', 'comparable_productions', ['tmdb_id'])
 
 
 def downgrade() -> None:

@@ -17,50 +17,56 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "production_milestones",
-        sa.Column("id", sa.String(), primary_key=True),
-        sa.Column("user_id", sa.String(), nullable=False, index=True),
-        sa.Column("report_id", sa.String(), nullable=True, index=True),
-        sa.Column("title", sa.String(255), nullable=False),
-        sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("status", sa.String(20), nullable=False, server_default="upcoming"),
-        sa.Column("due_date", sa.String(), nullable=True),
-        sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("is_template", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_custom", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = set(inspector.get_table_names())
 
-    op.create_table(
-        "milestone_tasks",
-        sa.Column("id", sa.String(), primary_key=True),
-        sa.Column("milestone_id", sa.String(), nullable=False, index=True),
-        sa.Column("text", sa.String(500), nullable=False),
-        sa.Column("completed", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("territory", sa.String(100), nullable=True),
-        sa.Column("deadline", sa.String(), nullable=True),
-        sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
+    if "production_milestones" not in existing_tables:
+        op.create_table(
+            "production_milestones",
+            sa.Column("id", sa.String(), primary_key=True),
+            sa.Column("user_id", sa.String(), nullable=False, index=True),
+            sa.Column("report_id", sa.String(), nullable=True, index=True),
+            sa.Column("title", sa.String(255), nullable=False),
+            sa.Column("description", sa.Text(), nullable=True),
+            sa.Column("status", sa.String(20), nullable=False, server_default="upcoming"),
+            sa.Column("due_date", sa.String(), nullable=True),
+            sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("is_template", sa.Boolean(), nullable=False, server_default="false"),
+            sa.Column("is_custom", sa.Boolean(), nullable=False, server_default="false"),
+            sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+        )
+
+    if "milestone_tasks" not in existing_tables:
+        op.create_table(
+            "milestone_tasks",
+            sa.Column("id", sa.String(), primary_key=True),
+            sa.Column("milestone_id", sa.String(), nullable=False, index=True),
+            sa.Column("text", sa.String(500), nullable=False),
+            sa.Column("completed", sa.Boolean(), nullable=False, server_default="false"),
+            sa.Column("territory", sa.String(100), nullable=True),
+            sa.Column("deadline", sa.String(), nullable=True),
+            sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+        )
 
 
 def downgrade() -> None:

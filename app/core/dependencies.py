@@ -171,7 +171,7 @@ class RequirePlan:
     Allows the specified plan and any higher plan (studio > professional > free).
     """
 
-    _PLAN_HIERARCHY = {"free": 0, "single": 1, "professional": 1, "studio": 2}
+    _PLAN_HIERARCHY = {"free": 0, "single": 1, "professional": 1, "producer": 2, "studio": 3}
 
     def __init__(self, minimum_plan: str) -> None:
         self.minimum_plan = minimum_plan
