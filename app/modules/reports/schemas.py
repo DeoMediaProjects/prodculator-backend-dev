@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.territories import Territory, resolve_territory
 
@@ -39,7 +39,10 @@ class CreateReportRequest(BaseModel):
         "VR",
     ]
     country: str  # Validated & normalised to canonical label by validator below
-    location_strategy: Literal["domestic", "open", "international"]
+    location_strategy: Annotated[
+        Literal["domestic", "open", "international"],
+        Field(description="Select a location strategy: 'domestic', 'open', or 'international'"),
+    ]
     production_priority: Literal["incentive", "full", "location"] = "full"
 
     # Email gate (required for preview reports from unauthenticated users)
@@ -68,6 +71,15 @@ class CreateReportRequest(BaseModel):
         "co_production_informal",
         "undecided",
     ] | None = None
+
+    @field_validator("location_strategy", mode="before")
+    @classmethod
+    def validate_location_strategy(cls, v: str) -> str:
+        if not v or str(v).strip() == "":
+            raise ValueError("Please select a location strategy (Shooting domestically, Open to international, or Specifically international)")
+        if v not in ("domestic", "open", "international"):
+            raise ValueError("Location strategy must be 'domestic', 'open', or 'international'")
+        return v
 
     @field_validator("budget_amount", mode="before")
     @classmethod
@@ -376,6 +388,7 @@ class ReportResponse(BaseModel):
     createdAt: str
     analysis: dict | None = None
     pdfUrl: str | None = None
+    userPlan: str | None = None
 
 
 class ReportStatusResponse(BaseModel):

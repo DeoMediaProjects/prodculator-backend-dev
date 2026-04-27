@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import MetaData, Table, and_, asc, create_engine, delete, desc, func, insert, select, update
+from sqlalchemy.sql.schema import CallableColumnDefault, ColumnDefault
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import BinaryExpression
@@ -274,7 +275,7 @@ class TableQuery:
         self._order_by: list[Any] = []
         self._limit: int | None = None
         self._offset: int | None = None
-        self._payload: dict[str, Any] | None = None
+        self._payload: dict[str, Any] | list[dict[str, Any]] | None = None
         self._upsert_conflict: str | None = None
 
     def select(self, columns: str = "*", count: str | None = None, head: bool = False):
@@ -284,7 +285,7 @@ class TableQuery:
         self._count_head = head
         return self
 
-    def insert(self, payload: dict[str, Any]):
+    def insert(self, payload: dict[str, Any] | list[dict[str, Any]]):
         self._action = "insert"
         self._payload = payload
         return self
@@ -393,26 +394,48 @@ class TableQuery:
             return QueryResult(data=rows[0] if rows else None, count=count_value)
         return QueryResult(data=rows, count=count_value)
 
+    def _apply_insert_defaults(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Apply Python-side column defaults (e.g. SQLModel default_factory for id/created_at)
+        that SQLAlchemy Core's insert() does not auto-invoke for us."""
+        for col in self.table.columns:
+            if col.name in payload:
+                continue
+            default = col.default
+            if isinstance(default, CallableColumnDefault):
+                # SQLModel wraps default_factory as lambda ctx: ...; pass None as context.
+                fn: Any = default.arg
+                payload[col.name] = fn(None)
+            elif isinstance(default, ColumnDefault) and not callable(default.arg):
+                payload[col.name] = default.arg
+        return payload
+
     def _execute_insert(self) -> QueryResult:
-        if not self._payload:
+        payload = self._payload
+        if not payload:
             raise ValueError("Insert payload is required")
-        if isinstance(self._payload, list):
-            stmt = insert(self.table).values(self._payload)
+        if isinstance(payload, list):
+            payload_list = [self._apply_insert_defaults(dict(p)) for p in payload]
+            stmt = insert(self.table).values(payload_list)
             self.client.session.execute(stmt)
             self.client.session.commit()
-            return self._reload_bulk_insert(self._payload)
-        stmt = insert(self.table).values(**self._payload)
+            return self._reload_bulk_insert(payload_list)
+        payload = self._apply_insert_defaults(payload)
+        self._payload = payload
+        stmt = insert(self.table).values(**payload)
         self.client.session.execute(stmt)
         self.client.session.commit()
-        return self._reload_after_write(self._payload)
+        return self._reload_after_write(payload)
 
     def _execute_update(self) -> QueryResult:
-        if self._payload is None:
+        payload = self._payload
+        if payload is None:
             raise ValueError("Update payload is required")
-        stmt = self._apply_filters(update(self.table).values(**self._payload))
+        if isinstance(payload, list):
+            raise ValueError("Update does not support bulk payloads")
+        stmt = self._apply_filters(update(self.table).values(**payload))
         self.client.session.execute(stmt)
         self.client.session.commit()
-        return self._reload_after_write(self._payload)
+        return self._reload_after_write(payload)
 
     def _execute_delete(self) -> QueryResult:
         if not self._filters:
@@ -423,8 +446,11 @@ class TableQuery:
         return QueryResult(data=[])
 
     def _execute_upsert(self) -> QueryResult:
-        if not self._payload:
+        payload = self._payload
+        if not payload:
             raise ValueError("Upsert payload is required")
+        if isinstance(payload, list):
+            raise ValueError("Upsert does not support bulk payloads")
 
         if not self._upsert_conflict:
             return self._execute_insert()
@@ -432,21 +458,25 @@ class TableQuery:
         conflict_columns = [c.strip() for c in self._upsert_conflict.split(",") if c.strip()]
 
         # Generic upsert fallback: query by conflict keys, then update/insert.
-        conflict_filters = [self.table.c[col] == self._payload.get(col) for col in conflict_columns]
+        conflict_filters = [self.table.c[col] == payload.get(col) for col in conflict_columns]
         existing = self.client.session.execute(select(self.table).where(and_(*conflict_filters))).first()
 
         if existing:
+            # Don't overwrite the primary key on update even if caller passed one.
+            update_payload = {k: v for k, v in payload.items() if k != "id"}
             stmt = (
                 update(self.table)
                 .where(and_(*conflict_filters))
-                .values(**self._payload)
+                .values(**update_payload)
             )
             self.client.session.execute(stmt)
         else:
-            self.client.session.execute(insert(self.table).values(**self._payload))
+            payload = self._apply_insert_defaults(payload)
+            self._payload = payload
+            self.client.session.execute(insert(self.table).values(**payload))
 
         self.client.session.commit()
-        return self._reload_after_write(self._payload)
+        return self._reload_after_write(payload)
 
     def _reload_bulk_insert(self, payloads: list[dict[str, Any]]) -> QueryResult:
         ids = [p["id"] for p in payloads if "id" in p]

@@ -146,6 +146,85 @@
   .risk-medium { color: #ca8a04; font-weight: 600; }
   .risk-high   { color: #dc2626; font-weight: 600; }
 
+  /* ── Locked Section Placeholder (free-tier preview PDF) ─────── */
+  .locked-section {
+    border-top: 3px solid #D4AF37;
+    border-bottom: 1px solid #e8e8e8;
+    padding: 48px 32px;
+    text-align: center;
+    background: #fafafa;
+    margin: 0;
+  }
+  .locked-section-rule {
+    display: inline-block;
+    width: 32px;
+    height: 2px;
+    background: #D4AF37;
+    margin: 0 10px;
+    vertical-align: middle;
+  }
+  .locked-section-headline {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1a1a1a;
+    letter-spacing: 0.5px;
+    margin: 14px 0 6px;
+  }
+  .locked-section-sub {
+    font-size: 9.5px;
+    color: #777;
+    margin: 0 0 14px;
+    line-height: 1.5;
+  }
+  .locked-section-cta {
+    display: inline-block;
+    background: #1a1a1a;
+    color: #D4AF37;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border-radius: 2px;
+  }
+
+  /* ── Trial Report Banner (visible sections only) ────────────── */
+  .trial-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1a1a1a;
+    border-left: 4px solid #D4AF37;
+    border-radius: 3px;
+    padding: 9px 14px;
+    margin-bottom: 20px;
+  }
+  .trial-banner-label {
+    color: #D4AF37;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+  }
+  .trial-banner-note {
+    color: #aaa;
+    font-size: 8px;
+  }
+
+  /* ── Trial Cover Badge ───────────────────────────────────────── */
+  .trial-cover-badge {
+    display: inline-block;
+    border: 1px solid #D4AF37;
+    color: #D4AF37;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 4px 14px;
+    border-radius: 2px;
+    margin-top: 14px;
+  }
+
   /* ── Data Source Footer ───────────────────────────────────── */
   .data-source {
     font-size: 8px;
@@ -521,6 +600,14 @@
     <span>{{ report_type | upper }}</span> &nbsp;&bull;&nbsp;
     Generated {{ created_at[:10] if created_at else "N/A" }}
   </div>
+  {% if is_preview %}
+  <div style="margin-top: 24px;">
+    <span class="trial-cover-badge">Trial Report</span>
+  </div>
+  <div style="margin-top: 10px; font-size: 9px; color: #888;">
+    Executive Summary included &mdash; upgrade at prodculator.com to unlock the full report
+  </div>
+  {% endif %}
 </div>
 
 <!-- ════════════════════════════════════════════════════════════
@@ -534,11 +621,17 @@
   <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Executive Summary</span></div>
   {% set toc_ns.n = toc_ns.n + 1 %}
 
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Production Location Strategy</span></div>
+  <div class="toc-item">
+    <span class="toc-number">{{ '%02d' % toc_ns.n }}</span>
+    <span class="toc-title">Production Location Strategy{% if is_preview %} &#128274;{% endif %}</span>
+  </div>
   {% set toc_ns.n = toc_ns.n + 1 %}
 
   {% if report.financialAnalysis %}
   <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Financial Analysis</span></div>
+  {% set toc_ns.n = toc_ns.n + 1 %}
+  {% elif is_preview %}
+  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Financial Analysis &#128274;</span></div>
   {% set toc_ns.n = toc_ns.n + 1 %}
   {% endif %}
 
@@ -549,28 +642,43 @@
   {% endfor %}
   {% endif %}
 
-  {% if report.incentiveEstimates %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Tax Incentive Analysis</span></div>
+  {% if report.incentiveEstimates or is_preview %}
+  <div class="toc-item">
+    <span class="toc-number">{{ '%02d' % toc_ns.n }}</span>
+    <span class="toc-title">Tax Incentive Analysis{% if is_preview %} &#128274;{% endif %}</span>
+  </div>
   {% set toc_ns.n = toc_ns.n + 1 %}
   {% endif %}
 
   {% if report.crewInsights %}
   <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Crew Cost Estimates</span></div>
   {% set toc_ns.n = toc_ns.n + 1 %}
+  {% elif is_preview %}
+  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Crew Cost Estimates &#128274;</span></div>
+  {% set toc_ns.n = toc_ns.n + 1 %}
   {% endif %}
 
   {% if report.fundingOpportunities %}
   <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Grant &amp; Funding Opportunities</span></div>
+  {% set toc_ns.n = toc_ns.n + 1 %}
+  {% elif is_preview %}
+  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Grant &amp; Funding Opportunities &#128274;</span></div>
   {% set toc_ns.n = toc_ns.n + 1 %}
   {% endif %}
 
   {% if report.comparables %}
   <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Comparable Productions &amp; Festival Strategy</span></div>
   {% set toc_ns.n = toc_ns.n + 1 %}
+  {% elif is_preview %}
+  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Comparable Productions &amp; Festival Strategy &#128274;</span></div>
+  {% set toc_ns.n = toc_ns.n + 1 %}
   {% endif %}
 
   {% if report.weatherLogistics %}
   <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Weather &amp; Logistics</span></div>
+  {% set toc_ns.n = toc_ns.n + 1 %}
+  {% elif is_preview %}
+  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Weather &amp; Logistics &#128274;</span></div>
   {% set toc_ns.n = toc_ns.n + 1 %}
   {% endif %}
 
@@ -591,6 +699,13 @@
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Executive Summary</h2>
   {% set ns.sec = ns.sec + 1 %}
+
+  {% if is_preview %}
+  <div class="trial-banner">
+    <span class="trial-banner-label">Trial Report</span>
+    <span class="trial-banner-note">Upgrade to Professional at prodculator.com to unlock all sections</span>
+  </div>
+  {% endif %}
 
   {# ── Production Brief ─────────────────────────────────────────────────── #}
   {% if request_config %}
@@ -846,6 +961,22 @@
 <!-- ════════════════════════════════════════════════════════════
      PRODUCTION LOCATION STRATEGY
      ════════════════════════════════════════════════════════════ -->
+{% if is_preview %}
+<div class="page-break">
+  <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
+  {% set ns.sec = ns.sec + 1 %}
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Production Location Strategy</div>
+    <div class="locked-section-sub">Territory rankings, scoring breakdowns, and location intelligence<br>for your production profile.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  </div>
+</div>
+{% else %}
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
   {% set ns.sec = ns.sec + 1 %}
@@ -999,6 +1130,7 @@
   <p class="muted">No territory rankings available.</p>
   {% endif %}
 </div>
+{% endif %}{# end is_preview / location strategy #}
 
 <!-- ════════════════════════════════════════════════════════════
      FINANCIAL ANALYSIS
@@ -1122,6 +1254,21 @@
   {% endif %}
 
   <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% elif is_preview %}
+<div class="page-break">
+  <h2>{{ '%02d' % ns.sec }} &mdash; Financial Analysis</h2>
+  {% set ns.sec = ns.sec + 1 %}
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Financial Analysis</div>
+    <div class="locked-section-sub">Budget scenarios, net production cost breakdown, and crew cost<br>comparisons across recommended territories.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  </div>
 </div>
 {% endif %}
 
@@ -1271,12 +1418,19 @@
   </div>
   {% endfor %}
 </div>
-{% elif report_type == "preview" %}
+{% elif is_preview or report_type == "preview" %}
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Tax Incentive Analysis</h2>
   {% set ns.sec = ns.sec + 1 %}
-  <div class="preview-placeholder">
-    Tax incentive details are available in the full report.
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Tax Incentive Analysis</div>
+    <div class="locked-section-sub">Full rebate calculations, bankability ratings, and programme details<br>for each recommended territory.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
   </div>
 </div>
 {% endif %}
@@ -1326,6 +1480,21 @@
   </table>
 
   <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% elif is_preview %}
+<div class="page-break">
+  <h2>{{ '%02d' % ns.sec }} &mdash; Crew Cost Estimates</h2>
+  {% set ns.sec = ns.sec + 1 %}
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Crew Cost Estimates</div>
+    <div class="locked-section-sub">Availability, day rates, and cost-vs-USD comparisons<br>for key departments across recommended territories.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  </div>
 </div>
 {% endif %}
 
@@ -1399,6 +1568,21 @@
 
   <div class="data-source">Data Source: Prodculator backend datasets</div>
 </div>
+{% elif is_preview %}
+<div class="page-break">
+  <h2>{{ '%02d' % ns.sec }} &mdash; Grant &amp; Funding Opportunities</h2>
+  {% set ns.sec = ns.sec + 1 %}
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Grant &amp; Funding Opportunities</div>
+    <div class="locked-section-sub">Matched grants, co-production funds, and festival submission deadlines<br>relevant to your production profile.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  </div>
+</div>
 {% endif %}
 
 <!-- ════════════════════════════════════════════════════════════
@@ -1430,6 +1614,21 @@
   {% endfor %}
 
   <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% elif is_preview %}
+<div class="page-break">
+  <h2>{{ '%02d' % ns.sec }} &mdash; Comparable Productions &amp; Festival Strategy</h2>
+  {% set ns.sec = ns.sec + 1 %}
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Comparable Productions &amp; Festival Strategy</div>
+    <div class="locked-section-sub">Films comparable by budget, genre, and territory — plus<br>a tailored festival submission strategy.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  </div>
 </div>
 {% endif %}
 
@@ -1473,6 +1672,21 @@
   {% endfor %}
 
   <div class="data-source">Data Source: Prodculator backend datasets</div>
+</div>
+{% elif is_preview %}
+<div class="page-break">
+  <h2>{{ '%02d' % ns.sec }} &mdash; Weather &amp; Logistics</h2>
+  {% set ns.sec = ns.sec + 1 %}
+  <div class="locked-section">
+    <div>
+      <span class="locked-section-rule"></span>
+      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
+      <span class="locked-section-rule"></span>
+    </div>
+    <div class="locked-section-headline">Weather &amp; Logistics</div>
+    <div class="locked-section-sub">Seasonal filming windows, weather risk ratings, travel &amp; visa<br>requirements, and infrastructure notes per territory.</div>
+    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  </div>
 </div>
 {% endif %}
 

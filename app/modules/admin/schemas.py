@@ -135,3 +135,42 @@ class AdminUserUpdateRequest(BaseModel):
 class AdminUserCreateResponse(BaseModel):
     admin: AdminUserDetail
     temporary_password: str
+
+
+# ── Activity feed ─────────────────────────────────────────────────────────────
+
+class ActivityItem(BaseModel):
+    id: str
+    type: str  # "report_generated" | "user_registered" | "subscription_activated"
+    description: str
+    user_email: str | None = None
+    timestamp: str | None = None
+
+
+class ActivityResponse(BaseModel):
+    items: list[ActivityItem]
+
+
+# ── System status ─────────────────────────────────────────────────────────────
+
+class ServiceStatusItem(BaseModel):
+    name: str
+    status: str  # "operational" | "degraded" | "down" | "unknown"
+    last_checked: str
+
+
+class SystemStatusResponse(BaseModel):
+    services: list[ServiceStatusItem]
+    checked_at: str
+
+
+# ── Derived tasks ─────────────────────────────────────────────────────────────
+
+class TaskItem(BaseModel):
+    task: str
+    priority: str  # "high" | "medium" | "low"
+    due: str
+
+
+class TasksResponse(BaseModel):
+    items: list[TaskItem]

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Investor Summary — {{ script_title }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @page {
+    size: A4;
+    margin: 20mm;
+    @bottom-center {
+      content: "Produced by Prodculator | prodculator.com";
+      font-size: 8px;
+      color: #999;
+    }
+    @bottom-right { content: counter(page); font-size: 8px; color: #999; }
+  }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.55;
+    color: #1a1a1a;
+  }
+
+  .page-break { page-break-before: always; }
+  .gold { color: #D4AF37; }
+  .muted { color: #666; font-size: 9px; }
+
+  /* ── Cover header ── */
+  .header {
+    background: #0a0a0a;
+    color: #ffffff;
+    padding: 28px 32px;
+    margin: -20mm -20mm 24px;
+  }
+  .header h1 { font-size: 22px; font-weight: 700; color: #D4AF37; margin-bottom: 4px; }
+  .header .subtitle { font-size: 11px; color: #a0a0a0; }
+  .header .meta { font-size: 9px; color: #666; margin-top: 8px; }
+
+  /* ── Headline stats grid ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: #D4AF37; }
+  .stat-card .label { font-size: 9px; color: #666; margin-top: 4px; }
+
+  /* ── Recommended territory ── */
+  .territory-card {
+    background: #f8f8f8;
+    border-left: 4px solid #D4AF37;
+    border-radius: 0 6px 6px 0;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .territory-card h2 { font-size: 14px; font-weight: 700; margin-bottom: 8px; border: none; padding: 0; }
+  .territory-card .score { font-size: 28px; font-weight: 700; color: #D4AF37; }
+
+  /* ── Section headings ── */
+  h2 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #D4AF37;
+    padding-bottom: 5px;
+  }
+
+  /* ── Territory comparison table ── */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
+  thead tr { background: #0a0a0a; color: #D4AF37; }
+  thead th { padding: 8px 10px; text-align: left; font-weight: 600; }
+  tbody tr:nth-child(even) { background: #f8f8f8; }
+  tbody td { padding: 7px 10px; border-bottom: 1px solid #e8e8e8; }
+
+  /* ── Rationale bullets ── */
+  .rationale-list { padding-left: 16px; }
+  .rationale-list li { margin-bottom: 8px; }
+
+  /* ── Risks ── */
+  .risk-item {
+    background: #fff8f0;
+    border-left: 3px solid #f59e0b;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 0 4px 4px 0;
+    font-size: 10px;
+  }
+
+  /* ── Footer note ── */
+  .disclaimer {
+    font-size: 8px;
+    color: #999;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 10px;
+    margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ PAGE 1 ═══════════════════════════════ -->
+
+<div class="header">
+  <h1>{{ script_title }}</h1>
+  <div class="subtitle">Investor Summary — Production Intelligence Report</div>
+  <div class="meta">Prepared by Prodculator &nbsp;·&nbsp; {{ created_at }}</div>
+</div>
+
+<!-- Headline stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="value">
+      {% if net_budget %}
+        {% if net_budget >= 1000000 %}
+          £{{ "%.1f"|format(net_budget / 1000000) }}M
+        {% else %}
+          £{{ "{:,}".format(net_budget|int) }}
+        {% endif %}
+      {% else %}—{% endif %}
+    </div>
+    <div class="label">Net Budget (After Rebates)</div>
+  </div>
+  <div class="stat-card">
+    <div class="value">{{ top_rebate_pct or "—" }}</div>
+    <div class="label">Top Territory Rebate</div>
+  </div>
+  <div class="stat-card">
+    <div class="value">{{ top_territory or "—" }}</div>
+    <div class="label">Recommended Territory</div>
+  </div>
+</div>
+
+<!-- Recommended territory detail -->
+{% if top_location %}
+<div class="territory-card">
+  <h2>Recommended Territory: {{ top_location.name }}</h2>
+  <div style="display:flex; gap:24px; align-items:flex-start;">
+    <div>
+      <div class="score">{{ top_location.score or "—" }}<span style="font-size:14px;color:#666;">/100</span></div>
+      <div class="muted">Territory Score</div>
+    </div>
+    <div style="flex:1;">
+      {% if top_location.headline %}<p>{{ top_location.headline }}</p>{% endif %}
+      {% if top_location.rebatePercentage %}<p><strong>Rebate:</strong> {{ top_location.rebatePercentage }}</p>{% endif %}
+      {% if top_location.keyIncentive %}<p><strong>Key Incentive:</strong> {{ top_location.keyIncentive }}</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Production rationale -->
+{% if rationale_bullets %}
+<h2>Production Rationale</h2>
+<ul class="rationale-list">
+  {% for bullet in rationale_bullets[:3] %}
+  <li>{{ bullet }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<div class="disclaimer">
+  This summary is auto-generated from a Prodculator production intelligence report. Figures are indicative and subject to change.
+  Full report available to the production team upon request.
+</div>
+
+<!-- ═══════════════════════════════ PAGE 2 ═══════════════════════════════ -->
+
+<div class="page-break"></div>
+
+<h2>Top Territory Comparison</h2>
+{% if top_locations %}
+<table>
+  <thead>
+    <tr>
+      <th>Territory</th>
+      <th>Score</th>
+      <th>Rebate %</th>
+      <th>Key Incentive</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for loc in top_locations %}
+    <tr>
+      <td><strong>{{ loc.name }}</strong></td>
+      <td>{{ loc.score or "—" }}/100</td>
+      <td>{{ loc.rebatePercentage or "—" }}</td>
+      <td>{{ loc.keyIncentive or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if key_risks %}
+<h2>Key Risks</h2>
+{% for risk in key_risks %}
+<div class="risk-item">{{ risk }}</div>
+{% endfor %}
+{% endif %}
+
+<div class="disclaimer">
+  Prodculator Investor Summary &nbsp;·&nbsp; Full production intelligence report available upon request.
+  &nbsp;·&nbsp; prodculator.com
+</div>
+
+</body>
+</html>

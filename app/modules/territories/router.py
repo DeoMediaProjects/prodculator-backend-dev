@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
-from app.core.dependencies import get_supabase
+from app.core.dependencies import RequirePlan, get_supabase
+from app.modules.auth.schemas import AuthUser
 from app.modules.territories.schemas import (
     TerritoryCompareResponse,
     TerritoryListResponse,
@@ -40,12 +41,14 @@ async def compare_territories(
         description="Comma-separated territory labels (max 4)",
     ),
     currency: str = Query("GBP", description="Display currency for crew costs"),
+    user: AuthUser = Depends(RequirePlan("professional")),
     service: TerritoryService = Depends(_get_service),
 ) -> TerritoryCompareResponse:
     """Compare up to 4 territories side-by-side.
 
+    Requires Professional plan or higher.
     Returns incentive data, crew costs, highlights, and restrictions
-    for each territory. Public endpoint — no authentication required.
+    for each territory.
     """
     labels = [t.strip() for t in territories.split(",") if t.strip()][:4]
     return service.compare_territories(labels, currency)

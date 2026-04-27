@@ -164,6 +164,35 @@ class RequireRole:
         return user
 
 
+class RequirePlan:
+    """Dependency that enforces a minimum plan level.
+
+    Usage: Depends(RequirePlan("professional"))
+    Allows the specified plan and any higher plan (studio > professional > free).
+    """
+
+    _PLAN_HIERARCHY = {"free": 0, "single": 1, "professional": 1, "producer": 2, "studio": 3}
+
+    def __init__(self, minimum_plan: str) -> None:
+        self.minimum_plan = minimum_plan
+        self.min_level = self._PLAN_HIERARCHY.get(minimum_plan, 0)
+
+    async def __call__(self, user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        from app.models.enums import normalize_plan
+
+        user_plan = normalize_plan(user.plan)
+        user_level = self._PLAN_HIERARCHY.get(user_plan, 0)
+        if user_level < self.min_level:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"This feature requires a '{self.minimum_plan}' plan or higher. "
+                    f"Your current plan is '{user_plan}'."
+                ),
+            )
+        return user
+
+
 _optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 

@@ -1783,7 +1783,7 @@ class ReportBuilder:
                 "How we read your script: We identified scene counts, "
                 "interior/exterior ratios, named locations, and languages "
                 "actually spoken to build the analysis below. "
-                "All figures are estimates — always verify with qualified professionals."
+                "All figures are estimates — verify with qualified professionals."
             ),
             "location_strategy": (
                 f"How we score territories: Each territory is rated 0–100 across six "

@@ -22,6 +22,7 @@ from app.modules.payments.schemas import (
 )
 from app.modules.payments.service import StripeService
 from app.modules.payments.webhook_handler import WebhookHandler
+from app.modules.subscriptions.service import SubscriptionService
 
 router = APIRouter(prefix="/api/payments", tags=["Payments"])
 webhook_router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
@@ -73,14 +74,31 @@ async def create_checkout(
 async def create_subscription_checkout(
     body: SubscriptionCheckoutRequest,
     user: AuthUser = Depends(get_current_user),
+    supabase: DatabaseClient = Depends(get_supabase),
     service: StripeService = Depends(get_stripe_service),
 ):
-    """Create a subscription checkout session."""
+    """Create a subscription checkout session.
+
+    Existing subscribers must go through /api/subscriptions/change instead —
+    Checkout would create a second Stripe subscription, double-billing the user.
+    """
+    existing = SubscriptionService(supabase).get_active_subscription(user.id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "existing_subscription",
+                "subscription_id": existing.get("stripe_subscription_id"),
+                "redirect": "/account?action=change-plan",
+            },
+        )
+
     try:
         result = service.create_subscription_checkout(
             price_id=body.price_id,
             user_email=user.email,
             user_id=user.id,
+            metadata={"planType": body.plan_type},
         )
         return CheckoutResponse(**result)
     except stripe_lib.StripeError:
@@ -88,6 +106,28 @@ async def create_subscription_checkout(
         raise HTTPException(status_code=400, detail="Payment processing failed")
     except Exception:
         logger.exception("Unexpected error in create_subscription_checkout for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/credit-checkout", response_model=CheckoutResponse)
+async def create_credit_checkout(
+    body: CheckoutRequest,
+    user: AuthUser = Depends(get_current_user),
+    service: StripeService = Depends(get_stripe_service),
+):
+    """Create a one-time checkout session for a pay-per-report credit."""
+    try:
+        result = service.create_credit_checkout_session(
+            price_id=body.price_id,
+            user_email=user.email,
+            user_id=user.id,
+        )
+        return CheckoutResponse(**result)
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error in create_credit_checkout for user=%s", user.id)
+        raise HTTPException(status_code=400, detail="Payment processing failed")
+    except Exception:
+        logger.exception("Unexpected error in create_credit_checkout for user=%s", user.id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

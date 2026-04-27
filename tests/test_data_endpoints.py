@@ -11,6 +11,7 @@ class FakeQuery:
         self.table_name = table_name
         self.db = db
         self.filters = {}
+        self._in: dict = {}
         self._gte = None
         self._lte = None
         self._delete = False
@@ -21,6 +22,10 @@ class FakeQuery:
 
     def eq(self, key, value):
         self.filters[key] = value
+        return self
+
+    def in_(self, key, values):
+        self._in[key] = list(values)
         return self
 
     def gte(self, key, value):
@@ -51,6 +56,7 @@ class FakeQuery:
             row
             for row in rows
             if all(row.get(k) == v for k, v in self.filters.items())
+            and all(row.get(k) in vs for k, vs in self._in.items())
         ]
 
         if self._gte:

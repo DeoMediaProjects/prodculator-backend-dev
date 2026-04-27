@@ -28,6 +28,11 @@ class ScenarioRequest(BaseModel):
         None,
         description="Filter to specific territories (null = all covered)",
     )
+    baseline: Literal["GB", "US"] = Field(
+        "GB",
+        description="Baseline territory for crew cost efficiency scoring. "
+        "GB = UK crew rates as neutral midpoint; US = US crew rates.",
+    )
 
 
 class TerritoryScenario(BaseModel):

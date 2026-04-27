@@ -9,6 +9,7 @@ class CheckoutRequest(BaseModel):
 class SubscriptionCheckoutRequest(BaseModel):
     price_id: str
     currency: str = "usd"
+    plan_type: str = "professional"
 
 
 class CancelSubscriptionRequest(BaseModel):

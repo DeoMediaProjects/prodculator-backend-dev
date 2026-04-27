@@ -9,6 +9,7 @@ Provides real-time exchange rates via ExchangeRate-API with:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,10 @@ _FALLBACK_RATES_GBP_BASE: dict[str, float] = {
     "MAD": 12.8,
     "RSD": 137.0,
     "RON": 5.85,
+    "ISK": 176.0,
+    "SGD": 1.72,
+    "JPY": 191.0,
+    "KRW": 1865.0,
 }
 
 # Territory → local currency mapping (v3)
@@ -97,12 +102,17 @@ _FALLBACK_DATE = date(2026, 3, 1)  # Update when refreshing rates
 
 _CACHE_TTL_SECONDS = 86_400  # 24 hours
 _CACHE_KEY_PREFIX = "fx_rate"
+_WARNING_THROTTLE_SECONDS = 300
+_API_RATE_LIMIT_COOLDOWN_SECONDS = 300
 
 _API_BASE = "https://v6.exchangerate-api.com/v6"
 
 
 class FXService:
     """Exchange rate lookup with Redis caching and offline fallback."""
+
+    _api_blocked_until_monotonic: float = 0.0
+    _warning_last_logged: dict[str, float] = {}
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -309,10 +319,35 @@ class FXService:
 
     # ── API helpers ──────────────────────────────────────────────────────────
 
+    @classmethod
+    def _is_api_temporarily_blocked(cls) -> bool:
+        return time.monotonic() < cls._api_blocked_until_monotonic
+
+    @classmethod
+    def _activate_api_cooldown(cls) -> None:
+        cls._api_blocked_until_monotonic = max(
+            cls._api_blocked_until_monotonic,
+            time.monotonic() + _API_RATE_LIMIT_COOLDOWN_SECONDS,
+        )
+        cls._warning_once(
+            "fx_api_429_cooldown",
+            "FX API returned 429; suspending live FX calls for %ss and using cache/fallback rates.",
+            _API_RATE_LIMIT_COOLDOWN_SECONDS,
+        )
+
+    @classmethod
+    def _warning_once(cls, key: str, message: str, *args) -> None:
+        now = time.monotonic()
+        last = cls._warning_last_logged.get(key)
+        if last is not None and now - last < _WARNING_THROTTLE_SECONDS:
+            return
+        cls._warning_last_logged[key] = now
+        logger.warning(message, *args)
+
     def _fetch_api_rate(self, from_c: str, to_c: str) -> tuple[float, date] | None:
         """Fetch a single pair from ExchangeRate-API."""
         api_key = self.settings.EXCHANGE_RATE_API_KEY
-        if not api_key:
+        if not api_key or self._is_api_temporarily_blocked():
             return None
         try:
             url = f"{_API_BASE}/{api_key}/pair/{from_c}/{to_c}"
@@ -325,14 +360,34 @@ class FXService:
             rate = float(data["conversion_rate"])
             rate_date = _parse_api_date(data.get("time_last_update_utc"))
             return rate, rate_date
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == 429:
+                self._activate_api_cooldown()
+                return None
+            self._warning_once(
+                f"fx_single_api_error:{from_c}:{to_c}:{status_code}",
+                "FX API single-pair fetch failed %s→%s (status=%s): %s",
+                from_c,
+                to_c,
+                status_code,
+                exc,
+            )
+            return None
         except Exception as exc:
-            logger.warning("FX API single-pair fetch failed %s→%s: %s", from_c, to_c, exc)
+            self._warning_once(
+                f"fx_single_api_error:{from_c}:{to_c}:unknown",
+                "FX API single-pair fetch failed %s→%s: %s",
+                from_c,
+                to_c,
+                exc,
+            )
             return None
 
     def _fetch_api_bulk(self, base_c: str) -> tuple[dict[str, float], date] | None:
         """Fetch all rates for a base currency in one call."""
         api_key = self.settings.EXCHANGE_RATE_API_KEY
-        if not api_key:
+        if not api_key or self._is_api_temporarily_blocked():
             return None
         try:
             url = f"{_API_BASE}/{api_key}/latest/{base_c}"
@@ -347,8 +402,26 @@ class FXService:
             }
             rate_date = _parse_api_date(data.get("time_last_update_utc"))
             return rates, rate_date
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == 429:
+                self._activate_api_cooldown()
+                return None
+            self._warning_once(
+                f"fx_bulk_api_error:{base_c}:{status_code}",
+                "FX API bulk fetch failed base=%s (status=%s): %s",
+                base_c,
+                status_code,
+                exc,
+            )
+            return None
         except Exception as exc:
-            logger.warning("FX API bulk fetch failed base=%s: %s", base_c, exc)
+            self._warning_once(
+                f"fx_bulk_api_error:{base_c}:unknown",
+                "FX API bulk fetch failed base=%s: %s",
+                base_c,
+                exc,
+            )
             return None
 
     # ── Fallback ─────────────────────────────────────────────────────────────
@@ -360,7 +433,8 @@ class FXService:
 
         if gbp_from is None or gbp_to is None:
             missing = from_c if gbp_from is None else to_c
-            logger.warning(
+            self._warning_once(
+                f"fx_missing_fallback:{missing}",
                 "FX fallback: no rate for %s — returning 1.0 (identity). "
                 "Add to _FALLBACK_RATES_GBP_BASE.",
                 missing,
@@ -369,7 +443,8 @@ class FXService:
 
         # Cross-rate via GBP: from_c → GBP → to_c
         rate = round(gbp_to / gbp_from, 6)
-        logger.warning(
+        self._warning_once(
+            f"fx_hardcoded_fallback:{from_c}:{to_c}",
             "FX using hardcoded fallback rate %s→%s = %.6f (as of %s). "
             "Set EXCHANGE_RATE_API_KEY for live rates.",
             from_c,

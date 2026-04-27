@@ -54,6 +54,8 @@ class Subscription(SQLModel, table=True):
     current_period_end: datetime | None = None
     cancel_at_period_end: bool = False
     cancelled_at: datetime | None = None
+    pending_plan: str | None = None
+    past_due_since: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

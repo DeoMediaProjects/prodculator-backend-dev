@@ -29,6 +29,7 @@ from app.modules.email_gating.admin_router import router as email_gating_admin_r
 from app.modules.pdf_reports.admin_router import router as pdf_reports_admin_router
 from app.modules.auth.router import router as auth_router
 from app.modules.email.router import router as admin_email_router
+from app.modules.email.transactional_router import router as transactional_email_router
 from app.modules.health.router import router as health_router
 from app.modules.payments.router import (
     router as payments_router,
@@ -65,10 +66,12 @@ async def lifespan(app_: FastAPI):
     init_redis(settings)
     if settings.AUTO_CREATE_DB_SCHEMA:
         init_db()
-    # Seed scrape sources on startup
+    # Seed scrape sources on startup (skip gracefully if table missing)
     db = create_client()
     try:
         ScraperService(db, settings).seed_sources()
+    except Exception as e:
+        logger.warning("Could not seed scrape sources: %s", e)
     finally:
         db.close()
     start_scheduler()
@@ -149,6 +152,7 @@ app.include_router(incentives_admin_router)
 app.include_router(crew_costs_admin_router)
 app.include_router(grants_admin_router)
 app.include_router(admin_email_router)
+app.include_router(transactional_email_router)
 app.include_router(subscribers_admin_router)
 app.include_router(data_sources_admin_router)
 app.include_router(email_gating_admin_router)

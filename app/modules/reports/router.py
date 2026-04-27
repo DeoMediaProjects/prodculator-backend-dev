@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.db import get_db_context
-from app.core.dependencies import get_supabase, get_current_user, get_optional_user
+from app.core.dependencies import get_supabase, get_current_user, get_optional_user, RequirePlan
 from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
 from app.modules.email.service import EmailService
@@ -20,6 +20,7 @@ from app.modules.reports.schemas import (
 from app.modules.reports.service import ReportService
 from app.modules.scripts.service import ScriptAnalysisService
 from app.modules.email_gating.service import EmailGatingService
+from app.modules.subscriptions.service import SubscriptionService
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
@@ -142,6 +143,26 @@ async def create_report(
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required for paid reports")
 
+    # Subscription / usage check — enforced on every non-preview report.
+    sub_service = SubscriptionService(service.supabase)
+    can_generate, reason = sub_service.can_generate_report(user.id)
+    if not can_generate:
+        raise HTTPException(status_code=403, detail=reason)
+
+    # Non-subscribed users get their first free full report stored as
+    # report_type="free" so the limit is enforced on subsequent attempts.
+    # Credit buyers (pay-per-report) have no subscription but have paid — store as "paid".
+    # A subscriber at their monthly limit can also use a credit (reason will say "pay-per-report").
+    using_credit = "pay-per-report" in reason
+    has_subscription = sub_service.get_active_subscription(user.id) is not None
+    has_credits = sub_service.get_credits_remaining(user.id) > 0
+    if has_subscription and not using_credit:
+        effective_report_type = body_data.report_type
+    elif has_credits:
+        effective_report_type = "paid"
+    else:
+        effective_report_type = "free"
+
     if not script_file:
         raise HTTPException(status_code=400, detail="script_file is required for paid/b2b reports")
 
@@ -173,7 +194,7 @@ async def create_report(
         report_id = service.create_report(
             user_id=user.id,
             script_title=body_data.script_title,
-            report_type=body_data.report_type,
+            report_type=effective_report_type,
             script_file_path=None,  # never stored
             request_metadata=metadata,
         )
@@ -186,12 +207,19 @@ async def create_report(
             filename,
             settings,
         )
+
+        # Consume a pay-per-report credit whenever the report was credit-funded.
+        # This applies both to non-subscribers (primary credit path) and to
+        # subscribers who hit their monthly limit and fall back to a credit.
+        if using_credit:
+            sub_service.consume_report_credit(user.id)
+
         elapsed_ms = int((perf_counter() - started) * 1000)
         logger.info(
             "Queued paid report processing: report_id=%s user_id=%s report_type=%s elapsed_ms=%s",
             report_id,
             user.id,
-            body_data.report_type,
+            effective_report_type,
             elapsed_ms,
         )
         return ReportStatusResponse(
@@ -203,7 +231,7 @@ async def create_report(
         logger.exception(
             "Failed to create report: user_id=%s report_type=%s title=%s",
             user.id,
-            body_data.report_type,
+            effective_report_type,
             body_data.script_title,
         )
         raise HTTPException(status_code=500, detail="Failed to create report")
@@ -228,12 +256,19 @@ async def get_report(
     settings: Settings = Depends(get_settings),
 ):
     """Get a single report by ID."""
+    from app.models.enums import normalize_plan
+
     report = service.get_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     if report["user_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return _format_report_response(report, settings)
+    report_plan = normalize_plan(user.plan)
+    # Credit buyers (pay-per-report) have plan="free" but paid for a full report.
+    # Honour what they purchased: all territories, full sections, clean PDF.
+    if report_plan == "free" and report.get("report_type") == "paid":
+        report_plan = "producer"
+    return _format_report_response(report, settings, user_plan=report_plan)
 
 
 @router.get("/shared/{share_token}", response_model=ReportResponse)
@@ -283,6 +318,15 @@ async def get_report_status(
     )
 
 
+# Territory limits per plan — None means all territories included
+_TERRITORY_LIMITS: dict[str, int | None] = {
+    "free": 3,
+    "professional": 5,
+    "producer": None,
+    "studio": None,
+}
+
+
 @router.get("/{report_id}/pdf")
 async def download_pdf(
     report_id: str,
@@ -291,27 +335,57 @@ async def download_pdf(
     supabase: DatabaseClient = Depends(get_supabase),
     settings: Settings = Depends(get_settings),
 ):
-    """Stream the PDF for a report directly from S3 as raw bytes."""
+    """Stream the PDF for a report.
+
+    Free-tier users receive an on-the-fly generated PDF showing the incentive
+    and location sections, with locked placeholder pages for premium sections,
+    plus a trial watermark. Paid users (or users who have upgraded) receive the
+    full clean PDF stored in S3.
+    """
+    from app.models.enums import normalize_plan
+
     report = service.get_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     if report["user_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    s3_key = report.get("pdf_url")
-    if not s3_key:
-        raise HTTPException(status_code=404, detail="PDF not found")
-
-    # pdf_url stores the S3 key — download the bytes directly from S3
-    storage_path = f"{report['user_id']}/{report_id}.pdf"
-    try:
-        pdf_bytes = supabase.storage.from_("reports").download(storage_path)
-    except Exception:
-        logger.warning("PDF download from storage failed: report_id=%s path=%s", report_id, storage_path)
-        raise HTTPException(status_code=404, detail="PDF not found")
+    plan = normalize_plan(user.plan)
+    # Credit buyers (pay-per-report) have plan="free" but paid for a full report.
+    is_free = plan == "free" and report.get("report_type") != "paid"
 
     script_title = report.get("script_title", "Report")
     filename = f"Report - {script_title}.pdf"
+
+    if is_free:
+        # Generate a free-tier PDF on-the-fly: visible sections are shown cleanly,
+        # premium sections render as locked upgrade-prompt pages.
+        report_data = report.get("report_data") or {}
+        if not report_data:
+            raise HTTPException(status_code=404, detail="Report data not yet available")
+        free_data = _build_free_tier_report_data(report_data)
+        pdf_service = PDFService()
+        html = pdf_service.render_report_html(
+            free_data,
+            script_title=script_title,
+            report_type="preview",
+            created_at=str(report.get("created_at", "")),
+            is_preview=True,
+        )
+        pdf_bytes = pdf_service.generate_pdf_bytes(html)
+        if not pdf_bytes:
+            raise HTTPException(status_code=503, detail="PDF generation temporarily unavailable")
+    else:
+        # Paid / upgraded users: serve the full report PDF stored in S3.
+        s3_key = report.get("pdf_url")
+        if not s3_key:
+            raise HTTPException(status_code=404, detail="PDF not found")
+        storage_path = f"{report['user_id']}/{report_id}.pdf"
+        try:
+            pdf_bytes = supabase.storage.from_("reports").download(storage_path)
+        except Exception:
+            logger.warning("PDF download from storage failed: report_id=%s path=%s", report_id, storage_path)
+            raise HTTPException(status_code=404, detail="PDF not found")
 
     return Response(
         content=pdf_bytes,
@@ -323,19 +397,227 @@ async def download_pdf(
     )
 
 
-def _format_report_response(report: dict, settings: Settings) -> dict:
+def _build_free_tier_report_data(report_data: dict) -> dict:
+    """Return a filtered copy of report_data for the free-tier preview PDF.
+
+    Visible: Executive Summary only.
+    All other sections are removed so the template renders locked placeholder pages.
+    The trial banner and locked placeholders are rendered by the template itself —
+    no post-processing watermark is applied.
+    """
+    import copy
+    data = copy.deepcopy(report_data)
+    for key in (
+        "locationRankings",
+        "incentiveEstimates",
+        "financialAnalysis",
+        "crewInsights",
+        "comparables",
+        "weatherLogistics",
+        "fundingOpportunities",
+        "investorSummary",
+        "territoryDeepDives",
+    ):
+        data.pop(key, None)
+    return data
+
+
+def _apply_watermark(pdf_bytes: bytes) -> bytes:
+    """Overlay a diagonal trial watermark on every page of the PDF."""
+    import io
+    import math
+
+    try:
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import (
+            ArrayObject,
+            ContentStream,
+            DecodedStreamObject,
+            NameObject,
+            NumberObject,
+        )
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas as rl_canvas
+
+        watermark_text = "Prodculator Trial Report — Upgrade at prodculator.com"
+
+        # Build a single-page watermark PDF using reportlab
+        packet = io.BytesIO()
+        width, height = A4
+        c = rl_canvas.Canvas(packet, pagesize=(width, height))
+        c.saveState()
+        c.setFont("Helvetica", 28)
+        c.setFillColorRGB(0.6, 0.6, 0.6, alpha=0.35)
+        c.translate(width / 2, height / 2)
+        c.rotate(45)
+        c.drawCentredString(0, 0, watermark_text)
+        c.restoreState()
+        c.save()
+        packet.seek(0)
+        watermark_pdf = PdfReader(packet)
+        watermark_page = watermark_pdf.pages[0]
+
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        for page in reader.pages:
+            page.merge_page(watermark_page)
+            writer.add_page(page)
+
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+    except Exception:
+        logger.warning("PDF watermarking failed — returning original PDF bytes")
+        return pdf_bytes
+
+
+@router.get("/{report_id}/investor-summary")
+async def download_investor_summary(
+    report_id: str,
+    user: AuthUser = Depends(RequirePlan("producer")),
+    service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
+):
+    """Generate and stream a 2-page investor summary PDF (Producer+ only)."""
+    report = service.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report["user_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    pdf_bytes = _generate_investor_summary_pdf(report)
+    if not pdf_bytes:
+        raise HTTPException(status_code=500, detail="Could not generate investor summary")
+
+    script_title = report.get("script_title", "Report")
+    filename = f"Investor Summary - {script_title}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
+
+
+def _generate_investor_summary_pdf(report: dict) -> bytes | None:
+    """Render the investor_summary.html template and produce PDF bytes."""
+    from pathlib import Path
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    report_data: dict = report.get("report_data") or {}
+    location_rankings: list[dict] = report_data.get("locationRankings", [])
+    top_location: dict = location_rankings[0] if location_rankings else {}
+    financial: dict = report_data.get("financialAnalysis") or {}
+    script_summary: dict = report_data.get("scriptSummary") or {}
+
+    # Derive headline values from report data
+    net_budget = financial.get("netBudget") or financial.get("estimatedBudget")
+    top_rebate_pct = top_location.get("rebatePercentage", "")
+    top_territory = top_location.get("name", "")
+
+    # Build 3-bullet rationale from scriptSummary or location data
+    rationale_bullets: list[str] = []
+    if script_summary.get("genre"):
+        rationale_bullets.append(f"Genre: {script_summary['genre']}. Script suited for international co-production.")
+    if top_territory and top_rebate_pct:
+        rationale_bullets.append(
+            f"{top_territory} offers {top_rebate_pct} cash rebate on qualifying expenditure, "
+            "significantly reducing net production cost."
+        )
+    if financial.get("estimatedSavings"):
+        rationale_bullets.append(
+            f"Estimated incentive savings of {financial['estimatedSavings']} across recommended territories."
+        )
+    if len(rationale_bullets) < 3:
+        # Fall back to generic rationale if data is sparse
+        for loc in location_rankings[1:3]:
+            if len(rationale_bullets) >= 3:
+                break
+            rationale_bullets.append(
+                f"{loc.get('name', '')} is an alternative territory with a score of {loc.get('score', '—')}/100."
+            )
+
+    key_risks: list[str] = report_data.get("keyRisks", [])
+    if not key_risks and report_data.get("weatherLogistics", {}).get("risks"):
+        key_risks = report_data["weatherLogistics"]["risks"][:3]
+
+    templates_dir = Path(__file__).resolve().parents[2] / "templates" / "pdf"
+    env = Environment(
+        loader=FileSystemLoader(str(templates_dir)),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    template = env.get_template("investor_summary.html")
+    html = template.render(
+        script_title=report.get("script_title", "Untitled"),
+        created_at=str(report.get("created_at", ""))[:10],
+        top_location=top_location,
+        top_territory=top_territory,
+        top_rebate_pct=top_rebate_pct,
+        net_budget=net_budget,
+        top_locations=location_rankings[:3],
+        rationale_bullets=rationale_bullets,
+        key_risks=key_risks,
+    )
+
+    try:
+        from weasyprint import HTML as WeasyHTML  # type: ignore
+        pdf = WeasyHTML(string=html).write_pdf()
+        return pdf
+    except Exception as exc:
+        logger.warning("Investor summary PDF generation failed: %s", exc)
+        return None
+
+
+def _format_report_response(report: dict, settings: Settings, user_plan: str = "free") -> dict:
     """Format a DB report row into the API response shape.
 
-    ``pdf_url`` in the DB holds the raw S3 object key.  A fresh presigned URL is
-    generated here so the frontend always receives a non-expired link.
+    Territory rankings and premium sections are filtered based on plan level:
+    - free: top 3 territories, no premium sections, no pdfUrl
+    - professional: top 5 territories, full 13-section report
+    - producer/studio: all territories, full report + investorSummary
     """
+    import copy
+
+    analysis = report.get("report_data")
+    is_free = user_plan == "free"
+    # Producer and Studio get investorSummary; Free and Professional do not
+    has_investor_summary = user_plan in ("producer", "studio")
+
+    if analysis:
+        analysis = copy.deepcopy(analysis)
+        # Apply territory cap for the plan
+        territory_limit = _TERRITORY_LIMITS.get(user_plan)
+        if territory_limit is not None and "locationRankings" in analysis:
+            analysis["locationRankings"] = analysis["locationRankings"][:territory_limit]
+
+        if is_free:
+            # Strip all premium sections for Explorer users
+            for key in (
+                "financialAnalysis",
+                "crewInsights",
+                "comparables",
+                "weatherLogistics",
+                "fundingOpportunities",
+                "investorSummary",
+            ):
+                analysis.pop(key, None)
+        elif not has_investor_summary:
+            # Professional: full report but no Investor Summary section
+            analysis.pop("investorSummary", None)
+
     return {
         "id": report["id"],
         "title": report.get("script_title", ""),
         "reportType": report.get("report_type", "paid"),
         "createdAt": str(report.get("created_at", "")),
-        "analysis": report.get("report_data"),
-        "pdfUrl": _resolve_pdf_url(report.get("pdf_url"), settings),
+        "analysis": analysis,
+        # Free users get a sentinel so the frontend shows the download button.
+        # The actual PDF is generated on-the-fly by download_pdf; the S3 URL is not exposed.
+        "pdfUrl": "preview" if is_free else _resolve_pdf_url(report.get("pdf_url"), settings),
+        "userPlan": user_plan,
     }
 
 

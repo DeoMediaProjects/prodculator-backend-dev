@@ -46,12 +46,15 @@ _RESTRICTING = ["horror", "documentary", "animation", "experimental", "lgbtq+"]
 
 def upgrade() -> None:
     conn = op.get_bind()
+    inspector = sa.inspect(conn)
 
     # Add column (nullable, no server default — NULL means "use legacy fallback")
-    op.add_column(
-        "film_festivals",
-        sa.Column("content_restricted", sa.Boolean(), nullable=True),
-    )
+    existing_cols = {c["name"] for c in inspector.get_columns("film_festivals")}
+    if "content_restricted" not in existing_cols:
+        op.add_column(
+            "film_festivals",
+            sa.Column("content_restricted", sa.Boolean(), nullable=True),
+        )
 
     # Backfill: mark festivals whose genres JSON contains ONLY restricting genres
     # (no "all genres" or broad genres like "Independent", "Drama").
