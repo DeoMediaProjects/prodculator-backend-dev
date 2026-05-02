@@ -13,12 +13,16 @@ logger = logging.getLogger(__name__)
 _CAMEL_CASE_BOUNDARY_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
 EMAIL_SUBJECTS: dict[str, str] = {
+    "verify_email": "Verify your Prodculator account",
     "welcome": "Welcome to Prodculator",
     "report_ready": "Your Prodculator report is ready",
     "payment_confirmation": "Payment confirmation",
     "payment_failed": "Action required: your payment failed",
     "subscription_recovered": "Your subscription is back to active",
-    "subscription_downgraded": "Your subscription has been downgraded",
+    "subscription_downgraded": "Your subscription has been cancelled",
+    "plan_upgraded": "Your Prodculator plan has been upgraded",
+    "downgrade_scheduled": "Your plan change is scheduled",
+    "downgrade_applied": "Your Prodculator plan has changed",
     "processing_started": "We started processing your report",
     "grant_alert": "New grant opportunity for your watchlist",
     "festival_deadline": "Festival deadline reminder",

@@ -1,16 +1,28 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
-from app.core.security import revoke_token
-
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    create_verification_token,
+    decode_token,
+    revoke_token,
+)
 from app.modules.admin.schemas import AdminTokenResponse, AdminUser
-from app.modules.auth.schemas import AuthUser, TokenResponse
+from app.modules.auth.schemas import AuthUser, SignUpResponse, TokenResponse
+from app.modules.email.service import EmailService
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
-    def __init__(self, supabase: DatabaseClient):
+    def __init__(self, supabase: DatabaseClient, settings: Settings | None = None):
         self.supabase = supabase
+        self.settings = settings or get_settings()
+        self.email_service = EmailService(self.settings)
 
     def sign_up(
         self,
@@ -20,47 +32,108 @@ class AuthService:
         name: str | None = None,
         company: str | None = None,
         role: str | None = None,
-    ) -> TokenResponse:
-        """Create a new user and issue auth tokens."""
-        auth_response = self.supabase.auth.sign_up(
-            {
-                "email": email,
-                "password": password,
-                "options": {
-                    "data": {
-                        "name": name or "",
-                        "company": company or "",
-                        "role": role or "",
+    ) -> TokenResponse | SignUpResponse:
+        """Create a new user account and send a verification email.
+
+        Returns SignUpResponse (no tokens) because the user must confirm their
+        email address before they can log in.
+        """
+        try:
+            auth_response = self.supabase.auth.sign_up(
+                {
+                    "email": email,
+                    "password": password,
+                    "options": {
+                        "data": {
+                            "name": name or "",
+                            "company": company or "",
+                            "role": role or "",
+                        },
                     },
-                    "email_redirect_to": f"{redirect_url}/dashboard",
-                },
-            }
-        )
+                }
+            )
+        except Exception as e:
+            msg = str(e).lower()
+            if "already registered" in msg or "already exists" in msg or "user already" in msg:
+                raise ValueError(
+                    "An account with this email already exists. Please sign in instead."
+                )
+            raise
 
         if not auth_response.user:
             raise ValueError("Failed to create user")
 
+        # auth_response.session is always None here because AuthClient.sign_up()
+        # no longer issues tokens — email verification is required first.
+        verification_token = create_verification_token(
+            auth_response.user.id, email, self.settings
+        )
+        verification_url = f"{redirect_url}/auth/callback?token={verification_token}"
+
+        try:
+            self.email_service.send(
+                to_email=email,
+                template_name="verify_email",
+                context={"name": name, "verification_url": verification_url},
+            )
+        except Exception:
+            logger.warning("Failed to send verification email to %s", email)
+
+        return SignUpResponse(verification_required=True, email=email)
+
+    def verify_email_token(self, token: str) -> TokenResponse:
+        """Exchange a valid email-verification JWT for real access/refresh tokens."""
+        try:
+            claims = decode_token(token, self.settings)
+        except ValueError:
+            raise ValueError("Verification link is invalid or has expired.")
+
+        if claims.get("type") != "email_verification":
+            raise ValueError("Invalid verification token.")
+
+        user_id = claims.get("sub")
+        if not user_id:
+            raise ValueError("Invalid verification token.")
+
+        result = (
+            self.supabase.table("users")
+            .select("*")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            raise ValueError("User not found.")
+
+        data = result.data
+        user_type = data.get("user_type", "free")
+        access_token, expires_in = create_access_token(user_id, user_type, self.settings)
+        refresh_token = create_refresh_token(user_id, user_type, self.settings)
+
         user = AuthUser(
-            id=auth_response.user.id,
-            email=email,
-            name=name,
-            company=company,
-            role=role,
-            user_type="free",
-            credits_remaining=0,
-            plan="free",
+            id=data["id"],
+            email=data["email"],
+            name=data.get("name"),
+            company=data.get("company"),
+            role=data.get("role"),
+            user_type=user_type,
+            credits_remaining=data.get("credits_remaining", 0),
+            plan=data.get("plan", "free"),
         )
 
-        session = auth_response.session
-        if not session:
-            raise ValueError(
-                "Registration successful. Please check your email to verify your account."
+        try:
+            self.email_service.send(
+                to_email=data["email"],
+                template_name="welcome",
+                context={"name": data.get("name") or data["email"]},
             )
+        except Exception:
+            logger.warning("Failed to send welcome email to %s", data["email"])
 
         return TokenResponse(
-            access_token=session.access_token,
-            refresh_token=session.refresh_token,
-            expires_in=session.expires_in,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=expires_in,
             user=user,
         )
 
@@ -231,11 +304,7 @@ class AuthService:
         )
 
     def sign_in_with_google(self, firebase_claims: dict) -> TokenResponse:
-        """Sign in or register a user via a verified Firebase Google ID token.
-
-        ``firebase_claims`` must be the dict returned by ``verify_firebase_token()``.
-        The user is upserted by email; no password is required.
-        """
+        """Sign in or register a user via a verified Firebase Google ID token."""
         email: str = firebase_claims.get("email", "").strip().lower()
         if not email:
             raise ValueError("Google account has no email address")
@@ -294,15 +363,26 @@ class AuthService:
         )
 
     def resend_verification(self, email: str, redirect_url: str) -> None:
-        """Resend signup verification email."""
-        self.supabase.auth.resend(
-            {
-                "type": "signup",
-                "email": email,
-                "options": {
-                    "email_redirect_to": f"{redirect_url}/dashboard",
-                },
-            }
+        """Re-generate a verification token and re-send the verification email."""
+        email = email.strip().lower()
+        result = (
+            self.supabase.table("users")
+            .select("id,email,name")
+            .eq("email", email)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            return  # Silently — don't reveal whether the address is registered
+
+        data = result.data
+        verification_token = create_verification_token(data["id"], email, self.settings)
+        verification_url = f"{redirect_url}/auth/callback?token={verification_token}"
+
+        self.email_service.send(
+            to_email=email,
+            template_name="verify_email",
+            context={"name": data.get("name"), "verification_url": verification_url},
         )
 
     def update_password(self, token: str, new_password: str) -> None:
@@ -321,7 +401,6 @@ class AuthService:
         if not auth_response.session:
             raise ValueError("Failed to refresh session")
 
-        # Revoke the consumed refresh token (rotation)
         if redis_client and auth_response.claims:
             await revoke_token(refresh_token, redis_client, self.supabase.settings)
 

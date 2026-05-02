@@ -16,12 +16,14 @@ from app.modules.auth.schemas import (
     AuthUser,
     SignUpRequest,
     SignInRequest,
+    SignUpResponse,
     TokenResponse,
     ResetPasswordRequest,
     ResendVerificationRequest,
     UpdatePasswordRequest,
     RefreshTokenRequest,
     GoogleAuthRequest,
+    VerifyEmailRequest,
 )
 from app.modules.auth.service import AuthService
 
@@ -30,11 +32,14 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 _bearer = HTTPBearer(auto_error=True)
 
 
-def get_auth_service(supabase: DatabaseClient = Depends(get_supabase)) -> AuthService:
-    return AuthService(supabase)
+def get_auth_service(
+    supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
+) -> AuthService:
+    return AuthService(supabase, settings)
 
 
-@router.post("/signup", response_model=TokenResponse)
+@router.post("/signup", response_model=TokenResponse | SignUpResponse)
 @limiter.limit("10/minute")
 async def signup(
     request: Request,
@@ -155,6 +160,20 @@ async def resend_verification(
     except Exception:
         pass  # Don't reveal whether the email exists
     return SuccessResponse(message="Verification email sent")
+
+
+@router.post("/verify-email", response_model=TokenResponse)
+async def verify_email(
+    body: VerifyEmailRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Exchange an email-verification token for access/refresh tokens."""
+    try:
+        return auth_service.verify_email_token(body.token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Verification failed")
 
 
 @router.post("/update-password", response_model=SuccessResponse)

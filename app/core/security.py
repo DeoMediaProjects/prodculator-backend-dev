@@ -71,6 +71,24 @@ def create_refresh_token(
     )
 
 
+def create_verification_token(user_id: str, email: str, settings: Settings | None = None) -> str:
+    """Create a 24-hour signed JWT used as the email-verification link token."""
+    cfg = settings or get_settings()
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(hours=24)
+    return _encode(
+        {
+            "sub": user_id,
+            "email": email,
+            "type": "email_verification",
+            "jti": str(uuid4()),
+            "iat": int(now.timestamp()),
+            "exp": int(expires.timestamp()),
+        },
+        cfg.JWT_SECRET_KEY,
+    )
+
+
 def decode_token(token: str, settings: Settings | None = None) -> dict[str, Any]:
     cfg = settings or get_settings()
     try:

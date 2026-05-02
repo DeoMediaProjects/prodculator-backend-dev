@@ -16,6 +16,7 @@ from app.modules.reports.schemas import (
     PreviewReportResponse,
     ReportResponse,
     ReportStatusResponse,
+    UpdateProjectDetailsRequest,
 )
 from app.modules.reports.service import ReportService
 from app.modules.scripts.service import ScriptAnalysisService
@@ -277,11 +278,59 @@ async def get_shared_report(
     service: ReportService = Depends(get_report_service),
     settings: Settings = Depends(get_settings),
 ):
-    """Get a publicly shared report (no auth required)."""
+    """Get a publicly shared report (no auth required).
+
+    Shared reports are served at full producer-level fidelity — all territories,
+    all sections, no investorSummary (that remains gated behind auth).
+    """
     report = service.get_report_by_share_token(share_token)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    return _format_report_response(report, settings)
+    return _format_report_response(report, settings, user_plan="producer")
+
+
+@router.post("/{report_id}/share")
+async def create_share_link(
+    report_id: str,
+    user: AuthUser = Depends(RequirePlan("studio")),
+    service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
+):
+    """Create (or retrieve) a permanent public share link for a report (Studio only).
+
+    Returns the share token and the full shareable URL.
+    Idempotent — calling this more than once returns the same token.
+    """
+    try:
+        token = service.create_share_link(report_id, user.id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Report not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    except Exception:
+        logger.exception("create_share_link failed: report_id=%s", report_id)
+        raise HTTPException(status_code=500, detail="Failed to create share link")
+
+    share_url = f"{settings.FRONTEND_URL}/report/shared/{token}"
+    return {"share_token": token, "share_url": share_url}
+
+
+@router.delete("/{report_id}/share", status_code=204)
+async def revoke_share_link(
+    report_id: str,
+    user: AuthUser = Depends(RequirePlan("studio")),
+    service: ReportService = Depends(get_report_service),
+):
+    """Revoke the share link for a report, making it private again (Studio only)."""
+    try:
+        service.revoke_share_link(report_id, user.id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Report not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    except Exception:
+        logger.exception("revoke_share_link failed: report_id=%s", report_id)
+        raise HTTPException(status_code=500, detail="Failed to revoke share link")
 
 
 @router.get("/{report_id}/status", response_model=ReportStatusResponse)
@@ -471,6 +520,71 @@ def _apply_watermark(pdf_bytes: bytes) -> bytes:
         return pdf_bytes
 
 
+@router.get("/{report_id}/export-excel")
+async def export_excel(
+    report_id: str,
+    user: AuthUser = Depends(RequirePlan("producer")),
+    service: ReportService = Depends(get_report_service),
+):
+    """Export the full report data as a multi-sheet Excel workbook (Producer+ only)."""
+    from app.modules.reports.excel_service import build_excel_workbook
+
+    report = service.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report["user_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not report.get("report_data"):
+        raise HTTPException(status_code=422, detail="Report data not yet available — check back once the report has completed processing")
+
+    try:
+        workbook_bytes = build_excel_workbook(report)
+    except ImportError:
+        logger.error("openpyxl is not installed — Excel export unavailable")
+        raise HTTPException(status_code=503, detail="Excel export temporarily unavailable")
+    except Exception:
+        logger.exception("Excel export failed: report_id=%s", report_id)
+        raise HTTPException(status_code=500, detail="Failed to generate Excel export")
+
+    script_title = report.get("script_title", "Report")
+    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in script_title).strip()
+    filename = f"Prodculator Export - {safe_title}.xlsx"
+
+    return Response(
+        content=workbook_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(workbook_bytes)),
+        },
+    )
+
+
+@router.patch("/{report_id}/project-details")
+async def update_project_details(
+    report_id: str,
+    body: UpdateProjectDetailsRequest,
+    user: AuthUser = Depends(RequirePlan("producer")),
+    service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Save user-authored project details (creative team, finance plan) for Producer+ users.
+    Fields are merged with any existing data — safe to call multiple times with partial payloads.
+    """
+    try:
+        updated = service.update_project_details(
+            report_id,
+            user.id,
+            body.project_details.model_dump(exclude_none=False),
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Report not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return _format_report_response(updated, settings, user_plan=user.plan)
+
+
 @router.get("/{report_id}/investor-summary")
 async def download_investor_summary(
     report_id: str,
@@ -508,41 +622,133 @@ def _generate_investor_summary_pdf(report: dict) -> bytes | None:
     from jinja2 import Environment, FileSystemLoader, select_autoescape
 
     report_data: dict = report.get("report_data") or {}
-    location_rankings: list[dict] = report_data.get("locationRankings", [])
-    top_location: dict = location_rankings[0] if location_rankings else {}
+    project_details: dict = report.get("project_details") or {}
+
+    # --- Territory rankings ---
+    location_rankings: list[dict] = report_data.get("locationRankings") or []
+    top_loc: dict = location_rankings[0] if location_rankings else {}
+    top_territory_name: str = top_loc.get("name", "")
+
+    # --- Executive summary ---
+    exec_summary: dict = report_data.get("executiveSummary") or {}
+
+    # --- Financial analysis: find scenario for top territory ---
     financial: dict = report_data.get("financialAnalysis") or {}
-    script_summary: dict = report_data.get("scriptSummary") or {}
+    budget_scenarios: list[dict] = financial.get("budgetScenarios") or []
+    top_scenario: dict = {}
+    for s in budget_scenarios:
+        if s.get("territory", "").lower() == top_territory_name.lower():
+            top_scenario = s
+            break
+    if not top_scenario and budget_scenarios:
+        top_scenario = budget_scenarios[0]
 
-    # Derive headline values from report data
-    net_budget = financial.get("netBudget") or financial.get("estimatedBudget")
-    top_rebate_pct = top_location.get("rebatePercentage", "")
-    top_territory = top_location.get("name", "")
+    net_budget_str: str = (
+        exec_summary.get("headlineNetBudget")
+        or top_scenario.get("netBudget")
+        or exec_summary.get("budget")
+        or ""
+    )
+    top_rebate_pct: str = (
+        top_loc.get("rebatePercent")
+        or exec_summary.get("recommendedTerritoryRebate")
+        or top_scenario.get("rateNet")
+        or ""
+    )
 
-    # Build 3-bullet rationale from scriptSummary or location data
-    rationale_bullets: list[str] = []
-    if script_summary.get("genre"):
-        rationale_bullets.append(f"Genre: {script_summary['genre']}. Script suited for international co-production.")
-    if top_territory and top_rebate_pct:
-        rationale_bullets.append(
-            f"{top_territory} offers {top_rebate_pct} cash rebate on qualifying expenditure, "
-            "significantly reducing net production cost."
-        )
-    if financial.get("estimatedSavings"):
-        rationale_bullets.append(
-            f"Estimated incentive savings of {financial['estimatedSavings']} across recommended territories."
-        )
-    if len(rationale_bullets) < 3:
-        # Fall back to generic rationale if data is sparse
-        for loc in location_rankings[1:3]:
-            if len(rationale_bullets) >= 3:
+    # --- Incentive estimates indexed by territory ---
+    incentive_estimates: list[dict] = report_data.get("incentiveEstimates") or []
+    incentive_by_territory: dict[str, dict] = {}
+    for inc in incentive_estimates:
+        key = (inc.get("territory") or "").lower()
+        if key and key not in incentive_by_territory:
+            incentive_by_territory[key] = inc
+    top_incentive: dict = incentive_by_territory.get(top_territory_name.lower(), {})
+    if not top_incentive and incentive_estimates:
+        top_incentive = incentive_estimates[0]
+
+    # --- Production details ---
+    # Production details — try productionDetails key first (b2c reports), then fall back to
+    # top-level fields on the report_data (standard AI reports store genre/complexity at root)
+    # and request_metadata for crew/cast sizes.
+    _pd_raw: dict = report_data.get("productionDetails") or {}
+    _req_meta: dict = report.get("request_metadata") or {}
+    _genres_raw = (
+        _pd_raw.get("genres")
+        or report_data.get("genres")
+        or ([report_data["genre"]] if report_data.get("genre") else None)
+        or _req_meta.get("genre")
+        or []
+    )
+    if isinstance(_genres_raw, str):
+        _genres_raw = [_genres_raw]
+    production_details: dict = {
+        "format": _pd_raw.get("format") or report_data.get("format") or _req_meta.get("format") or "",
+        "genres": _genres_raw,
+        "complexity": _pd_raw.get("complexity") or report_data.get("complexity") or "",
+        "estimatedShootingDays": (
+            _pd_raw.get("estimatedShootingDays")
+            or report_data.get("estimatedShootingDays")
+            or exec_summary.get("shootDays")
+            or _req_meta.get("shoot_days")
+        ),
+        "castSize": _pd_raw.get("castSize") or report_data.get("castSize") or _req_meta.get("cast_size") or "",
+        "crewSize": _pd_raw.get("crewSize") or report_data.get("crewSize") or _req_meta.get("crew_size") or "",
+        "vfxRequirements": _pd_raw.get("vfxRequirements") or report_data.get("vfxRequirements") or "",
+    }
+
+    # --- Comparable productions ---
+    # Standard AI reports use "comparables"; b2c reports use "comparableProductions"
+    comparables: list[dict] = report_data.get("comparableProductions") or report_data.get("comparables") or []
+
+    # --- Grant / funding opportunities ---
+    # DB-sourced grants (b2c path) have: title, organization, amount, deadline, territory
+    # AI-sourced fundingOpportunities have: name, type, deadline, notes, tier, website
+    # Normalize both to the same shape for the template.
+    grants_raw: list[dict] = report_data.get("grantOpportunities") or []
+    if not grants_raw:
+        for fo in (report_data.get("fundingOpportunities") or []):
+            if isinstance(fo, dict):
+                grants_raw.append({
+                    "title": fo.get("name") or fo.get("title") or "",
+                    "organization": fo.get("type") or "",
+                    "amount": fo.get("tier") or "Varies",
+                    "deadline": fo.get("deadline") or "Rolling",
+                    "notes": fo.get("notes") or "",
+                })
+    grants: list[dict] = grants_raw
+
+    # --- Weather logistics for top territory ---
+    weather_raw = report_data.get("weatherLogistics") or []
+    top_weather: dict = {}
+    if isinstance(weather_raw, list):
+        for w in weather_raw:
+            if isinstance(w, dict) and w.get("territory", "").lower() == top_territory_name.lower():
+                top_weather = w
                 break
-            rationale_bullets.append(
-                f"{loc.get('name', '')} is an alternative territory with a score of {loc.get('score', '—')}/100."
-            )
+        if not top_weather and weather_raw and isinstance(weather_raw[0], dict):
+            top_weather = weather_raw[0]
 
-    key_risks: list[str] = report_data.get("keyRisks", [])
-    if not key_risks and report_data.get("weatherLogistics", {}).get("risks"):
-        key_risks = report_data["weatherLogistics"]["risks"][:3]
+    # --- Per-territory key risks for risk section ---
+    all_territory_risks: list[dict] = []
+    for loc in location_rankings[:3]:
+        risks = [r for r in (loc.get("keyRisks") or []) if r]
+        if risks:
+            all_territory_risks.append({"territory": loc.get("name", ""), "risks": risks[:4]})
+
+    # --- Enrich top-3 locations with programme + bankability for comparison table ---
+    top_locations_enriched: list[dict] = []
+    for loc in location_rankings[:3]:
+        t_key = (loc.get("name") or "").lower()
+        inc = incentive_by_territory.get(t_key, {})
+        programme = inc.get("program") or ""
+        if not programme and t_key == top_territory_name.lower():
+            programme = top_scenario.get("programme") or ""
+        top_locations_enriched.append({
+            **loc,
+            "programme": programme,
+            "bankabilityLabel": loc.get("bankabilityLabel") or inc.get("bankabilityLabel") or "",
+        })
 
     templates_dir = Path(__file__).resolve().parents[2] / "templates" / "pdf"
     env = Environment(
@@ -553,13 +759,22 @@ def _generate_investor_summary_pdf(report: dict) -> bytes | None:
     html = template.render(
         script_title=report.get("script_title", "Untitled"),
         created_at=str(report.get("created_at", ""))[:10],
-        top_location=top_location,
-        top_territory=top_territory,
+        exec_summary=exec_summary,
+        net_budget_str=net_budget_str,
         top_rebate_pct=top_rebate_pct,
-        net_budget=net_budget,
-        top_locations=location_rankings[:3],
-        rationale_bullets=rationale_bullets,
-        key_risks=key_risks,
+        top_loc=top_loc,
+        top_territory_name=top_territory_name,
+        top_scenario=top_scenario,
+        top_incentive=top_incentive,
+        top_weather=top_weather,
+        top_locations=top_locations_enriched,
+        production_details=production_details,
+        key_flags=exec_summary.get("keyFlags") or [],
+        action_timeline=exec_summary.get("actionTimeline") or [],
+        comparables=comparables[:4],
+        grants=grants[:4],
+        all_territory_risks=all_territory_risks,
+        project_details=project_details,
     )
 
     try:
@@ -618,6 +833,10 @@ def _format_report_response(report: dict, settings: Settings, user_plan: str = "
         # The actual PDF is generated on-the-fly by download_pdf; the S3 URL is not exposed.
         "pdfUrl": "preview" if is_free else _resolve_pdf_url(report.get("pdf_url"), settings),
         "userPlan": user_plan,
+        # Expose share_token so the frontend knows whether a share link exists.
+        # None means no active share link.
+        "shareToken": report.get("share_token"),
+        "projectDetails": report.get("project_details"),
     }
 
 

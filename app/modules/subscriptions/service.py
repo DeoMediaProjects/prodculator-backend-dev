@@ -1,8 +1,26 @@
+import logging
+from datetime import datetime, timezone
+
+import redis as sync_redis
+
 from app.core.config import Settings
 from app.core.database_client import DatabaseClient
 from app.models.enums import normalize_plan
-from app.modules.payments.plan_catalog import build_price_to_plan_map, classify_change
+from app.modules.payments.plan_catalog import (
+    PLAN_REPORT_LIMITS,
+    build_price_to_plan_map,
+    classify_change,
+)
 from app.modules.payments.service import StripeService
+
+logger = logging.getLogger(__name__)
+
+_PLAN_LABEL: dict[str, str] = {
+    "free": "Explorer",
+    "professional": "Professional",
+    "producer": "Producer",
+    "studio": "Studio",
+}
 
 
 class SubscriptionService:
@@ -61,7 +79,26 @@ class SubscriptionService:
         settings: Settings,
         stripe_service: StripeService,
     ) -> dict:
-        """Apply an upgrade immediately or schedule a downgrade at period end."""
+        """Apply an upgrade immediately or schedule a downgrade at period end.
+
+        Upgrades:
+          - Stripe charges the prorated difference immediately
+            (always_invoice + error_if_incomplete).
+          - After the Stripe call confirms, plan_type and report_limit are
+            written to the DB synchronously so access is granted without waiting
+            for the webhook to arrive.
+
+        Downgrades:
+          - A Stripe Subscription Schedule defers the item change to
+            current_period_end. The subscription item stays on the current
+            (paid) plan so customer.subscription.updated fires at the natural
+            rollover, not immediately. This prevents the user from losing access
+            to a tier they already paid for.
+          - pending_plan is written locally so the UI can display
+            "Switching to X at renewal" right away.
+          - stripe_schedule_id is stored so the scheduled change can be
+            cancelled later.
+        """
         subscription = self.get_active_subscription(user_id)
         if not subscription or not subscription.get("stripe_subscription_id"):
             raise ValueError("no_active_subscription")
@@ -75,35 +112,112 @@ class SubscriptionService:
         if direction == "same":
             raise ValueError("same_plan")
 
-        is_upgrade = direction == "upgrade"
-        stripe_service.change_subscription_plan(
-            subscription["stripe_subscription_id"],
-            target_price_id,
-            prorate=is_upgrade,
-            idempotency_key=idempotency_key,
-        )
-
-        # Downgrades: write pending_plan locally so the UI can show
-        # "Switching to X at next renewal" before the rollover webhook fires.
-        # Cleared by _handle_subscription_updated when the new plan is active.
-        if not is_upgrade:
+        # Release any active schedule before making a new change — covers the
+        # case where a user had a pending downgrade and now wants to upgrade or
+        # change to a different plan.
+        existing_schedule_id = subscription.get("stripe_schedule_id")
+        if existing_schedule_id:
+            try:
+                stripe_service.cancel_scheduled_plan_change(existing_schedule_id)
+            except Exception:
+                logger.warning(
+                    "Failed to release existing schedule %s for user %s — proceeding",
+                    existing_schedule_id,
+                    user_id,
+                )
             self.supabase.table("subscriptions").update(
-                {"pending_plan": target_plan}
+                {"stripe_schedule_id": None, "pending_plan": None}
             ).eq("id", subscription["id"]).execute()
+
+        is_upgrade = direction == "upgrade"
+
+        if is_upgrade:
+            stripe_service.change_subscription_plan(
+                subscription["stripe_subscription_id"],
+                target_price_id,
+                prorate=True,
+                idempotency_key=idempotency_key,
+            )
+            # Write the new plan synchronously so the user gets access
+            # immediately rather than waiting for the webhook to arrive.
+            new_report_limit = PLAN_REPORT_LIMITS.get(target_plan, 3)
+            self.supabase.table("subscriptions").update(
+                {"plan_type": target_plan, "report_limit": new_report_limit, "pending_plan": None}
+            ).eq("id", subscription["id"]).execute()
+            self.supabase.table("users").update(
+                {"plan": target_plan, "user_type": "paid"}
+            ).eq("id", user_id).execute()
+            self._bust_user_cache(user_id, settings)
+            self._send_plan_email(
+                user_id,
+                "plan_upgraded",
+                {
+                    "previous_plan_name": _PLAN_LABEL.get(current_plan, current_plan.title()),
+                    "new_plan_name": _PLAN_LABEL.get(target_plan, target_plan.title()),
+                },
+                settings,
+            )
             return {
-                "status": "scheduled",
+                "status": "applied",
                 "direction": direction,
                 "target_plan": target_plan,
-                "effective_at": subscription.get("current_period_end"),
+                "effective_at": None,
             }
 
-        # Upgrade: webhook will mirror plan_type → user.plan; no immediate write here.
+        # Downgrade: create a Subscription Schedule so the plan change defers
+        # to period end and the user keeps their current tier until then.
+        schedule_id = stripe_service.schedule_subscription_downgrade(
+            subscription["stripe_subscription_id"],
+            target_price_id,
+        )
+        self.supabase.table("subscriptions").update(
+            {"pending_plan": target_plan, "stripe_schedule_id": schedule_id}
+        ).eq("id", subscription["id"]).execute()
+        self._send_plan_email(
+            user_id,
+            "downgrade_scheduled",
+            {
+                "current_plan_name": _PLAN_LABEL.get(current_plan, current_plan.title()),
+                "new_plan_name": _PLAN_LABEL.get(target_plan, target_plan.title()),
+                "effective_date": self._format_period_end(
+                    subscription.get("current_period_end")
+                ),
+            },
+            settings,
+        )
         return {
-            "status": "applied",
+            "status": "scheduled",
             "direction": direction,
             "target_plan": target_plan,
-            "effective_at": None,
+            "effective_at": subscription.get("current_period_end"),
         }
+
+    def cancel_scheduled_change(
+        self,
+        user_id: str,
+        settings: Settings,
+        stripe_service: StripeService,
+    ) -> dict:
+        """Cancel a pending downgrade by releasing the Stripe Subscription Schedule.
+
+        Releases the schedule (not cancels it), which returns the subscription
+        to normal management on the current plan. Clears pending_plan and
+        stripe_schedule_id from the DB.
+        """
+        subscription = self.get_active_subscription(user_id)
+        if not subscription:
+            raise ValueError("no_active_subscription")
+        if not subscription.get("pending_plan"):
+            raise ValueError("no_scheduled_change")
+
+        schedule_id = subscription.get("stripe_schedule_id")
+        if schedule_id:
+            stripe_service.cancel_scheduled_plan_change(schedule_id)
+
+        self.supabase.table("subscriptions").update(
+            {"pending_plan": None, "stripe_schedule_id": None}
+        ).eq("id", subscription["id"]).execute()
+        return {"cancelled": True}
 
     def get_current(self, user_id: str, current_plan: str) -> dict:
         """Bundle every field the frontend needs to render plan UI."""
@@ -119,6 +233,48 @@ class SubscriptionService:
     @staticmethod
     def _resolve_plan_from_price(price_id: str, settings: Settings) -> str | None:
         return build_price_to_plan_map(settings).get(price_id)
+
+    @staticmethod
+    def _bust_user_cache(user_id: str, settings: Settings) -> None:
+        try:
+            r = sync_redis.from_url(settings.REDIS_URL, decode_responses=True)
+            r.delete(f"user_profile:{user_id}")
+            r.close()
+        except Exception as exc:
+            logger.warning("Cache bust failed for user %s: %s", user_id, exc)
+
+    def _send_plan_email(
+        self,
+        user_id: str,
+        template_name: str,
+        context: dict,
+        settings: Settings,
+    ) -> None:
+        try:
+            from app.modules.email.service import EmailService
+            result = (
+                self.supabase.table("users")
+                .select("email")
+                .eq("id", user_id)
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            if not rows or not rows[0].get("email"):
+                return
+            EmailService(settings).send(rows[0]["email"], template_name, context)
+        except Exception as exc:
+            logger.warning("Plan email failed (%s) for user %s: %s", template_name, user_id, exc)
+
+    @staticmethod
+    def _format_period_end(iso_str: str | None) -> str:
+        if not iso_str:
+            return "your next billing date"
+        try:
+            dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+            return dt.strftime("%B %d, %Y")
+        except Exception:
+            return "your next billing date"
 
     def get_credits_remaining(self, user_id: str) -> int:
         result = (
@@ -137,6 +293,85 @@ class SubscriptionService:
         self.supabase.table("users").update(
             {"credits_remaining": new_value}
         ).eq("id", user_id).execute()
+
+    def get_usage(self, user_id: str, current_plan: str) -> dict:
+        """Return current-period report usage for the dashboard widget.
+
+        Returns the same counts that can_generate_report uses internally so
+        there is no drift between the gate and the displayed numbers.
+        """
+        from app.models.enums import normalize_plan
+
+        plan = normalize_plan(current_plan)
+        subscription = self.get_active_subscription(user_id)
+        credits = self.get_credits_remaining(user_id)
+
+        if not subscription:
+            # Free / pay-per-report path
+            free_reports_result = (
+                self.supabase.table("reports")
+                .select("id")
+                .eq("user_id", user_id)
+                .eq("report_type", "free")
+                .execute()
+            )
+            free_used = len(free_reports_result.data or [])
+            # Free users get exactly 1 lifetime trial
+            limit: int | None = 1
+            used = free_used
+            remaining: int | None = max(0, limit - used) if limit is not None else None
+            can_gen, reason = self.can_generate_report(user_id)
+            return {
+                "plan": plan,
+                "reports_used": used,
+                "reports_limit": limit,
+                "reports_remaining": remaining,
+                "credits_remaining": credits,
+                "period_start": None,
+                "period_end": None,
+                "can_generate": can_gen,
+                "reason": reason,
+            }
+
+        report_limit = subscription.get("report_limit")
+        period_start = subscription.get("current_period_start")
+        period_end = subscription.get("current_period_end")
+
+        if report_limit in (-1, None):
+            # Unlimited plan
+            can_gen, reason = self.can_generate_report(user_id)
+            return {
+                "plan": plan,
+                "reports_used": 0,
+                "reports_limit": None,
+                "reports_remaining": None,
+                "credits_remaining": credits,
+                "period_start": period_start,
+                "period_end": period_end,
+                "can_generate": can_gen,
+                "reason": reason,
+            }
+
+        query = self.supabase.table("reports").select("id").eq("user_id", user_id)
+        if period_start:
+            query = query.gte("created_at", period_start)
+        if period_end:
+            query = query.lte("created_at", period_end)
+
+        used = len(query.execute().data or [])
+        remaining = max(0, report_limit - used)
+        can_gen, reason = self.can_generate_report(user_id)
+        return {
+            "plan": plan,
+            "reports_used": used,
+            "reports_limit": report_limit,
+            "reports_remaining": remaining,
+            "credits_remaining": credits,
+            "period_start": period_start,
+            "period_end": period_end,
+            "can_generate": can_gen,
+            "reason": reason,
+        }
 
     def can_generate_report(self, user_id: str) -> tuple[bool, str]:
         subscription = self.get_active_subscription(user_id)
@@ -185,4 +420,3 @@ class SubscriptionService:
 
         remaining = report_limit - report_count
         return (True, f"{remaining} reports remaining this period")
-
