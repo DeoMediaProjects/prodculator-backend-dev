@@ -188,14 +188,28 @@ class StripeService:
         """
         sub = stripe.Subscription.retrieve(subscription_id)
         current_price_id = sub["items"]["data"][0]["price"]["id"]
-        current_period_start = sub["current_period_start"]
-        current_period_end = sub["current_period_end"]
 
-        # Create a schedule from the existing subscription. Stripe auto-populates
-        # phase 1 from the current subscription state.
+        # Create a schedule from the existing subscription first. Stripe auto-populates
+        # phase 1 from the current subscription state, including start/end dates.
         schedule = stripe.SubscriptionSchedule.create(
             from_subscription=subscription_id,
         )
+
+        # Read period boundaries: prefer the subscription fields, fall back to the
+        # auto-populated schedule phase (handles subscriptions already on a schedule
+        # or Stripe API versions that omit these from the sub object directly).
+        auto_phase = (schedule.get("phases") or [{}])[0]
+        current_period_start = (
+            sub.get("current_period_start") or auto_phase.get("start_date")
+        )
+        current_period_end = (
+            sub.get("current_period_end") or auto_phase.get("end_date")
+        )
+
+        if not current_period_start or not current_period_end:
+            raise ValueError(
+                f"Cannot determine billing period for subscription {subscription_id}"
+            )
 
         # Redefine the schedule with two explicit phases:
         # phase 1 — current plan for the remainder of this billing period

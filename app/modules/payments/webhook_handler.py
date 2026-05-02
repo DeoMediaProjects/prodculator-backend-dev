@@ -13,6 +13,13 @@ from app.modules.payments.plan_catalog import PLAN_REPORT_LIMITS, resolve_plan_f
 
 logger = logging.getLogger(__name__)
 
+_PLAN_LABEL: dict[str, str] = {
+    "free": "Explorer",
+    "professional": "Professional",
+    "producer": "Producer",
+    "studio": "Studio",
+}
+
 
 class WebhookHandler:
     def __init__(self, supabase: DatabaseClient, settings: Settings | None = None):
@@ -75,6 +82,15 @@ class WebhookHandler:
         stripe_subscription_id = session.get("subscription")
         report_limit = PLAN_REPORT_LIMITS.get(plan_type, 3)
 
+        # Fetch previous plan before overwriting so we can send an accurate upgrade email
+        try:
+            prev_result = (
+                self.supabase.table("users").select("plan").eq("id", user_id).limit(1).execute()
+            )
+            previous_plan = normalize_plan((prev_result.data or [{}])[0].get("plan") or "free")
+        except Exception:
+            previous_plan = "free"
+
         self.supabase.table("subscriptions").upsert(
             {
                 "id": str(uuid4()),
@@ -107,6 +123,18 @@ class WebhookHandler:
                 "stripe_subscription_id": stripe_subscription_id,
             },
         )
+
+        # Send plan upgrade email whenever the user lands on a paid plan via checkout.
+        # Skip if they're re-subscribing to the exact same plan (e.g. after cancellation).
+        if plan_type != "free" and plan_type != previous_plan:
+            self._send_email_to_user_id(
+                user_id,
+                "plan_upgraded",
+                {
+                    "previous_plan_name": _PLAN_LABEL.get(previous_plan, previous_plan.title()),
+                    "new_plan_name": _PLAN_LABEL.get(plan_type, plan_type.title()),
+                },
+            )
 
     def _handle_credit_purchase(self, user_id: str) -> None:
         """Increment credits_remaining by 1 for a pay-per-report purchase."""
@@ -212,12 +240,6 @@ class WebhookHandler:
             self.supabase.table("subscriptions").update(
                 {"pending_plan": None, "stripe_schedule_id": None}
             ).eq("stripe_subscription_id", subscription_id).execute()
-            _PLAN_LABEL = {
-                "free": "Explorer",
-                "professional": "Professional",
-                "producer": "Producer",
-                "studio": "Studio",
-            }
             self._send_email_to_user_id(
                 user_id,
                 "downgrade_applied",
