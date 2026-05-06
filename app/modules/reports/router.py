@@ -449,25 +449,62 @@ async def download_pdf(
 def _build_free_tier_report_data(report_data: dict) -> dict:
     """Return a filtered copy of report_data for the free-tier preview PDF.
 
-    Visible: Executive Summary only.
-    All other sections are removed so the template renders locked placeholder pages.
-    The trial banner and locked placeholders are rendered by the template itself —
-    no post-processing watermark is applied.
+    Section structure (territory names, labels) is kept so users can see
+    what each section covers. Only financial result values are stripped.
+    Sections with no meaningful structural preview (comparables,
+    fundingOpportunities) are removed entirely — the template renders a
+    partial locked preview using is_preview=True.
     """
     import copy
     data = copy.deepcopy(report_data)
-    for key in (
-        "locationRankings",
-        "incentiveEstimates",
-        "financialAnalysis",
-        "crewInsights",
-        "comparables",
-        "weatherLogistics",
-        "fundingOpportunities",
-        "investorSummary",
-        "territoryDeepDives",
-    ):
-        data.pop(key, None)
+
+    # Remove completely — no useful structural preview for free users
+    data.pop("investorSummary", None)
+    data.pop("territoryDeepDives", None)
+    data.pop("comparables", None)
+    data.pop("fundingOpportunities", None)
+
+    # locationRankings: show top 3 territories, strip reasoning (Key Intelligence is paid-only)
+    if "locationRankings" in data:
+        stripped = []
+        for loc in data["locationRankings"][:3]:
+            loc_copy = dict(loc)
+            loc_copy.pop("reasoning", None)
+            stripped.append(loc_copy)
+        data["locationRankings"] = stripped
+
+    # incentiveEstimates: keep territory + program, strip all financial values
+    if data.get("incentiveEstimates"):
+        data["incentiveEstimates"] = [
+            {"territory": inc.get("territory", ""), "program": inc.get("program", "")}
+            for inc in data["incentiveEstimates"]
+        ]
+
+    # financialAnalysis: keep territory + programme per scenario, strip values
+    fa = data.get("financialAnalysis") or {}
+    scenarios = fa.get("budgetScenarios") or []
+    if scenarios:
+        data["financialAnalysis"] = {
+            "budgetScenarios": [
+                {"territory": s.get("territory", ""), "programme": s.get("programme", "")}
+                for s in scenarios
+            ]
+        }
+    else:
+        data.pop("financialAnalysis", None)
+
+    # crewInsights: keep territory name only, strip cost/quality/specialties
+    if data.get("crewInsights"):
+        data["crewInsights"] = [
+            {"territory": c.get("territory", "")} for c in data["crewInsights"]
+        ]
+
+    # weatherLogistics: keep territory name only, strip weather data
+    if data.get("weatherLogistics"):
+        data["weatherLogistics"] = [
+            {"territory": w.get("territory", "")} for w in data["weatherLogistics"]
+        ]
+
     return data
 
 

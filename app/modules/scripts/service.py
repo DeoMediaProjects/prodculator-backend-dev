@@ -1475,7 +1475,7 @@ Return a JSON object with ONLY these keys:
   "tone": "narrative tone description",
   "scale": "production scale label (e.g. 'Mid-budget Feature Film')",
   "complexity": "Low|Medium|High|Very High",
-  "executiveSummary_keyInsights": "2-3 paragraph narrative summary for financiers...",
+  "executiveSummary_keyInsights": "2-3 paragraph narrative summary written for financiers and producers. Full sentences only — NO bullet points, NO dashes, NO numbered lists, NO hyphens at line starts. Each paragraph separated by a blank line. Write as a senior production consultant would in a formal executive briefing.",
   "alternativeStrategy": "1-2 sentence alternative territory recommendation",
   "locationNarratives": {
     "Territory Name": {
@@ -1523,6 +1523,7 @@ RULES:
 - filingNote: when present, include the filing/entity clarification in the territory's requirements.
 - When referencing stacking programmes (provincial/regional credits), use ONLY the rate values shown in the skeleton data for that territory. Do NOT cite rates from your own training knowledge — they may be outdated. Do NOT echo internal field names — just state the rate and programme name naturally.
 - Write like a senior consultant — authoritative, data-driven, actionable
+- executiveSummary_keyInsights: must be 2-3 plain prose paragraphs. No dashes, no bullet points, no hyphens at line starts, no numbered items. Paragraphs separated by \n\n.
 - keyRisks_additional: ONLY risks NOT already in the skeleton's keyRisks
 - costEfficiency: 0-100 integer. A DB-derived anchor is pre-set in the skeleton — your value must stay within ±15 of it (e.g. if anchor is 60, valid range is 45-75). This anchors AI estimates to real crew cost data.
 - crewDepth, infrastructure scores: 0-100 integers based on your qualitative assessment
