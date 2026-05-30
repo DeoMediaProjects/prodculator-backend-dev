@@ -41,18 +41,26 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    # Legacy one-time / pay-per-report prices
     STRIPE_PRICE_SINGLE_USD: str = ""
     STRIPE_PRICE_SINGLE_GBP: str = ""
+    # Professional monthly
     STRIPE_PRICE_PROFESSIONAL_USD: str = ""
     STRIPE_PRICE_PROFESSIONAL_GBP: str = ""
+    # Producer monthly
     STRIPE_PRICE_PRODUCER_USD: str = ""
     STRIPE_PRICE_PRODUCER_GBP: str = ""
+    # Studio monthly
     STRIPE_PRICE_STUDIO_USD: str = ""
     STRIPE_PRICE_STUDIO_GBP: str = ""
-    # Annual billing prices
+    # Annual billing — GBP
     STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP: str = ""
     STRIPE_PRICE_PRODUCER_ANNUAL_GBP: str = ""
     STRIPE_PRICE_STUDIO_ANNUAL_GBP: str = ""
+    # Annual billing — USD  ← NEW: was missing, caused annual USD subs to not resolve plan
+    STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD: str = ""
+    STRIPE_PRICE_PRODUCER_ANNUAL_USD: str = ""
+    STRIPE_PRICE_STUDIO_ANNUAL_USD: str = ""
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
