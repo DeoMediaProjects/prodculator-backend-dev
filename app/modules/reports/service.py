@@ -762,6 +762,20 @@ class ReportService:
         # that the AI should use verbatim instead of computing its own.
         self._pre_compute_territory_financials(datasets)
 
+        # Load territory profiles for deterministic crew depth and infrastructure scores
+        territory_profile_rows = self._safe_query(
+            'territory_profiles',
+            lambda q: q.select(
+                'territory,crew_depth_tier,crew_depth_score,'
+                'infrastructure_tier,infrastructure_score,hemisphere'
+            )
+        )
+        datasets['_territory_profiles'] = {
+            row['territory']: row
+            for row in territory_profile_rows
+            if row.get('territory')
+        }
+
     def _pre_compute_territory_financials(self, datasets: dict) -> None:
         """Build datasets["_territory_financials"] with authoritative monetary figures.
 

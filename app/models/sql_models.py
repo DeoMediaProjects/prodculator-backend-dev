@@ -174,3 +174,25 @@ class ProcessedWebhookEvent(SQLModel, table=True):
 
     event_id: str = Field(primary_key=True)
     processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TerritoryProfile(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "territory_profiles"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    territory: str = Field(index=True, unique=True, nullable=False)
+    iso_code: str | None = None
+    crew_depth_tier: str = Field(default="emerging")
+    crew_depth_score: int = Field(default=30)
+    crew_depth_notes: str | None = None
+    infrastructure_tier: str = Field(default="emerging")
+    infrastructure_score: int = Field(default=30)
+    infrastructure_notes: str | None = None
+    hemisphere: str = Field(default="northern")
+    intl_productions_3yr: int | None = None
+    intl_productions_source: str | None = None
+    last_reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    review_notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

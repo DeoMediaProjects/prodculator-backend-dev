@@ -54,18 +54,30 @@ _RESTRICTING_FEST_GENRES: frozenset[str] = frozenset({
 
 SCORE_WEIGHTS = {
     "full": {
-        "costEfficiency": 0.25, "crewDepth": 0.20, "infrastructure": 0.20,
-        "incentiveStrength": 0.20, "currencyAdvantage": 0.10, "incentiveReliability": 0.05,
+        "incentiveStrength":    0.30,  # was 0.20 — leads investor story
+        "incentiveReliability": 0.15,  # was 0.05 — bankability is categorical
+        "costEfficiency":       0.20,  # was 0.25
+        "currencyAdvantage":    0.15,  # was 0.10 — material financial signal
+        "crewDepth":            0.10,  # was 0.20 — operational, not investor-primary
+        "infrastructure":       0.10,  # was 0.20
     },
     "incentive": {
-        "costEfficiency": 0.15, "crewDepth": 0.15, "infrastructure": 0.15,
-        "incentiveStrength": 0.40, "currencyAdvantage": 0.10, "incentiveReliability": 0.05,
+        "incentiveStrength":    0.45,  # was 0.40
+        "incentiveReliability": 0.15,  # was 0.05
+        "costEfficiency":       0.15,  # unchanged
+        "currencyAdvantage":    0.15,  # was 0.10
+        "crewDepth":            0.05,  # was 0.15
+        "infrastructure":       0.05,  # was 0.15
     },
     "location": {
-        "costEfficiency": 0.17, "crewDepth": 0.25, "infrastructure": 0.25,
-        "incentiveStrength": 0.13, "currencyAdvantage": 0.10, "incentiveReliability": 0.10,
+        "incentiveStrength":    0.15,  # was 0.13
+        "incentiveReliability": 0.10,  # unchanged
+        "costEfficiency":       0.20,  # was 0.17
+        "currencyAdvantage":    0.10,  # unchanged
+        "crewDepth":            0.25,  # unchanged
+        "infrastructure":       0.20,  # unchanged
     },
-}
+}  # Verify: each preset must sum to exactly 1.00
 
 # Shoot duration thresholds (must match validator._LONG_SHOOT_THRESHOLDS)
 _LONG_SHOOT_THRESHOLDS: dict[str, int] = {
@@ -143,6 +155,11 @@ class ReportBuilder:
         self._production_format: str | None = datasets.get("_production_format")
         self._production_priority: str = datasets.get("_production_priority", "full")
         self._currency_scores: dict | None = datasets.get("_currency_advantage_scores")
+        self._territory_profiles: dict = {
+            row["territory"]: row
+            for row in (datasets.get("_territory_profiles") or {}).values()
+            if isinstance(row, dict) and row.get("territory")
+        }
 
         # Budget info
         budget_gbp_data = datasets.get("_budget_gbp")
@@ -302,24 +319,34 @@ class ReportBuilder:
             reliability_score, bankability_label = self._compute_reliability(best)
             currency_score = self._get_currency_score(territory)
 
-            # Crew cost anchor: DB-driven seed for costEfficiency (AI may refine within ±15)
+            # Cost Efficiency: fully DB-derived. No AI override.
             cost_anchor = self._crew_rate_anchor(territory)
+            profile = self._territory_profiles.get(territory, {})
+            if not profile:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    f"No territory profile for {territory} — crewDepth/infrastructure defaulting to 30"
+                )
+            if cost_anchor is None:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    f"No crew cost data for {territory} — costEfficiency defaulting to 50"
+                )
 
             loc: dict = {
                 "name": territory,
                 "rebatePercent": effective_rate or "N/A",
-                "score": None,  # computed after AI fills 3 dimensions
+                "score": None,  # computed after DB dimensions set
                 # DB-deterministic dimensions
                 "incentiveStrength": strength,
                 "incentiveReliability": reliability_score,
                 "currencyAdvantage": currency_score,
                 "bankabilityLabel": bankability_label,
-                # Partially DB-seeded dimensions (AI fills crewDepth + infrastructure; costEfficiency anchored)
-                "costEfficiency": cost_anchor,  # DB anchor; AI refines within ±15
-                "crewDepth": None,
-                "infrastructure": None,
-                # Internal anchor for AI clamping — stripped before response
-                "_costEfficiencyAnchor": cost_anchor,
+                # All three dimensions now fully DB-derived — no AI override
+                "costEfficiency": cost_anchor if cost_anchor is not None else 50,
+                "crewDepth": profile.get("crew_depth_score") or 30,
+                "infrastructure": profile.get("infrastructure_score") or 30,
+                **({"costEfficiencyDataMissing": True} if cost_anchor is None else {}),
                 # AI-filled narratives
                 "reasoning": None,
                 "keyAdvantages": None,
@@ -1264,7 +1291,8 @@ class ReportBuilder:
                 insight["costVsUSD"] = "Data not available"
 
             # Quality rating: derive from crew data density (more data = more established industry)
-            insight["qualityRating"] = min(5, max(1, len(rows) // 3 + 1))
+            profile = self._territory_profiles.get(territory, {})
+            insight["crewTier"] = profile.get("crew_depth_tier", "emerging").capitalize()
 
             insights.append(insight)
 
@@ -1414,8 +1442,17 @@ class ReportBuilder:
             scored.append((score, comp_dict))
 
         # Sort by relevance score descending, take top 10
+        _COMPARABLE_MIN_SCORE = 4.0  # territory match + at least one other positive signal
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [comp for _, comp in scored[:10]]
+        qualified = [(s, c) for s, c in scored if s >= _COMPARABLE_MIN_SCORE]
+        filtered_out = len(scored) - len(qualified)
+        if filtered_out > 0:
+            import logging as _logging
+            _logging.getLogger(__name__).info(
+                f"Comparables quality gate: {filtered_out} of {len(scored)} excluded "
+                f"(score < {_COMPARABLE_MIN_SCORE})"
+            )
+        return [comp for _, comp in qualified[:8]]  # reduced from 10 to 8
 
     # ── Weather Logistics ──────────────────────────────────────────────────
 
@@ -2011,6 +2048,21 @@ class ReportBuilder:
             new_score = int(round(weighted_sum))
             new_score = max(0, min(100, new_score + weather_penalty))
             loc["score"] = new_score
+
+            # Financial Return Score — investor-facing metric
+            incentive_s = loc.get("incentiveStrength") or 0
+            incentive_r = loc.get("incentiveReliability") or 0
+            frs = int(round((incentive_s * 0.50) + (incentive_r * 0.50)))
+            frs = max(0, min(100, frs))
+            bankability = loc.get("bankabilityLabel", "")
+            if bankability == "NOT BANKABLE" or frs < 45:
+                verdict = "Caution"
+            elif frs >= 70 and bankability == "BANKABLE":
+                verdict = "Bankable"
+            else:
+                verdict = "Verify First"
+            loc["financialReturnScore"] = frs
+            loc["financialReturnVerdict"] = verdict
 
         # Sort by descending score
         rankings.sort(

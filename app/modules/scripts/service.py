@@ -1748,24 +1748,8 @@ RULES:
             territory = loc.get("name", "")
             narr = location_narratives.get(territory, {})
 
-            # costEfficiency: AI may refine within ±15 of the DB anchor
-            cost_anchor = loc.pop("_costEfficiencyAnchor", None)
-            ai_cost = narr.get("costEfficiency")
-            if isinstance(ai_cost, (int, float)):
-                ai_cost_int = max(0, min(100, int(ai_cost)))
-                if cost_anchor is not None:
-                    ai_cost_int = max(cost_anchor - 15, min(cost_anchor + 15, ai_cost_int))
-                loc["costEfficiency"] = ai_cost_int
-            elif loc.get("costEfficiency") is None:
-                loc["costEfficiency"] = cost_anchor if cost_anchor is not None else 50
-
-            # crewDepth and infrastructure: pure AI estimates
-            for dim in ("crewDepth", "infrastructure"):
-                val = narr.get(dim)
-                if isinstance(val, (int, float)):
-                    loc[dim] = max(0, min(100, int(val)))
-                elif loc.get(dim) is None:
-                    loc[dim] = 50  # safe default
+            # costEfficiency, crewDepth, infrastructure: fully DB-derived (set in builder).
+            # AI provides narrative context only — no numeric override applied here.
 
             # Reasoning and keyAdvantages
             if narr.get("reasoning") and isinstance(narr["reasoning"], list):
@@ -1866,10 +1850,11 @@ RULES:
             elif not dive.get("keyRisks"):
                 dive["keyRisks"] = []
 
-        # Strip any _costEfficiencyAnchor fields that weren't consumed (fallback path)
+        # Strip any internal flag fields before API response
         for loc in skeleton.get("locationRankings", []):
             if isinstance(loc, dict):
-                loc.pop("_costEfficiencyAnchor", None)
+                loc.pop("_costEfficiencyAnchor", None)  # legacy — no longer set after PR 1
+                loc.pop("costEfficiencyDataMissing", None)
 
         # Add scoring methodology
         skeleton["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology()
@@ -1900,10 +1885,10 @@ RULES:
         for loc in skeleton.get("locationRankings", []):
             if not isinstance(loc, dict):
                 continue
-            loc.pop("_costEfficiencyAnchor", None)
+            loc.pop("costEfficiencyDataMissing", None)  # strip internal flag before API response
             for dim in ("costEfficiency", "crewDepth", "infrastructure"):
                 if loc.get(dim) is None:
-                    loc[dim] = 50
+                    loc[dim] = 50  # safety net — should not reach here after PR 1
             if not loc.get("reasoning"):
                 loc["reasoning"] = ["Territory included based on incentive data analysis"]
             if not loc.get("keyAdvantages"):
@@ -1920,9 +1905,12 @@ RULES:
                 insight["tradeoff"] = "See crew cost comparison"
 
         for comp in skeleton.get("comparables", []):
-            if isinstance(comp, dict) and not comp.get("relevanceDescription"):
-                comp.pop("_budgetGapFlag", None)
-                comp["relevanceDescription"] = "Comparable production"
+            if isinstance(comp, dict):
+                gap_flag = comp.pop("_budgetGapFlag", None)
+                if not comp.get("relevanceDescription") and gap_flag:
+                    comp["relevanceDescription"] = (
+                        f"Note: this comparable is {gap_flag} than the production being analysed."
+                    )
 
         for entry in skeleton.get("weatherLogistics", []):
             if isinstance(entry, dict):
