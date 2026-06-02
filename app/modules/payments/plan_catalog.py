@@ -32,20 +32,27 @@ def build_price_to_plan_map(settings: Settings) -> dict[str, str]:
     """Return {price_id: plan_type} from configured Stripe price IDs.
 
     Empty/unset price IDs are skipped so the map only contains real entries.
+    Annual USD prices are now included — previously missing, which caused
+    webhook plan resolution to return None for annual USD subscribers.
     """
     raw_map: dict[str, str] = {
+        # Legacy one-time / pay-per-report
         settings.STRIPE_PRICE_SINGLE_USD: PlanType.PROFESSIONAL.value,
         settings.STRIPE_PRICE_SINGLE_GBP: PlanType.PROFESSIONAL.value,
+        # Professional — monthly
         settings.STRIPE_PRICE_PROFESSIONAL_USD: PlanType.PROFESSIONAL.value,
         settings.STRIPE_PRICE_PROFESSIONAL_GBP: PlanType.PROFESSIONAL.value,
+        # Professional — annual
         settings.STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP: PlanType.PROFESSIONAL.value,
         settings.STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD: PlanType.PROFESSIONAL.value,
         settings.STRIPE_PRICE_PRODUCER_USD: PlanType.PRODUCER.value,
         settings.STRIPE_PRICE_PRODUCER_GBP: PlanType.PRODUCER.value,
+        # Producer — annual
         settings.STRIPE_PRICE_PRODUCER_ANNUAL_GBP: PlanType.PRODUCER.value,
         settings.STRIPE_PRICE_PRODUCER_ANNUAL_USD: PlanType.PRODUCER.value,
         settings.STRIPE_PRICE_STUDIO_USD: PlanType.STUDIO.value,
         settings.STRIPE_PRICE_STUDIO_GBP: PlanType.STUDIO.value,
+        # Studio — annual
         settings.STRIPE_PRICE_STUDIO_ANNUAL_GBP: PlanType.STUDIO.value,
         settings.STRIPE_PRICE_STUDIO_ANNUAL_USD: PlanType.STUDIO.value,
     }

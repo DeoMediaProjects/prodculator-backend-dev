@@ -357,6 +357,25 @@ class ReportBuilder:
             # Inject weather risk
             self._inject_weather_risk(loc, territory)
 
+            # PR 5 — Schedule Viability Score
+            shoot_months_list = self.datasets.get('_shoot_months') or []
+            shoot_month = shoot_months_list[0] if shoot_months_list else None
+            shoot_weeks = float(self.datasets.get('_shoot_weeks') or 4)
+            ext_pct = float(self.datasets.get('_ext_int_ratio') or 50)
+            if shoot_month:
+                svs_data = self._compute_schedule_viability(
+                    territory, shoot_month, shoot_weeks, ext_pct
+                )
+                loc['scheduleViabilityScore'] = svs_data['svs']
+                loc['contingencyDaysEstimate'] = svs_data['contingency_days']
+                # Weather penalty: SVS < 55 reduces costEfficiency up to 10 points
+                if svs_data['svs'] < 55:
+                    penalty = min(10, int((55 - svs_data['svs']) / 5))
+                    current_ce = loc.get('costEfficiency')
+                    if isinstance(current_ce, (int, float)):
+                        loc['costEfficiency'] = max(0, int(current_ce) - penalty)
+                        loc['costEfficiencyWeatherPenalty'] = penalty
+
             # Inject cap-per-person note (placeholder for AI reasoning)
             self._inject_cap_per_person_risk(loc, best)
 
@@ -1858,6 +1877,48 @@ class ReportBuilder:
         else:
             report["scriptAnalysis"] = {"sectionExplainers": explainers}
         report["sectionExplainers"] = explainers
+
+
+    def _compute_schedule_viability(
+        self,
+        territory: str,
+        shoot_month: int,
+        shoot_weeks: float,
+        exterior_pct: float,
+    ) -> dict:
+        """Compute Schedule Viability Score (SVS) for a territory/month combination.
+
+        SVS is 0–100 where higher = more viable for exterior shooting.
+        Returns dict with 'svs' and 'contingency_days'.
+        """
+        month_data = self._get_weather_month(territory, shoot_month)
+        if not month_data:
+            return {'svs': 50, 'contingency_days': max(1, int(shoot_weeks / 2))}
+
+        daylight = float(month_data.get('avg_daylight_hours') or 0) or 12.0
+        rainfall = float(month_data.get('avg_rainfall_mm') or 0) or 50.0
+        temp_high = float(month_data.get('avg_temp_high_c') or 0)
+        temp_low = float(month_data.get('avg_temp_low_c') or 0)
+        temp = (temp_high + temp_low) / 2 if temp_high or temp_low else 15.0
+
+        daylight_factor = max(0.0, min(1.0, (daylight - 8) / 6))
+        ext_weight = exterior_pct / 100
+        rain_penalty = min(0.4, rainfall / 200)
+        temp_penalty = 0.1 if temp < 5 or temp > 38 else 0.0
+
+        svs = int(round(
+            (daylight_factor * ext_weight * 100)
+            - (rain_penalty * 100)
+            - (temp_penalty * 100)
+            + ((1 - ext_weight) * 60)
+        ))
+        svs = max(0, min(100, svs))
+
+        # Contingency multiplier: poor weather = more buffer days needed
+        mult = 1.0 if svs >= 75 else 1.5 if svs >= 55 else 2.0 if svs >= 35 else 3.0
+        contingency_days = round(shoot_weeks / 2 * mult)
+
+        return {'svs': svs, 'contingency_days': contingency_days}
 
     def _crew_rate_anchor(self, territory: str) -> int | None:
         """Compute a costEfficiency anchor (0-100) from crew day rates.

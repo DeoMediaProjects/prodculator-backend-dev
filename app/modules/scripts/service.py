@@ -1477,14 +1477,19 @@ Return a JSON object with ONLY these keys:
   "complexity": "Low|Medium|High|Very High",
   "executiveSummary_keyInsights": "2-3 paragraph narrative summary written for financiers and producers. Full sentences only — NO bullet points, NO dashes, NO numbered lists, NO hyphens at line starts. Each paragraph separated by a blank line. Write as a senior production consultant would in a formal executive briefing.",
   "alternativeStrategy": "1-2 sentence alternative territory recommendation",
+  "nextSteps": [
+    {
+      "priority": "URGENT|HIGH|RECOMMENDED",
+      "action": "one-sentence specific action",
+      "reason": "one-sentence reason referencing specific flag in this report",
+      "deadline": "date or timeframe if known, else null"
+    }
+  ],
   "locationNarratives": {
     "Territory Name": {
       "reasoning": ["bullet 1", "bullet 2", "bullet 3"],
       "keyAdvantages": ["advantage 1", "advantage 2", "advantage 3"],
-      "keyRisks_additional": ["risk beyond the DB-computed ones"],
-      "costEfficiency": 0-100,
-      "crewDepth": 0-100,
-      "infrastructure": 0-100
+      "keyRisks_additional": ["risk beyond the DB-computed ones"]
     }
   },
   "crewNarratives": {
@@ -1509,6 +1514,27 @@ Return a JSON object with ONLY these keys:
       "keyAdvantages": ["advantage 1", "advantage 2"],
       "keyRisks_additional": ["risk beyond the DB-computed ones"]
     }
+  },
+  "scriptIntelligence": {
+    "creativeRecognition": "2-4 sentences. Protagonist + supporting character from script_characters ONLY. Specific scene/location/cultural detail. Bridge to production challenge. No forbidden verbs.",
+    "locationDependencyMap": {
+      "scriptLocked": [{"location": "str", "reason": "str"}],
+      "substitutable": [{"location": "str", "type": "str", "territories": ["str"]}],
+      "doublingOpportunities": [{"original": "str", "double": "str", "territory": "str"}]
+    },
+    "complexityDrivers": [{"flag": "str", "detail": "str", "implication": "str", "territoriesAffected": ["str"]}],
+    "crewSpecialisations": [{"role": "str", "priority": "Essential|Recommended", "availableIn": ["str"], "importRequired": ["str"]}],
+    "scheduleWeatherNotes": "2-3 sentences on SVS findings referencing scheduleViabilityScore and contingencyDaysEstimate values from skeleton."
+  },
+  "dimensionVerdicts": {
+    "Territory Name": {
+      "incentiveStrength": "ONE sentence max 40 words referencing specific programme or rate",
+      "incentiveReliability": "ONE sentence max 40 words",
+      "costEfficiency": "ONE sentence max 40 words",
+      "currencyAdvantage": "ONE sentence max 40 words",
+      "crewDepth": "ONE sentence max 40 words referencing tier (Established/Growing/Emerging)",
+      "infrastructure": "ONE sentence max 40 words referencing tier"
+    }
   }
 }
 
@@ -1517,17 +1543,37 @@ RULES:
 - Reference specific data from the skeleton (rates, rebate amounts, programme names)
 - If script analysis is provided, reference script details in reasoning
 - Do NOT invent financial figures — all monetary data is in the skeleton
-- perPersonCapNote: reference per-person caps ONLY when a territory's perPersonCapNote is non-null in the skeleton. If null, do NOT mention per-person caps, wage caps, or ATL fee thresholds for that territory — the programme has none. Applies to every section including executiveSummary_keyInsights.
+- perPersonCapNote: reference per-person caps ONLY when a territory's perPersonCapNote is non-null in the skeleton. If null, do NOT mention per-person caps, wage caps, or ATL fee thresholds for that territory — the programme has none.
 - netRatePct: when present in the skeleton, always use this as the investor-facing rate (after local tax), not the gross rate. State it as "net X%" to distinguish from the gross credit.
 - payeeNote: when present, disclose who receives the rebate payment in the territory's reasoning section.
 - filingNote: when present, include the filing/entity clarification in the territory's requirements.
-- When referencing stacking programmes (provincial/regional credits), use ONLY the rate values shown in the skeleton data for that territory. Do NOT cite rates from your own training knowledge — they may be outdated. Do NOT echo internal field names — just state the rate and programme name naturally.
+- When referencing stacking programmes (provincial/regional credits), use ONLY the rate values shown in the skeleton data for that territory. Do NOT cite rates from your own training knowledge.
 - Write like a senior consultant — authoritative, data-driven, actionable
 - executiveSummary_keyInsights: must be 2-3 plain prose paragraphs. No dashes, no bullet points, no hyphens at line starts, no numbered items. Paragraphs separated by \n\n.
 - keyRisks_additional: ONLY risks NOT already in the skeleton's keyRisks
-- costEfficiency: 0-100 integer. A DB-derived anchor is pre-set in the skeleton — your value must stay within ±15 of it (e.g. if anchor is 60, valid range is 45-75). This anchors AI estimates to real crew cost data.
-- crewDepth, infrastructure scores: 0-100 integers based on your qualitative assessment
 - Keep string values concise — short phrases, not paragraphs
+- costEfficiency, crewDepth, infrastructure: Pre-computed from verified DB data. DO NOT include numeric values for these in locationNarratives. In reasoning bullets, explain what these scores mean for THIS production.
+
+executiveSummary_keyInsights RULES — Write exactly six paragraphs with bold headings. Blank line between each. Total 350-420 words.
+PARAGRAPH 1 — **Production Overview** (80-100 words): Name protagonist + world + specific desire referencing a named location. Core conflict and tone with specific scene type or cultural detail from script. Bridge to primary production challenge. Do NOT list budget, format, or genre.
+PARAGRAPH 2 — **Primary Recommendation** (70-90 words): Territory name + FRS from financialReturnScore (e.g. "FRS: 84 — Bankable"). Estimated net rebate — net rate only, NOT gross. Payment timeline in plain English. One sentence why this territory wins for THIS production referencing a specific script element.
+PARAGRAPH 3 — **Second Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: what producer gains vs primary recommendation and what they give up.
+PARAGRAPH 4 — **Third Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: when does this become the right choice? OMIT if fewer than 3 territories.
+PARAGRAPH 5 — **Production Complexity Snapshot** (40-60 words): 2-3 specific complexity flags from script analysis. Every point traceable to script — scene counts, languages, specialist requirements. No generic statements.
+PARAGRAPH 6 — **Strategic Recommendations** (40-60 words): 2-3 specific time-sensitive actions. At least one must be urgent/deadline-bound from actual report flags. Reference actual programme names, deadlines, or risks from this report.
+GUARDRAILS: Duration always in weeks — NEVER convert to days. NET rates only. UK AVEC always 25.5% net NOT 34% gross. FRS: use financialReturnScore and financialReturnVerdict from skeleton only. Financial figures: only values from skeleton. Bold headings on own line NOT inline.
+
+nextSteps RULES: 4-6 items ordered by urgency (URGENT first). Each action must reference a specific territory, programme name, or flag. URGENT = deadline within 3 months or blocking contractual commitment. NEVER generate generic actions.
+
+scriptIntelligence RULES:
+- creativeRecognition: names ONLY from script_characters array. Not a logline. No forbidden verbs (navigates, grapples with, explores, discovers).
+- complexityDrivers: 2-5 drivers, each referencing a specific script element. territoriesAffected: only territories in this report's locationRankings.
+- crewSpecialisations: only genuinely non-standard roles for the territory.
+- scheduleWeatherNotes: reference scheduleViabilityScore and contingencyDaysEstimate values from skeleton. Note hemisphere/season impact when relevant.
+
+dimensionVerdicts RULES: One sentence per dimension, max 40 words. Reference specific data (programme name, rate, tier name). Do NOT repeat the score number. Do NOT use word "score". Each verdict must be substantively different from reasoning bullets.
+
+comparableDescriptions RULES: ONE specific reason this comparable is relevant. Reference at least one of: incentive programme, budget match, crew parallel, genre match, structural similarity. Do NOT use phrase "comparable production". Do NOT describe plot. Maximum 40 words. One sentence.
 """
 
     def generate_production_analysis_v2(
@@ -1739,6 +1785,21 @@ RULES:
                     "Full narrative analysis unavailable. "
                     "Review the financial data and territory scores below."
                 )
+
+        # nextSteps — priority-ordered action items
+        next_steps = ai.get("nextSteps")
+        if isinstance(next_steps, list) and next_steps:
+            skeleton["nextSteps"] = next_steps
+
+        # scriptIntelligence — structured analysis block
+        script_intel = ai.get("scriptIntelligence")
+        if isinstance(script_intel, dict):
+            skeleton["scriptIntelligence"] = script_intel
+
+        # dimensionVerdicts — per-territory per-dimension narrative verdicts
+        dim_verdicts = ai.get("dimensionVerdicts")
+        if isinstance(dim_verdicts, dict):
+            skeleton["dimensionVerdicts"] = dim_verdicts
 
         # Location narratives
         location_narratives = ai.get("locationNarratives", {})

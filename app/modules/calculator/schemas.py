@@ -69,6 +69,9 @@ class TerritoryScenario(BaseModel):
     vfx_uplift_programme: str | None = None
     vfx_uplift_value: float | None = None
     vfx_uplift_display: str | None = None
+    bankability_label: str | None = None
+    financial_return_score: int | None = None
+    financial_return_verdict: str | None = None
 
 
 class ScenarioResponse(BaseModel):
