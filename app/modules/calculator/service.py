@@ -358,6 +358,25 @@ class CalculatorService:
             + weights.get("incentiveReliability", 0) * reliability
         )
 
+        # PR 8 — Bankability and Financial Return Score
+        from app.modules.reports.builder import _compute_bankability_label as _bl
+        bankability_label = _bl(
+            best.get("payment_reliability"),
+            best.get("payment_timeline_days_max"),
+        )
+        incentive_r_score = (
+            weights.get("incentiveReliability", 0.15) * 100
+        )
+        # Use the actual incentiveReliability score from reliability computation
+        _rel_score = reliability if reliability != 50 else 50
+        frs = max(0, min(100, int(round((incentive_strength * 0.50) + (_rel_score * 0.50)))))
+        if bankability_label == "NOT BANKABLE" or frs < 45:
+            frs_verdict: str = "Caution"
+        elif frs >= 70 and bankability_label == "BANKABLE":
+            frs_verdict = "Bankable"
+        else:
+            frs_verdict = "Verify First"
+
         return TerritoryScenario(
             territory=territory,
             iso=iso,
@@ -392,6 +411,9 @@ class CalculatorService:
             vfx_uplift_programme=vfx_uplift_programme,
             vfx_uplift_value=vfx_uplift_value,
             vfx_uplift_display=vfx_uplift_display,
+            bankability_label=bankability_label,
+            financial_return_score=frs,
+            financial_return_verdict=frs_verdict,
         )
 
     # ── Helpers ────────────────────────────────────────────────────────────
