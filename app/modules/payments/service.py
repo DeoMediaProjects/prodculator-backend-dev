@@ -7,6 +7,14 @@ from app.core.config import Settings
 logger = logging.getLogger(__name__)
 
 
+def _first_line_description(inv: dict) -> str:
+    """Pull the first line-item description as a human-readable label."""
+    lines = (inv.get("lines", {}).get("data") or [])
+    if lines:
+        return lines[0].get("description", "")
+    return ""
+
+
 class StripeService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -81,6 +89,9 @@ class StripeService:
         """
         sub = stripe.Subscription.retrieve(subscription_id)
         item_id = sub["items"]["data"][0]["id"]
+        current_price = sub["items"]["data"][0].get("price") or {}
+        current_interval = (current_price.get("recurring") or {}).get("interval", "month")
+
         # The newer Stripe API nests item changes under subscription_details.
         # The legacy Invoice.upcoming() endpoint accepted flat subscription_items;
         # create_preview rejects that shape with 400.
@@ -106,13 +117,25 @@ class StripeService:
                 if amount < 0:
                     proration_credit += -amount
 
+        # Detect billing-cycle change (monthly ↔ annual) so the modal can warn.
+        try:
+            target_price = stripe.Price.retrieve(new_price_id)
+            target_interval = (target_price.get("recurring") or {}).get("interval", "month")
+        except Exception:
+            target_interval = current_interval
+        billing_cycle_changes = current_interval != target_interval
+
+        effective_date = sub.get("current_period_end") or (
+            (sub.get("items", {}).get("data") or [{}])[0].get("current_period_end")
+        )
+
         return {
             "immediate_total": immediate_total,
             "proration_credit": proration_credit,
             "next_invoice_total": invoice.get("total", 0) or 0,
             "currency": invoice.get("currency", "usd"),
-            "period_end": sub.get("current_period_end")
-            or (sub.get("items", {}).get("data") or [{}])[0].get("current_period_end"),
+            "effective_date": effective_date,
+            "billing_cycle_changes": billing_cycle_changes,
         }
 
     def change_subscription_plan(
@@ -150,6 +173,74 @@ class StripeService:
             updated = stripe.Subscription.modify(subscription_id, **kwargs)
         return updated
 
+    def schedule_subscription_downgrade(
+        self,
+        subscription_id: str,
+        new_price_id: str,
+    ) -> str:
+        """Create a Subscription Schedule to defer a downgrade to the next billing period.
+
+        Using a schedule keeps the subscription item on the current (paid) plan
+        until current_period_end. Stripe fires customer.subscription.updated at
+        the natural rollover rather than immediately, so the user retains access
+        to their current tier for the remainder of the period they already paid
+        for. Returns the schedule_id to store for later cancellation.
+        """
+        sub = stripe.Subscription.retrieve(subscription_id)
+        current_price_id = sub["items"]["data"][0]["price"]["id"]
+
+        # Create a schedule from the existing subscription first. Stripe auto-populates
+        # phase 1 from the current subscription state, including start/end dates.
+        schedule = stripe.SubscriptionSchedule.create(
+            from_subscription=subscription_id,
+        )
+
+        # Read period boundaries: prefer the subscription fields, fall back to the
+        # auto-populated schedule phase (handles subscriptions already on a schedule
+        # or Stripe API versions that omit these from the sub object directly).
+        auto_phase = (schedule.get("phases") or [{}])[0]
+        current_period_start = (
+            sub.get("current_period_start") or auto_phase.get("start_date")
+        )
+        current_period_end = (
+            sub.get("current_period_end") or auto_phase.get("end_date")
+        )
+
+        if not current_period_start or not current_period_end:
+            raise ValueError(
+                f"Cannot determine billing period for subscription {subscription_id}"
+            )
+
+        # Redefine the schedule with two explicit phases:
+        # phase 1 — current plan for the remainder of this billing period
+        # phase 2 — downgraded plan starting at period end, managed normally after
+        stripe.SubscriptionSchedule.modify(
+            schedule["id"],
+            end_behavior="release",
+            phases=[
+                {
+                    "start_date": current_period_start,
+                    "end_date": current_period_end,
+                    "items": [{"price": current_price_id, "quantity": 1}],
+                    "proration_behavior": "none",
+                },
+                {
+                    "start_date": current_period_end,
+                    "items": [{"price": new_price_id, "quantity": 1}],
+                    "proration_behavior": "none",
+                },
+            ],
+        )
+        return schedule["id"]
+
+    def cancel_scheduled_plan_change(self, schedule_id: str) -> None:
+        """Release a subscription schedule, reverting any pending plan changes.
+
+        Releasing (not cancelling) the schedule returns the subscription to
+        normal management on the current plan — the downgrade is discarded.
+        """
+        stripe.SubscriptionSchedule.release(schedule_id)
+
     def update_payment_method(self, customer_id: str, payment_method_id: str) -> None:
         """Update default payment method for a customer."""
         stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
@@ -165,6 +256,40 @@ class StripeService:
             return_url=f"{self.settings.FRONTEND_URL}/dashboard",
         )
         return session.url
+
+    def list_invoices(self, customer_id: str, limit: int = 20) -> list[dict]:
+        """Return the most recent paid/open invoices for a Stripe customer.
+
+        Only `paid` and `open` invoices are returned — draft and void invoices
+        are filtered out because they don't represent a real charge to the user.
+        Each dict contains the fields needed to render an invoice row:
+        id, number, status, amount_paid, currency, created, period_start,
+        period_end, hosted_invoice_url, invoice_pdf.
+        """
+        invoices = stripe.Invoice.list(customer=customer_id, limit=limit)
+        results: list[dict] = []
+        for inv in invoices.auto_paging_iter():
+            if inv.get("status") not in ("paid", "open"):
+                continue
+            results.append(
+                {
+                    "id": inv.get("id"),
+                    "number": inv.get("number"),
+                    "status": inv.get("status"),
+                    "amount_paid": inv.get("amount_paid", 0),
+                    "amount_due": inv.get("amount_due", 0),
+                    "currency": inv.get("currency", "usd"),
+                    "created": inv.get("created"),
+                    "period_start": (inv.get("lines", {}).get("data") or [{}])[0].get("period", {}).get("start"),
+                    "period_end": (inv.get("lines", {}).get("data") or [{}])[0].get("period", {}).get("end"),
+                    "hosted_invoice_url": inv.get("hosted_invoice_url"),
+                    "invoice_pdf": inv.get("invoice_pdf"),
+                    "description": inv.get("description") or _first_line_description(inv),
+                }
+            )
+            if len(results) >= limit:
+                break
+        return results
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> stripe.Event:
         """Verify and construct a Stripe webhook event."""

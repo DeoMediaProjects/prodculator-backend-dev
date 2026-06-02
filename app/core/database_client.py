@@ -97,7 +97,9 @@ class AuthClient:
         }
         self.client.session.execute(insert(users).values(**insert_payload))
         self.client.session.commit()
-        return self._issue_tokens(user_id, email, "free")
+        # Return the new user without a session. The service layer must send a
+        # verification email and only issue tokens after the user confirms.
+        return AuthResponse(user=_AuthUser(id=user_id, email=email))
 
     def sign_in_with_password(self, payload: dict[str, Any]) -> AuthResponse:
         email = (payload.get("email") or "").strip().lower()

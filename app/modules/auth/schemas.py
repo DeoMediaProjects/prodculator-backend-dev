@@ -51,3 +51,13 @@ class RefreshTokenRequest(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     id_token: str
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class SignUpResponse(BaseModel):
+    """Returned when Supabase requires email confirmation before issuing a session."""
+    verification_required: bool = True
+    email: str

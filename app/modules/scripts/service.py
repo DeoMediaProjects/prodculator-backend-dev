@@ -1475,7 +1475,7 @@ Return a JSON object with ONLY these keys:
   "tone": "narrative tone description",
   "scale": "production scale label (e.g. 'Mid-budget Feature Film')",
   "complexity": "Low|Medium|High|Very High",
-  "executiveSummary_keyInsights": "FOLLOW THE EXACT FORMAT IN executiveSummary_keyInsights RULES BELOW",
+  "executiveSummary_keyInsights": "2-3 paragraph narrative summary written for financiers and producers. Full sentences only — NO bullet points, NO dashes, NO numbered lists, NO hyphens at line starts. Each paragraph separated by a blank line. Write as a senior production consultant would in a formal executive briefing.",
   "alternativeStrategy": "1-2 sentence alternative territory recommendation",
   "nextSteps": [
     {
@@ -1549,6 +1549,7 @@ RULES:
 - filingNote: when present, include the filing/entity clarification in the territory's requirements.
 - When referencing stacking programmes (provincial/regional credits), use ONLY the rate values shown in the skeleton data for that territory. Do NOT cite rates from your own training knowledge.
 - Write like a senior consultant — authoritative, data-driven, actionable
+- executiveSummary_keyInsights: must be 2-3 plain prose paragraphs. No dashes, no bullet points, no hyphens at line starts, no numbered items. Paragraphs separated by \n\n.
 - keyRisks_additional: ONLY risks NOT already in the skeleton's keyRisks
 - Keep string values concise — short phrases, not paragraphs
 - costEfficiency, crewDepth, infrastructure: Pre-computed from verified DB data. DO NOT include numeric values for these in locationNarratives. In reasoning bullets, explain what these scores mean for THIS production.

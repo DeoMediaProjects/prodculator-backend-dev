@@ -18,6 +18,15 @@ _PLAN_HIERARCHY: dict[str, int] = {
     "studio": 3,
 }
 
+# Report limits per billing period. Single source of truth — imported by
+# webhook_handler and subscription service so limits can never drift apart.
+PLAN_REPORT_LIMITS: dict[str, int] = {
+    "free": 1,
+    "professional": 1,
+    "producer": 3,
+    "studio": 10,
+}
+
 
 def build_price_to_plan_map(settings: Settings) -> dict[str, str]:
     """Return {price_id: plan_type} from configured Stripe price IDs.
@@ -35,19 +44,17 @@ def build_price_to_plan_map(settings: Settings) -> dict[str, str]:
         settings.STRIPE_PRICE_PROFESSIONAL_GBP: PlanType.PROFESSIONAL.value,
         # Professional — annual
         settings.STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP: PlanType.PROFESSIONAL.value,
-        settings.STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD: PlanType.PROFESSIONAL.value,  # ← NEW
-        # Producer — monthly
+        settings.STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD: PlanType.PROFESSIONAL.value,
         settings.STRIPE_PRICE_PRODUCER_USD: PlanType.PRODUCER.value,
         settings.STRIPE_PRICE_PRODUCER_GBP: PlanType.PRODUCER.value,
         # Producer — annual
         settings.STRIPE_PRICE_PRODUCER_ANNUAL_GBP: PlanType.PRODUCER.value,
-        settings.STRIPE_PRICE_PRODUCER_ANNUAL_USD: PlanType.PRODUCER.value,  # ← NEW
-        # Studio — monthly
+        settings.STRIPE_PRICE_PRODUCER_ANNUAL_USD: PlanType.PRODUCER.value,
         settings.STRIPE_PRICE_STUDIO_USD: PlanType.STUDIO.value,
         settings.STRIPE_PRICE_STUDIO_GBP: PlanType.STUDIO.value,
         # Studio — annual
         settings.STRIPE_PRICE_STUDIO_ANNUAL_GBP: PlanType.STUDIO.value,
-        settings.STRIPE_PRICE_STUDIO_ANNUAL_USD: PlanType.STUDIO.value,  # ← NEW
+        settings.STRIPE_PRICE_STUDIO_ANNUAL_USD: PlanType.STUDIO.value,
     }
     return {price_id: plan for price_id, plan in raw_map.items() if price_id}
 

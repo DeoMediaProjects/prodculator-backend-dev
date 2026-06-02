@@ -324,9 +324,9 @@ class ReportBuilder:
                 "reasoning": None,
                 "keyAdvantages": None,
                 "keyRisks": [],  # DB risks populated below, AI appends
-                # DB column — TRUE → "High (85%)", FALSE/NULL → "N/A"
+                # Only set when the programme actually requires a cultural test; None hides the card
                 "culturalTestLikelihood": (
-                    "High (85%)" if best.get("cultural_test_required") is True else "N/A"
+                    "Required" if best.get("cultural_test_required") is True else None
                 ),
             }
 
@@ -1754,9 +1754,9 @@ class ReportBuilder:
                 "infrastructure": None,
                 "keyAdvantages": None,
                 "keyRisks": None,
-                # DB columns — NULL falls back to safe defaults
+                # Only set when the programme actually requires a cultural test; None hides the card
                 "culturalTestLikelihood": (
-                    "High (85%)" if best.get("cultural_test_required") is True else "N/A"
+                    "Required" if best.get("cultural_test_required") is True else None
                 ),
                 "adminComplexity": best.get("admin_complexity") or "Medium",
             }

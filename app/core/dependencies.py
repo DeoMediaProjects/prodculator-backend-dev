@@ -61,9 +61,9 @@ async def get_current_user(
     user_id = user_response.user.id
 
     # Try cache first to avoid a DB round-trip on every request.
+    cache_key = f"user_profile:{user_id}"
     try:
         redis = get_redis()
-        cache_key = f"user_profile:{user_id}"
         cached = await redis.get(cache_key)
         if cached:
             return AuthUser.model_validate_json(cached)

@@ -378,6 +378,57 @@ class ProductionIntelligence(BaseModel):
     riskAssessment: dict
 
 
+# --- Project Details Schemas (user-editable, producer-authored) ---
+
+
+class RevenueScenario(BaseModel):
+    theatrical_domestic: str | None = None
+    theatrical_international: str | None = None
+    svod: str | None = None
+    tv_broadcast: str | None = None
+    ancillary: str | None = None
+
+
+class RevenueModel(BaseModel):
+    low: RevenueScenario = RevenueScenario()
+    base: RevenueScenario = RevenueScenario()
+    high: RevenueScenario = RevenueScenario()
+
+
+class RecoupmentWaterfall(BaseModel):
+    distribution_fee_pct: str | None = None
+    sales_agent_commission_pct: str | None = None
+    pa_budget: str | None = None
+    investor_equity_pct: str | None = None
+    preferred_return_pct: str | None = None
+    investor_net_profit_split_pct: str | None = None
+    producer_net_profit_split_pct: str | None = None
+
+
+class ProjectDetails(BaseModel):
+    # Creative team
+    director_name: str | None = None
+    director_bio: str | None = None
+    producer_name: str | None = None
+    producer_bio: str | None = None
+    # Script
+    logline: str | None = None
+    synopsis: str | None = None
+    # Finance plan
+    equity_sought: str | None = None
+    equity_committed_pct: str | None = None
+    minimum_investment: str | None = None
+    investor_profit_share: str | None = None
+    preferred_return: str | None = None
+    # Phase 3 — Revenue model & waterfall
+    revenue_model: RevenueModel | None = None
+    waterfall: RecoupmentWaterfall | None = None
+
+
+class UpdateProjectDetailsRequest(BaseModel):
+    project_details: ProjectDetails
+
+
 # --- Response Schemas ---
 
 
@@ -389,6 +440,8 @@ class ReportResponse(BaseModel):
     analysis: dict | None = None
     pdfUrl: str | None = None
     userPlan: str | None = None
+    shareToken: str | None = None
+    projectDetails: dict | None = None
 
 
 class ReportStatusResponse(BaseModel):

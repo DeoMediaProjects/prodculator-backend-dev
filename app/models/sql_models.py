@@ -71,6 +71,7 @@ class Report(SQLModel, table=True):
     share_token: str | None = Field(default=None, index=True)
     request_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column("request_metadata", JSON))
     report_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    project_details: dict[str, Any] | None = Field(default=None, sa_column=Column("project_details", JSON))
     pdf_url: str | None = None
     downloaded: bool = Field(default=False)
     completed_at: datetime | None = None

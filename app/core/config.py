@@ -55,11 +55,10 @@ class Settings(BaseSettings):
     STRIPE_PRICE_STUDIO_GBP: str = ""
     # Annual billing — GBP
     STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP: str = ""
-    STRIPE_PRICE_PRODUCER_ANNUAL_GBP: str = ""
-    STRIPE_PRICE_STUDIO_ANNUAL_GBP: str = ""
-    # Annual billing — USD  ← NEW: was missing, caused annual USD subs to not resolve plan
     STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD: str = ""
+    STRIPE_PRICE_PRODUCER_ANNUAL_GBP: str = ""
     STRIPE_PRICE_PRODUCER_ANNUAL_USD: str = ""
+    STRIPE_PRICE_STUDIO_ANNUAL_GBP: str = ""
     STRIPE_PRICE_STUDIO_ANNUAL_USD: str = ""
 
     # Anthropic Claude

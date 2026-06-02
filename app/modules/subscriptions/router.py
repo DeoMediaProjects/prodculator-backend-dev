@@ -11,13 +11,16 @@ from app.models.enums import normalize_plan
 from app.modules.payments.service import StripeService
 from app.modules.subscriptions.schemas import (
     ActiveSubscriptionResponse,
+    CancelScheduledChangeResponse,
     CanGenerateResponse,
     ChangePlanRequest,
     ChangePlanResponse,
     CurrentSubscriptionResponse,
+    InvoicesResponse,
     PreviewChangeRequest,
     PreviewChangeResponse,
     SubscriptionStatusResponse,
+    UsageResponse,
 )
 from app.modules.subscriptions.service import SubscriptionService
 
@@ -78,6 +81,63 @@ async def subscription_status(
     )
 
 
+@router.get("/invoices", response_model=InvoicesResponse)
+async def list_invoices(
+    user: AuthUser = Depends(get_current_user),
+    service: SubscriptionService = Depends(get_subscription_service),
+    stripe_service: StripeService = Depends(get_stripe_service),
+):
+    """Return the user's billing invoice history (paid subscriptions only).
+
+    Pulls from Stripe using the customer ID stored in the subscriptions table.
+    Returns an empty list for users who have never subscribed.
+    """
+    subscription = service.get_active_subscription(user.id)
+    if not subscription:
+        # Fall back to a cancelled/expired subscription so users who cancelled
+        # can still view their payment history.
+        try:
+            result = (
+                service.supabase.table("subscriptions")
+                .select("stripe_customer_id")
+                .eq("user_id", user.id)
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            customer_id = rows[0].get("stripe_customer_id") if rows else None
+        except Exception:
+            customer_id = None
+    else:
+        customer_id = subscription.get("stripe_customer_id")
+
+    if not customer_id:
+        return InvoicesResponse(invoices=[], has_more=False)
+
+    try:
+        invoice_list = stripe_service.list_invoices(customer_id, limit=20)
+        return InvoicesResponse(invoices=invoice_list, has_more=len(invoice_list) >= 20)
+    except Exception:
+        logger.exception("Failed to fetch invoices for user=%s", user.id)
+        raise HTTPException(status_code=502, detail="Failed to fetch invoice history")
+
+
+@router.get("/usage", response_model=UsageResponse)
+async def get_usage(
+    user: AuthUser = Depends(get_current_user),
+    service: SubscriptionService = Depends(get_subscription_service),
+):
+    """Return current-period report usage for the dashboard widget.
+
+    Exposes reports_used, reports_limit, reports_remaining, credits_remaining,
+    period dates, and can_generate — everything needed to render a usage bar.
+    """
+    try:
+        return UsageResponse(**service.get_usage(user.id, user.plan))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to fetch usage data")
+
+
 @router.get("/current", response_model=CurrentSubscriptionResponse)
 async def get_current_subscription(
     user: AuthUser = Depends(get_current_user),
@@ -121,6 +181,29 @@ async def preview_change(
         logger.exception("preview-change Stripe error for user=%s", user.id)
         raise HTTPException(status_code=502, detail="Stripe preview failed")
     return PreviewChangeResponse(**result)
+
+
+@router.delete("/scheduled-change", response_model=CancelScheduledChangeResponse)
+async def cancel_scheduled_change(
+    user: AuthUser = Depends(get_current_user),
+    service: SubscriptionService = Depends(get_subscription_service),
+    stripe_service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
+):
+    """Cancel a pending scheduled downgrade and retain the current plan."""
+    try:
+        result = service.cancel_scheduled_change(user.id, settings, stripe_service)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "no_active_subscription":
+            raise HTTPException(status_code=404, detail="No active subscription")
+        if code == "no_scheduled_change":
+            raise HTTPException(status_code=400, detail="No scheduled change to cancel")
+        raise HTTPException(status_code=400, detail=code)
+    except stripe_lib.StripeError:
+        logger.exception("cancel_scheduled_change Stripe error for user=%s", user.id)
+        raise HTTPException(status_code=502, detail="Failed to cancel scheduled change")
+    return CancelScheduledChangeResponse(**result)
 
 
 @router.post("/change", response_model=ChangePlanResponse)

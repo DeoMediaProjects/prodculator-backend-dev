@@ -466,6 +466,62 @@ class ReportService:
         )
         return result.data
 
+    def create_share_link(self, report_id: str, user_id: str) -> str:
+        """Generate (or return existing) a permanent share token for the report.
+
+        Idempotent: if share_token is already set, returns the existing token
+        without overwriting it. This prevents link rot if the studio user calls
+        this endpoint more than once.
+        """
+        import secrets
+
+        report = self.get_report(report_id)
+        if not report:
+            raise ValueError("report_not_found")
+        if report.get("user_id") != user_id:
+            raise PermissionError("access_denied")
+        if report.get("share_token"):
+            return report["share_token"]
+
+        token = secrets.token_urlsafe(32)
+        self.supabase.table("reports").update(
+            {"share_token": token}
+        ).eq("id", report_id).execute()
+        return token
+
+    def revoke_share_link(self, report_id: str, user_id: str) -> None:
+        """Remove the share token, making the report private again."""
+        report = self.get_report(report_id)
+        if not report:
+            raise ValueError("report_not_found")
+        if report.get("user_id") != user_id:
+            raise PermissionError("access_denied")
+        self.supabase.table("reports").update(
+            {"share_token": None}
+        ).eq("id", report_id).execute()
+
+    def update_project_details(self, report_id: str, user_id: str, details: dict) -> dict:
+        """Persist user-authored project details onto the report record.
+
+        Merges incoming fields with any existing project_details so partial saves
+        (e.g. saving only Finance fields) don't wipe previously saved Creative Team data.
+        Explicit None values are filtered out; empty strings are preserved as cleared values.
+        """
+        report = self.get_report(report_id)
+        if not report:
+            raise ValueError("report_not_found")
+        if report.get("user_id") != user_id:
+            raise PermissionError("access_denied")
+
+        existing: dict = report.get("project_details") or {}
+        merged = {**existing, **{k: v for k, v in details.items() if v is not None}}
+
+        self.supabase.table("reports").update(
+            {"project_details": merged}
+        ).eq("id", report_id).execute()
+
+        return {**report, "project_details": merged}
+
     def get_user_reports(self, user_id: str) -> list[dict]:
         """Get all reports for a user (excludes previews)."""
         result = (

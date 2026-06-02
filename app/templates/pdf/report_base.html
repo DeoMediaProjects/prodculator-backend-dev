@@ -123,7 +123,7 @@
     text-transform: uppercase;
     color: #888;
     letter-spacing: 0.3px;
-    margin-top: 2px;
+    margin-bottom: 4px;
   }
 
   /* ── Tag / Pill ───────────────────────────────────────────── */
@@ -185,6 +185,19 @@
     letter-spacing: 2px;
     text-transform: uppercase;
     padding: 5px 14px;
+    border-radius: 2px;
+  }
+
+  /* ── Locked Value Inline Badge (free-tier preview) ──────────── */
+  .locked-val {
+    display: inline-block;
+    background: rgba(212, 175, 55, 0.1);
+    border: 1px solid rgba(212, 175, 55, 0.35);
+    color: #96791f;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
     border-radius: 2px;
   }
 
@@ -834,12 +847,15 @@
   </div>
   {% endif %}
 
-  {# Key Insights narrative #}
+  {# Key Insights narrative — split into paragraphs #}
   {% if report.executiveSummary and report.executiveSummary.keyInsights %}
-  <div class="card card-gold" style="margin-bottom: 16px;">
-    <p style="font-size: 11px; line-height: 1.7; font-style: italic; color: #333;">
-      &ldquo;{{ report.executiveSummary.keyInsights }}&rdquo;
-    </p>
+  <div style="margin-bottom: 20px;">
+    {% for paragraph in report.executiveSummary.keyInsights.split('\n\n') %}
+    {% set para = paragraph.strip().lstrip('-– •*').strip() %}
+    {% if para %}
+    <p style="font-size: 11px; line-height: 1.85; color: #1a1a1a; margin: 0 0 12px 0; text-align: justify;">{{ para }}</p>
+    {% endif %}
+    {% endfor %}
   </div>
   {% endif %}
 
@@ -897,20 +913,20 @@
   <h3>Production Overview</h3>
   <div class="stat-grid">
     <div class="stat-box">
-      <div class="stat-value">{{ report.genre or "N/A" }}</div>
       <div class="stat-label">Genre</div>
+      <div class="stat-value">{{ report.genre or "N/A" }}</div>
     </div>
     <div class="stat-box">
-      <div class="stat-value">{{ report.tone or "N/A" }}</div>
       <div class="stat-label">Tone</div>
+      <div class="stat-value">{{ report.tone or "N/A" }}</div>
     </div>
     <div class="stat-box">
-      <div class="stat-value">{{ report.scale or "N/A" }}</div>
       <div class="stat-label">Scale</div>
+      <div class="stat-value">{{ report.scale or "N/A" }}</div>
     </div>
     <div class="stat-box">
-      <div class="stat-value">{{ report.complexity or "N/A" }}</div>
       <div class="stat-label">Complexity</div>
+      <div class="stat-value">{{ report.complexity or "N/A" }}</div>
     </div>
   </div>
 
@@ -961,7 +977,7 @@
 <!-- ════════════════════════════════════════════════════════════
      PRODUCTION LOCATION STRATEGY
      ════════════════════════════════════════════════════════════ -->
-{% if is_preview %}
+{% if is_preview and not report.locationRankings %}
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
   {% set ns.sec = ns.sec + 1 %}
@@ -980,6 +996,11 @@
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
   {% set ns.sec = ns.sec + 1 %}
+  {% if is_preview %}
+  <div class="section-explainer" style="border-color: rgba(212,175,55,0.5); background: rgba(212,175,55,0.05);">
+    Free Preview: Showing your top {{ report.locationRankings|length }} recommended territories. Upgrade to Professional for the full territory ranking.
+  </div>
+  {% endif %}
 
   {# v3 Section Explainer #}
   {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.location_strategy %}
@@ -1048,36 +1069,36 @@
     <div class="stat-grid" style="margin-bottom: 8px;">
       {% if loc.rebatePercent %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-value" style="font-size: 14px;">{{ loc.rebatePercent }}</div>
         <div class="stat-label">Tax Rebate</div>
+        <div class="stat-value" style="font-size: 14px;">{{ loc.rebatePercent }}</div>
       </div>
       {% endif %}
       {% if loc.rebateAmount %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-value" style="font-size: 14px;">{{ loc.rebateAmount }}</div>
         <div class="stat-label">Estimated Rebate</div>
+        <div class="stat-value" style="font-size: 14px;">{{ loc.rebateAmount }}</div>
       </div>
       {% endif %}
       {% if loc.culturalTestLikelihood %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-value" style="font-size: 14px;">{{ loc.culturalTestLikelihood }}</div>
         <div class="stat-label">Cultural Test</div>
+        <div class="stat-value" style="font-size: 14px;">{{ loc.culturalTestLikelihood }}</div>
       </div>
       {% endif %}
       {% if loc.paymentSpeed %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-value" style="font-size: 12px;">{{ loc.paymentSpeed }}</div>
         <div class="stat-label">Payment Speed</div>
+        <div class="stat-value" style="font-size: 12px;">{{ loc.paymentSpeed }}</div>
       </div>
       {% endif %}
       {% if loc.bankabilityLabel %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
+        <div class="stat-label">Bankability</div>
         <div class="stat-value" style="font-size: 10px;">
           <span class="bankability {% if loc.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif loc.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
             {{ loc.bankabilityLabel }}
           </span>
         </div>
-        <div class="stat-label">Bankability</div>
       </div>
       {% endif %}
     </div>
@@ -1107,13 +1128,17 @@
       {% endfor %}
     </table>
 
-    {% if loc.reasoning %}
+    {% if loc.reasoning and not is_preview %}
     <h4>Reasoning</h4>
     <ul style="padding-left: 16px; font-size: 10px;">
       {% for r in loc.reasoning %}
       <li>{{ r }}</li>
       {% endfor %}
     </ul>
+    {% elif is_preview %}
+    <div style="margin-top: 10px; padding: 10px 14px; border: 1px solid rgba(212,175,55,0.35); border-radius: 4px; text-align: center;">
+      <span style="font-size: 9px; color: #b8941f; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;">&#128274; Key Intelligence &mdash; Upgrade to unlock at prodculator.com</span>
+    </div>
     {% endif %}
   </div>
   {% endfor %}
@@ -1128,6 +1153,11 @@
 
   {% else %}
   <p class="muted">No territory rankings available.</p>
+  {% endif %}
+  {% if is_preview %}
+  <div style="text-align: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid #eee;">
+    <span class="locked-section-cta">Upgrade for full territory rankings &mdash; prodculator.com</span>
+  </div>
   {% endif %}
 </div>
 {% endif %}{# end is_preview / location strategy #}
@@ -1152,8 +1182,33 @@
   {% if report.executiveSummary and report.executiveSummary.budget %}
   <p>Total Production Budget: <strong>{{ report.executiveSummary.budget }}</strong></p>
   {% endif %}
-  <p class="muted" style="margin-bottom: 10px;">The following scenarios show the full rebate calculation working for top territories.</p>
 
+  {% if is_preview %}
+  {# Preview: show territory + programme, lock all financial values #}
+  <p class="muted" style="margin-bottom: 10px;">Rebate calculations and net budget projections are available on upgrade.</p>
+  {% for scenario in report.financialAnalysis.budgetScenarios %}
+  <div class="card" style="margin-bottom: 12px;">
+    <div class="card-header">
+      <h4 style="margin: 0;">{{ scenario.territory }}</h4>
+      {% if scenario.programme %}<span class="muted">{{ scenario.programme }}</span>{% endif %}
+    </div>
+    <div style="padding: 8px 0;">
+      {% for step in ["1. Total Budget", "2. Qualifying Spend", "3. ATL Deduction", "4. Net Qualifying Spend", "5. Gross Rebate", "6. Net Rebate", "Net Budget After Rebate"] %}
+      <div class="fin-step">
+        <span class="fin-step-label">{{ step }}</span>
+        <span><span class="locked-val">&#128274; Upgrade to unlock</span></span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div style="text-align: center; margin-top: 14px;">
+    <span class="locked-section-cta">Upgrade to unlock financial analysis &mdash; prodculator.com</span>
+  </div>
+
+  {% else %}
+  {# Full rendering for paid users #}
+  <p class="muted" style="margin-bottom: 10px;">The following scenarios show the full rebate calculation working for top territories.</p>
   {% for scenario in report.financialAnalysis.budgetScenarios %}
   <div class="card" style="margin-bottom: 12px;">
     <div class="card-header">
@@ -1227,9 +1282,11 @@
     {% endif %}
   </div>
   {% endfor %}
-  {% endif %}
+  {% endif %}{# end paid budgetScenarios loop #}
 
-  {% if report.financialAnalysis.crewCostComparison %}
+  {% endif %}{# end is_preview / budgetScenarios #}
+
+  {% if not is_preview and report.financialAnalysis.crewCostComparison %}
   <h3>Crew Cost Comparison</h3>
   {% set territories = [] %}
   {% if report.financialAnalysis.crewCostComparison[0] %}
@@ -1253,22 +1310,9 @@
   </table>
   {% endif %}
 
+  {% if not is_preview %}
   <div class="data-source">Data Source: Prodculator backend datasets</div>
-</div>
-{% elif is_preview %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Financial Analysis</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
-    </div>
-    <div class="locked-section-headline">Financial Analysis</div>
-    <div class="locked-section-sub">Budget scenarios, net production cost breakdown, and crew cost<br>comparisons across recommended territories.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
-  </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -1380,6 +1424,29 @@
   </div>
   {% endif %}
 
+  {% if is_preview %}
+  {# Preview: show territory + programme, lock financial values #}
+  {% for inc in report.incentiveEstimates %}
+  <div class="card">
+    <div class="card-header">
+      <h3 style="margin: 0;">{{ inc.territory }}</h3>
+      <span class="muted">{{ inc.program }}</span>
+    </div>
+    <table>
+      <tr><th style="width: 160px;">Detail</th><th>Value</th></tr>
+      <tr><td>Rate</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Cap</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Qualifying Spend</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Estimated Rebate</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+    </table>
+  </div>
+  {% endfor %}
+  <div style="text-align: center; margin-top: 14px;">
+    <span class="locked-section-cta">Upgrade to unlock rebate calculations &mdash; prodculator.com</span>
+  </div>
+
+  {% else %}
+  {# Full rendering for paid users #}
   {% for inc in report.incentiveEstimates %}
   <div class="card">
     <div class="card-header">
@@ -1417,21 +1484,7 @@
     </div>
   </div>
   {% endfor %}
-</div>
-{% elif is_preview or report_type == "preview" %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Tax Incentive Analysis</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
-    </div>
-    <div class="locked-section-headline">Tax Incentive Analysis</div>
-    <div class="locked-section-sub">Full rebate calculations, bankability ratings, and programme details<br>for each recommended territory.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
-  </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -1450,6 +1503,34 @@
   </div>
   {% endif %}
 
+  {% if is_preview %}
+  {# Preview: territory name visible, all cost/quality values locked #}
+  <table>
+    <tr>
+      <th>Territory</th>
+      <th>Availability</th>
+      <th>Cost vs USD</th>
+      <th>Quality</th>
+      <th>Specialties</th>
+      <th>Trade-off</th>
+    </tr>
+    {% for crew in report.crewInsights %}
+    <tr class="avoid-break">
+      <td><strong>{{ crew.territory }}</strong></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="text-align: center; margin-top: 14px;">
+    <span class="locked-section-cta">Upgrade to unlock crew cost data &mdash; prodculator.com</span>
+  </div>
+
+  {% else %}
+  {# Full rendering for paid users #}
   <table>
     <tr>
       <th>Territory</th>
@@ -1478,23 +1559,8 @@
     </tr>
     {% endfor %}
   </table>
-
   <div class="data-source">Data Source: Prodculator backend datasets</div>
-</div>
-{% elif is_preview %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Crew Cost Estimates</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
-    </div>
-    <div class="locked-section-headline">Crew Cost Estimates</div>
-    <div class="locked-section-sub">Availability, day rates, and cost-vs-USD comparisons<br>for key departments across recommended territories.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
-  </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -1572,15 +1638,21 @@
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Grant &amp; Funding Opportunities</h2>
   {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
+  <p class="muted" style="margin-bottom: 12px;">Matched grants, co-production funds, and festival submission deadlines relevant to your production profile.</p>
+  {% for item in [("Fund", "tag-gold"), ("Festival", ""), ("Fund", "tag-gold"), ("Festival", "")] %}
+  <div class="card">
+    <div class="card-header">
+      <div style="height: 12px; width: 55%; background: #eee; border-radius: 2px;"></div>
+      <span class="tag {{ item[1] }}">{{ item[0] }}</span>
     </div>
-    <div class="locked-section-headline">Grant &amp; Funding Opportunities</div>
-    <div class="locked-section-sub">Matched grants, co-production funds, and festival submission deadlines<br>relevant to your production profile.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+    <table style="margin-bottom: 0;">
+      <tr><td class="muted" style="width: 100px;">Amount</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td class="muted">Deadline</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+    </table>
+  </div>
+  {% endfor %}
+  <div style="text-align: center; margin-top: 14px;">
+    <span class="locked-section-cta">Upgrade to unlock funding intelligence &mdash; prodculator.com</span>
   </div>
 </div>
 {% endif %}
@@ -1619,15 +1691,24 @@
 <div class="page-break">
   <h2>{{ '%02d' % ns.sec }} &mdash; Comparable Productions &amp; Festival Strategy</h2>
   {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
-    </div>
-    <div class="locked-section-headline">Comparable Productions &amp; Festival Strategy</div>
-    <div class="locked-section-sub">Films comparable by budget, genre, and territory — plus<br>a tailored festival submission strategy.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
+  <h3>Comparable Productions</h3>
+  <p class="muted" style="margin-bottom: 10px;">Films comparable by budget, genre, and territory — plus a tailored festival submission strategy.</p>
+  <table>
+    <tr>
+      <th>Title</th><th>Genre</th><th>Budget</th><th>Territory</th><th>Year</th>
+    </tr>
+    {% for _ in range(4) %}
+    <tr>
+      <td><span class="locked-val">&#128274; Upgrade</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+      <td><span class="locked-val">&#128274;</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="text-align: center; margin-top: 14px;">
+    <span class="locked-section-cta">Upgrade to unlock comparable productions &mdash; prodculator.com</span>
   </div>
 </div>
 {% endif %}
@@ -1647,6 +1728,30 @@
   </div>
   {% endif %}
 
+  {% if is_preview %}
+  {# Preview: territory name visible, all weather/logistics values locked #}
+  {% for wl in report.weatherLogistics %}
+  <div class="card">
+    <div class="card-header">
+      <h3 style="margin: 0;">{{ wl.territory }}</h3>
+      <span class="locked-val">Risk &#128274;</span>
+    </div>
+    <table>
+      <tr><th style="width: 160px;">Factor</th><th>Detail</th></tr>
+      <tr><td>Best Months</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Temperature Range</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Daylight Hours</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Infrastructure</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+      <tr><td>Travel &amp; Visa</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
+    </table>
+  </div>
+  {% endfor %}
+  <div style="text-align: center; margin-top: 14px;">
+    <span class="locked-section-cta">Upgrade to unlock weather &amp; logistics &mdash; prodculator.com</span>
+  </div>
+
+  {% else %}
+  {# Full rendering for paid users #}
   {% for wl in report.weatherLogistics %}
   <div class="card">
     <div class="card-header">
@@ -1670,23 +1775,8 @@
     </table>
   </div>
   {% endfor %}
-
   <div class="data-source">Data Source: Prodculator backend datasets</div>
-</div>
-{% elif is_preview %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Weather &amp; Logistics</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
-    </div>
-    <div class="locked-section-headline">Weather &amp; Logistics</div>
-    <div class="locked-section-sub">Seasonal filming windows, weather risk ratings, travel &amp; visa<br>requirements, and infrastructure notes per territory.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
-  </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -1737,8 +1827,8 @@
   <h3>Competitive Analysis</h3>
   <div class="stat-grid">
     <div class="stat-box">
-      <div class="stat-value">{{ pi.competitiveAnalysis.similarProjectsInProduction or 0 }}</div>
       <div class="stat-label">Similar Projects in Production</div>
+      <div class="stat-value">{{ pi.competitiveAnalysis.similarProjectsInProduction or 0 }}</div>
     </div>
   </div>
   <p>{{ pi.competitiveAnalysis.territoryCompetition or "" }}</p>
@@ -1757,8 +1847,8 @@
   {% if pi.riskAssessment.overallRiskScore is defined %}
   <div class="stat-grid">
     <div class="stat-box">
-      <div class="stat-value">{{ pi.riskAssessment.overallRiskScore }}/100</div>
       <div class="stat-label">Overall Risk Score</div>
+      <div class="stat-value">{{ pi.riskAssessment.overallRiskScore }}/100</div>
     </div>
   </div>
   {% endif %}

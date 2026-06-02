@@ -9,17 +9,16 @@ from app.core.database_client import DatabaseClient
 from app.core.config import Settings
 from app.models.enums import normalize_plan
 from app.modules.email.service import EmailService
-from app.modules.payments.plan_catalog import resolve_plan_from_subscription
-
-# Map plan types to their report limits per billing period
-PLAN_REPORT_LIMITS: dict[str, int] = {
-    "free": 1,
-    "professional": 1,
-    "producer": 3,
-    "studio": 10,
-}
+from app.modules.payments.plan_catalog import PLAN_REPORT_LIMITS, resolve_plan_from_subscription
 
 logger = logging.getLogger(__name__)
+
+_PLAN_LABEL: dict[str, str] = {
+    "free": "Explorer",
+    "professional": "Professional",
+    "producer": "Producer",
+    "studio": "Studio",
+}
 
 
 class WebhookHandler:
@@ -58,6 +57,8 @@ class WebhookHandler:
             "customer.subscription.deleted": self._handle_subscription_deleted,
             "invoice.paid": self._handle_invoice_paid,
             "invoice.payment_failed": self._handle_invoice_payment_failed,
+            # Subscription Schedule events
+            "subscription_schedule.released": self._handle_schedule_released,
         }
         handler = handlers.get(event_type)
         if handler:
@@ -80,6 +81,15 @@ class WebhookHandler:
         plan_type = normalize_plan(raw_plan)
         stripe_subscription_id = session.get("subscription")
         report_limit = PLAN_REPORT_LIMITS.get(plan_type, 3)
+
+        # Fetch previous plan before overwriting so we can send an accurate upgrade email
+        try:
+            prev_result = (
+                self.supabase.table("users").select("plan").eq("id", user_id).limit(1).execute()
+            )
+            previous_plan = normalize_plan((prev_result.data or [{}])[0].get("plan") or "free")
+        except Exception:
+            previous_plan = "free"
 
         self.supabase.table("subscriptions").upsert(
             {
@@ -113,6 +123,18 @@ class WebhookHandler:
                 "stripe_subscription_id": stripe_subscription_id,
             },
         )
+
+        # Send plan upgrade email whenever the user lands on a paid plan via checkout.
+        # Skip if they're re-subscribing to the exact same plan (e.g. after cancellation).
+        if plan_type != "free" and plan_type != previous_plan:
+            self._send_email_to_user_id(
+                user_id,
+                "plan_upgraded",
+                {
+                    "previous_plan_name": _PLAN_LABEL.get(previous_plan, previous_plan.title()),
+                    "new_plan_name": _PLAN_LABEL.get(plan_type, plan_type.title()),
+                },
+            )
 
     def _handle_credit_purchase(self, user_id: str) -> None:
         """Increment credits_remaining by 1 for a pay-per-report purchase."""
@@ -173,6 +195,19 @@ class WebhookHandler:
             payload["plan_type"] = resolved_plan
             payload["report_limit"] = PLAN_REPORT_LIMITS.get(resolved_plan, 3)
 
+        # Fetch the current row BEFORE updating so we have the previous plan_type
+        # available for the downgrade_applied email (the UPDATE result returns the
+        # post-write state, losing the old value).
+        pre_update = (
+            self.supabase.table("subscriptions")
+            .select("plan_type, pending_plan, user_id")
+            .eq("stripe_subscription_id", subscription_id)
+            .limit(1)
+            .execute()
+        )
+        pre_row = (pre_update.data or [{}])[0]
+        previous_plan = pre_row.get("plan_type")
+
         result = (
             self.supabase.table("subscriptions")
             .update(payload)
@@ -199,11 +234,22 @@ class WebhookHandler:
             return
 
         # If a downgrade was scheduled (pending_plan set) and the now-active plan
-        # matches it, the rollover has happened — clear the pending marker.
+        # matches it, the rollover has happened — clear the pending marker and
+        # the schedule reference, then notify the user.
         if row.get("pending_plan") == resolved_plan:
-            self.supabase.table("subscriptions").update({"pending_plan": None}).eq(
-                "stripe_subscription_id", subscription_id
-            ).execute()
+            self.supabase.table("subscriptions").update(
+                {"pending_plan": None, "stripe_schedule_id": None}
+            ).eq("stripe_subscription_id", subscription_id).execute()
+            self._send_email_to_user_id(
+                user_id,
+                "downgrade_applied",
+                {
+                    "previous_plan_name": _PLAN_LABEL.get(
+                        normalize_plan(previous_plan or ""), (previous_plan or "").title()
+                    ),
+                    "new_plan_name": _PLAN_LABEL.get(resolved_plan, resolved_plan.title()),
+                },
+            )
 
         # Mirror the resolved plan onto the user row so RequirePlan reads correct
         # entitlement on the next request. Bust the 5-min profile cache.
@@ -256,6 +302,7 @@ class WebhookHandler:
             {"plan": "free", "user_type": "free"}
         ).eq("id", user_id).execute()
         self._bust_user_cache(user_id)
+        self._send_email_to_user_id(user_id, "subscription_downgraded", {})
 
     def _handle_invoice_paid(self, invoice: dict) -> None:
         logger.info("Invoice paid: %s", invoice.get("id"))
@@ -297,6 +344,22 @@ class WebhookHandler:
                     "amount_paid": invoice.get("amount_paid"),
                 },
             )
+
+    def _handle_schedule_released(self, schedule: dict) -> None:
+        """Clear pending_plan and stripe_schedule_id when a schedule is released.
+
+        Handles the case where a schedule is released externally (e.g. via the
+        Stripe Dashboard) rather than through our cancel-scheduled-change API,
+        which clears those fields synchronously. Without this handler the UI
+        would keep showing 'Switching to X at renewal' indefinitely.
+        """
+        subscription_id = schedule.get("subscription")
+        if not subscription_id:
+            return
+        self.supabase.table("subscriptions").update(
+            {"pending_plan": None, "stripe_schedule_id": None}
+        ).eq("stripe_subscription_id", subscription_id).execute()
+        logger.info("Schedule released for subscription %s — cleared pending_plan", subscription_id)
 
     def _handle_invoice_payment_failed(self, invoice: dict) -> None:
         customer_id = invoice.get("customer")
