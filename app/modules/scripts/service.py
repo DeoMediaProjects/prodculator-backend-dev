@@ -1514,6 +1514,27 @@ Return a JSON object with ONLY these keys:
       "keyAdvantages": ["advantage 1", "advantage 2"],
       "keyRisks_additional": ["risk beyond the DB-computed ones"]
     }
+  },
+  "scriptIntelligence": {
+    "creativeRecognition": "2-4 sentences. Protagonist + supporting character from script_characters ONLY. Specific scene/location/cultural detail. Bridge to production challenge. No forbidden verbs.",
+    "locationDependencyMap": {
+      "scriptLocked": [{"location": "str", "reason": "str"}],
+      "substitutable": [{"location": "str", "type": "str", "territories": ["str"]}],
+      "doublingOpportunities": [{"original": "str", "double": "str", "territory": "str"}]
+    },
+    "complexityDrivers": [{"flag": "str", "detail": "str", "implication": "str", "territoriesAffected": ["str"]}],
+    "crewSpecialisations": [{"role": "str", "priority": "Essential|Recommended", "availableIn": ["str"], "importRequired": ["str"]}],
+    "scheduleWeatherNotes": "2-3 sentences on SVS findings referencing scheduleViabilityScore and contingencyDaysEstimate values from skeleton."
+  },
+  "dimensionVerdicts": {
+    "Territory Name": {
+      "incentiveStrength": "ONE sentence max 40 words referencing specific programme or rate",
+      "incentiveReliability": "ONE sentence max 40 words",
+      "costEfficiency": "ONE sentence max 40 words",
+      "currencyAdvantage": "ONE sentence max 40 words",
+      "crewDepth": "ONE sentence max 40 words referencing tier (Established/Growing/Emerging)",
+      "infrastructure": "ONE sentence max 40 words referencing tier"
+    }
   }
 }
 
@@ -1542,6 +1563,14 @@ PARAGRAPH 6 — **Strategic Recommendations** (40-60 words): 2-3 specific time-s
 GUARDRAILS: Duration always in weeks — NEVER convert to days. NET rates only. UK AVEC always 25.5% net NOT 34% gross. FRS: use financialReturnScore and financialReturnVerdict from skeleton only. Financial figures: only values from skeleton. Bold headings on own line NOT inline.
 
 nextSteps RULES: 4-6 items ordered by urgency (URGENT first). Each action must reference a specific territory, programme name, or flag. URGENT = deadline within 3 months or blocking contractual commitment. NEVER generate generic actions.
+
+scriptIntelligence RULES:
+- creativeRecognition: names ONLY from script_characters array. Not a logline. No forbidden verbs (navigates, grapples with, explores, discovers).
+- complexityDrivers: 2-5 drivers, each referencing a specific script element. territoriesAffected: only territories in this report's locationRankings.
+- crewSpecialisations: only genuinely non-standard roles for the territory.
+- scheduleWeatherNotes: reference scheduleViabilityScore and contingencyDaysEstimate values from skeleton. Note hemisphere/season impact when relevant.
+
+dimensionVerdicts RULES: One sentence per dimension, max 40 words. Reference specific data (programme name, rate, tier name). Do NOT repeat the score number. Do NOT use word "score". Each verdict must be substantively different from reasoning bullets.
 
 comparableDescriptions RULES: ONE specific reason this comparable is relevant. Reference at least one of: incentive programme, budget match, crew parallel, genre match, structural similarity. Do NOT use phrase "comparable production". Do NOT describe plot. Maximum 40 words. One sentence.
 """
@@ -1755,6 +1784,21 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                     "Full narrative analysis unavailable. "
                     "Review the financial data and territory scores below."
                 )
+
+        # nextSteps — priority-ordered action items
+        next_steps = ai.get("nextSteps")
+        if isinstance(next_steps, list) and next_steps:
+            skeleton["nextSteps"] = next_steps
+
+        # scriptIntelligence — structured analysis block
+        script_intel = ai.get("scriptIntelligence")
+        if isinstance(script_intel, dict):
+            skeleton["scriptIntelligence"] = script_intel
+
+        # dimensionVerdicts — per-territory per-dimension narrative verdicts
+        dim_verdicts = ai.get("dimensionVerdicts")
+        if isinstance(dim_verdicts, dict):
+            skeleton["dimensionVerdicts"] = dim_verdicts
 
         # Location narratives
         location_narratives = ai.get("locationNarratives", {})
