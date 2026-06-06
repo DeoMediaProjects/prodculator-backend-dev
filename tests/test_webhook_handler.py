@@ -307,3 +307,153 @@ class TestWebhookDeduplication:
 
         # Should NOT have created a subscription because event was deduplicated
         assert "subscriptions:upsert" not in db.writes
+
+
+# ---------------------------------------------------------------------------
+# Scheduled-downgrade rollover edge cases (#7, #8) — stateful fake that returns
+# a real pre-update row carrying pending_plan / stripe_schedule_id.
+# ---------------------------------------------------------------------------
+
+class _SchedResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class _SchedQuery:
+    def __init__(self, store: dict, table: str):
+        self._store = store
+        self._table = table
+        self._filters: dict = {}
+        self._op = ""
+        self._payload = None
+
+    def select(self, _cols):
+        return self
+
+    def eq(self, key, value):
+        self._filters[key] = value
+        return self
+
+    def limit(self, _n):
+        return self
+
+    def update(self, data):
+        self._op = "update"
+        self._payload = data
+        return self
+
+    def _matches(self, row):
+        return all(row.get(k) == v for k, v in self._filters.items())
+
+    def execute(self):
+        rows = self._store.setdefault(self._table, [])
+        if self._op == "update":
+            patched = []
+            for row in rows:
+                if self._matches(row):
+                    row.update(self._payload)
+                    patched.append(row)
+            self._store.setdefault(f"{self._table}:update", []).append(dict(self._payload))
+            return _SchedResult(patched)
+        return _SchedResult([row for row in rows if self._matches(row)])
+
+
+class _SchedSupabase:
+    def __init__(self, subscriptions, users):
+        self.store = {"subscriptions": subscriptions, "users": users}
+
+    def table(self, name):
+        return _SchedQuery(self.store, name)
+
+
+def _sub_event(price_id=None, schedule=None):
+    sub = {
+        "id": "sub_1",
+        "status": "active",
+        "cancel_at_period_end": False,
+        "current_period_start": 1700000000,
+        "current_period_end": 1702592000,
+        "schedule": schedule,
+    }
+    if price_id is not None:
+        sub["items"] = {"data": [{"price": {"id": price_id}}]}
+    return sub
+
+
+def _handler_with_settings(db):
+    handler = WebhookHandler(db, _settings_with_prices())
+    handler.email_service = None  # keep settings (for price resolution), skip SMTP
+    return handler
+
+
+class TestScheduledDowngradeRollover:
+    def _seed(self, **sub_overrides):
+        sub = {
+            "stripe_subscription_id": "sub_1",
+            "user_id": "user-1",
+            "plan_type": "studio",
+            "pending_plan": "professional",
+            "stripe_schedule_id": "sched_1",
+            "status": "active",
+        }
+        sub.update(sub_overrides)
+        return _SchedSupabase([sub], [{"id": "user-1", "plan": "studio", "user_type": "paid"}])
+
+    def test_rollover_clears_pending_and_applies_plan(self):
+        """Normal rollover: schedule gone, resolved plan == pending_plan."""
+        db = self._seed()
+        _handler_with_settings(db)._handle_subscription_updated(
+            _sub_event(price_id="price_pro", schedule=None)
+        )
+        sub = db.store["subscriptions"][0]
+        assert sub["plan_type"] == "professional"
+        assert sub["report_limit"] == PLAN_REPORT_LIMITS["professional"]
+        assert sub["pending_plan"] is None
+        assert sub["stripe_schedule_id"] is None
+        assert db.store["users"][0]["plan"] == "professional"
+
+    def test_8_schedule_fired_but_resolved_differs_still_clears_pending(self):
+        """#8 — schedule fired onto a DIFFERENT plan (e.g. changed out-of-band).
+        pending markers must still be cleared, and the actual plan applied."""
+        db = self._seed()  # pending_plan="professional"
+        _handler_with_settings(db)._handle_subscription_updated(
+            _sub_event(price_id="price_producer", schedule=None)  # lands on producer
+        )
+        sub = db.store["subscriptions"][0]
+        assert sub["plan_type"] == "producer"
+        assert sub["pending_plan"] is None
+        assert sub["stripe_schedule_id"] is None
+        assert db.store["users"][0]["plan"] == "producer"
+
+    def test_7_unresolvable_price_falls_back_to_pending_plan(self, caplog):
+        """#7 — price ID not configured in settings. After the schedule fires we
+        must fall back to the recorded pending_plan, not strand the user."""
+        import logging
+
+        db = self._seed()  # pending_plan="professional"
+        with caplog.at_level(logging.ERROR):
+            _handler_with_settings(db)._handle_subscription_updated(
+                _sub_event(price_id="price_UNCONFIGURED", schedule=None)
+            )
+        sub = db.store["subscriptions"][0]
+        assert sub["plan_type"] == "professional"
+        assert sub["report_limit"] == PLAN_REPORT_LIMITS["professional"]
+        assert sub["pending_plan"] is None
+        assert sub["stripe_schedule_id"] is None
+        assert db.store["users"][0]["plan"] == "professional"
+        assert any("falling back to" in r.message.lower() or "pending_plan" in r.message
+                   for r in caplog.records)
+
+    def test_pending_not_cleared_while_schedule_still_active(self):
+        """Guard: a subscription.updated during the pending window (schedule still
+        present, e.g. a card update) must NOT clear pending or downgrade early."""
+        db = self._seed()
+        # Still on studio price, schedule still attached.
+        _handler_with_settings(db)._handle_subscription_updated(
+            _sub_event(price_id="price_studio", schedule="sched_1")
+        )
+        sub = db.store["subscriptions"][0]
+        assert sub["plan_type"] == "studio"
+        assert sub["pending_plan"] == "professional"
+        assert sub["stripe_schedule_id"] == "sched_1"
+        assert db.store["users"][0]["plan"] == "studio"

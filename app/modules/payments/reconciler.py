@@ -17,6 +17,7 @@ import stripe
 
 from app.core.config import Settings
 from app.core.database_client import DatabaseClient
+from app.models.enums import normalize_plan
 from app.modules.payments.plan_catalog import resolve_plan_from_subscription
 from app.modules.payments.webhook_handler import PLAN_REPORT_LIMITS
 
@@ -110,9 +111,39 @@ def _diff_subscription(local: dict, stripe_sub, settings: Settings) -> dict:
             update["current_period_end"] = iso
 
     resolved_plan = resolve_plan_from_subscription(stripe_sub, settings)
+
+    # A pending downgrade is backed by a Stripe Subscription Schedule. Stripe
+    # clears subscription.schedule once it completes/releases, so "we recorded a
+    # schedule locally but Stripe no longer reports one" means the rollover has
+    # already happened — the safety net for a missed customer.subscription.updated
+    # webhook (#5).
+    pending_plan = local.get("pending_plan")
+    had_local_schedule = bool(local.get("stripe_schedule_id")) or bool(pending_plan)
+    schedule_fired = had_local_schedule and not stripe_sub.get("schedule")
+
+    # #7 — if the price→plan map can't resolve (a price ID isn't configured) but a
+    # schedule we created has fired, fall back to the recorded pending_plan so a
+    # config gap doesn't strand the user on their old tier.
+    if not resolved_plan and schedule_fired and pending_plan:
+        resolved_plan = normalize_plan(pending_plan)
+        logger.error(
+            "reconciler: price→plan resolution failed for %s; using recorded "
+            "pending_plan=%s after schedule fired. Check Stripe price IDs in settings.",
+            local.get("stripe_subscription_id"),
+            resolved_plan,
+        )
+
     if resolved_plan and resolved_plan != local.get("plan_type"):
         update["plan_type"] = resolved_plan
         update["report_limit"] = PLAN_REPORT_LIMITS.get(resolved_plan, 3)
+
+    # #6 / #8 — clear stale pending markers once the backing schedule is gone,
+    # regardless of which plan the rollover landed on.
+    if schedule_fired:
+        if local.get("pending_plan") is not None:
+            update["pending_plan"] = None
+        if local.get("stripe_schedule_id") is not None:
+            update["stripe_schedule_id"] = None
 
     return update
 

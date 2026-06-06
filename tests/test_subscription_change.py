@@ -80,6 +80,7 @@ class FakeStripeService:
     def __init__(self):
         self.preview_calls: list = []
         self.modify_calls: list = []
+        self.schedule_calls: list = []
 
     def preview_subscription_change(self, subscription_id, new_price_id):
         self.preview_calls.append((subscription_id, new_price_id))
@@ -103,6 +104,14 @@ class FakeStripeService:
             }
         )
         return {"id": subscription_id, "status": "active"}
+
+    def schedule_subscription_downgrade(self, subscription_id, new_price_id):
+        # Downgrades defer to period end via a Stripe Subscription Schedule
+        # rather than an immediate, prorated plan change.
+        self.schedule_calls.append(
+            {"subscription_id": subscription_id, "new_price_id": new_price_id}
+        )
+        return "sched_test_123"
 
 
 def _override(client, user, fake_db, fake_stripe):
@@ -315,10 +324,15 @@ class TestChangePlan:
         assert body["status"] == "scheduled"
         assert body["direction"] == "downgrade"
         assert body["target_plan"] == "professional"
-        assert stripe_svc.modify_calls[0]["prorate"] is False
+        # Downgrade defers via a Subscription Schedule — no immediate, prorated
+        # plan change. change_subscription_plan must NOT be called.
+        assert stripe_svc.modify_calls == []
+        assert stripe_svc.schedule_calls[0]["subscription_id"] == "sub_123"
+        assert stripe_svc.schedule_calls[0]["new_price_id"] == "price_pro"
 
         sub_updates = db.writes.get("subscriptions:update", [])
         assert any(u["data"].get("pending_plan") == "professional" for u in sub_updates)
+        assert any(u["data"].get("stripe_schedule_id") == "sched_test_123" for u in sub_updates)
 
     def test_same_plan_returns_400(self, client, monkeypatch):
         _settings_with_prices(monkeypatch)

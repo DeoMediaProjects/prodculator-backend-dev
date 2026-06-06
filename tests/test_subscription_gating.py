@@ -143,6 +143,16 @@ _FULL_REPORT = {
 }
 
 
+# A free-tier report: same content, but report_type="free". This is the fixture
+# for free-PLAN gating tests. _FULL_REPORT carries report_type="paid", which the
+# route deliberately treats as a pay-per-report purchase and serves at full
+# producer fidelity even to free-plan users (see get_report in reports/router.py)
+# — so it must NOT be used to assert free-tier gating.
+import copy as _copy
+
+_FREE_REPORT = {**_FULL_REPORT, "report_type": "free", "report_data": _copy.deepcopy(_FULL_REPORT["report_data"])}
+
+
 # ---------------------------------------------------------------------------
 # PDF Download Gating Tests
 # ---------------------------------------------------------------------------
@@ -253,7 +263,7 @@ class TestReportDataFiltering:
 
     def test_free_user_gets_only_3_territories(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FREE_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
@@ -290,7 +300,7 @@ class TestReportDataFiltering:
 
     def test_free_user_gets_no_premium_sections(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FREE_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
@@ -331,16 +341,20 @@ class TestReportDataFiltering:
 
     def test_free_user_gets_no_pdf_url(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FREE_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 
         response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
-        assert response.json()["pdfUrl"] is None
+        # Free users get a "preview" sentinel, never the real signed S3 URL. The
+        # actual PDF is generated on-the-fly (watermarked) by the download route.
+        pdf_url = response.json()["pdfUrl"]
+        assert pdf_url == "preview"
+        assert "s3" not in pdf_url and "X-Amz" not in pdf_url
 
     def test_free_user_still_gets_non_premium_sections(self, client):
         free_user = _make_user(plan="free")
-        db = FakeSupabase({"reports": [_FULL_REPORT]})
+        db = FakeSupabase({"reports": [_FREE_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
         client.app.dependency_overrides[get_supabase] = lambda: db
 

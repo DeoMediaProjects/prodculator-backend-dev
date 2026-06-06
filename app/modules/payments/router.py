@@ -1,7 +1,7 @@
 import logging
 
 import stripe as stripe_lib
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +210,7 @@ async def update_payment_method(
 @webhook_router.post("/stripe")
 async def stripe_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     settings: Settings = Depends(get_settings),
     supabase: DatabaseClient = Depends(get_supabase),
 ):
@@ -223,7 +224,7 @@ async def stripe_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
-    handler = WebhookHandler(supabase, settings)
+    handler = WebhookHandler(supabase, settings, background_tasks)
     handler.handle_event(event.id, event.type, event.data.object)
 
     return {"received": True}

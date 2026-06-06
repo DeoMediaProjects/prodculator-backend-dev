@@ -107,6 +107,84 @@ class TestDiffSubscription:
         diff = _diff_subscription(local, stripe_sub, _settings())
         assert diff["status"] == "past_due"
 
+    def test_6_clears_stale_pending_when_schedule_gone(self):
+        """#6 — rollover webhook applied the plan but left pending_plan set. The
+        reconciler clears the stale markers once Stripe reports no schedule."""
+        local = {
+            "stripe_subscription_id": "sub_1",
+            "status": "active",
+            "plan_type": "professional",  # already correct — no plan drift
+            "pending_plan": "professional",
+            "stripe_schedule_id": "sched_1",
+        }
+        stripe_sub = {
+            "status": "active",
+            "schedule": None,
+            "items": {"data": [{"price": {"id": "price_pro"}}]},
+        }
+        diff = _diff_subscription(local, stripe_sub, _settings())
+        assert diff["pending_plan"] is None
+        assert diff["stripe_schedule_id"] is None
+        assert "plan_type" not in diff  # plan already correct
+
+    def test_8_schedule_fired_to_different_plan_clears_pending(self):
+        """#8 — schedule fired onto a plan that differs from pending_plan."""
+        local = {
+            "stripe_subscription_id": "sub_1",
+            "status": "active",
+            "plan_type": "studio",
+            "pending_plan": "professional",
+            "stripe_schedule_id": "sched_1",
+        }
+        stripe_sub = {
+            "status": "active",
+            "schedule": None,
+            "items": {"data": [{"price": {"id": "price_producer"}}]},  # landed on producer
+        }
+        diff = _diff_subscription(local, stripe_sub, _settings())
+        assert diff["plan_type"] == "producer"
+        assert diff["pending_plan"] is None
+        assert diff["stripe_schedule_id"] is None
+
+    def test_7_unresolvable_price_falls_back_to_pending(self):
+        """#7 — price not configured; fall back to recorded pending_plan once the
+        schedule has fired."""
+        local = {
+            "stripe_subscription_id": "sub_1",
+            "status": "active",
+            "plan_type": "studio",
+            "pending_plan": "professional",
+            "stripe_schedule_id": "sched_1",
+        }
+        stripe_sub = {
+            "status": "active",
+            "schedule": None,
+            "items": {"data": [{"price": {"id": "price_UNCONFIGURED"}}]},
+        }
+        diff = _diff_subscription(local, stripe_sub, _settings())
+        assert diff["plan_type"] == "professional"
+        assert diff["report_limit"] == 1
+        assert diff["pending_plan"] is None
+
+    def test_pending_kept_while_schedule_still_active(self):
+        """Guard: while the schedule is still attached, markers are untouched."""
+        local = {
+            "stripe_subscription_id": "sub_1",
+            "status": "active",
+            "plan_type": "studio",
+            "pending_plan": "professional",
+            "stripe_schedule_id": "sched_1",
+        }
+        stripe_sub = {
+            "status": "active",
+            "schedule": "sched_1",
+            "items": {"data": [{"price": {"id": "price_studio"}}]},
+        }
+        diff = _diff_subscription(local, stripe_sub, _settings())
+        assert "pending_plan" not in diff
+        assert "stripe_schedule_id" not in diff
+        assert "plan_type" not in diff
+
 
 class TestReconcilerRun:
     def test_fixes_plan_drift_and_mirrors_to_user(self):

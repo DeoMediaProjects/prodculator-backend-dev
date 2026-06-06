@@ -5,10 +5,52 @@ from app.modules.reports import router as reports_router
 from app.modules.reports.router import get_report_service
 
 
+class _StubResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class _StubQuery:
+    """Minimal query stub for the subscription/usage check the create-report
+    route runs via SubscriptionService(service.supabase). Models an empty
+    account that owns one pay-per-report credit, so a paid report is allowed."""
+
+    def __init__(self, table_name):
+        self._table = table_name
+        self._single = False
+
+    def select(self, *_): return self
+    def eq(self, *_): return self
+    def in_(self, *_): return self
+    def gte(self, *_): return self
+    def lte(self, *_): return self
+    def limit(self, *_): return self
+    def update(self, *_): return self
+
+    def single(self):
+        self._single = True
+        return self
+
+    def execute(self):
+        if self._table == "users":
+            row = {"credits_remaining": 1}
+            return _StubResult(row if self._single else [row])
+        # subscriptions / reports: empty — no active sub, no prior reports.
+        return _StubResult(None if self._single else [])
+
+
+class _StubSupabase:
+    def table(self, name):
+        return _StubQuery(name)
+
+
 class FakeReportService:
     def __init__(self):
         self._reports = {}
         self._counter = 0
+        # The route builds SubscriptionService(service.supabase) for the usage
+        # gate; the real ReportService exposes .supabase, so the fake must too.
+        self.supabase = _StubSupabase()
 
     def create_report(
         self,

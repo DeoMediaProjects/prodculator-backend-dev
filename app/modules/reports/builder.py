@@ -324,9 +324,11 @@ class ReportBuilder:
                 "reasoning": None,
                 "keyAdvantages": None,
                 "keyRisks": [],  # DB risks populated below, AI appends
-                # Only set when the programme actually requires a cultural test; None hides the card
+                # Driven solely by the cultural_test_required DB column (no heuristic):
+                # True → fixed "High (85%)" likelihood estimate, False/NULL → "N/A".
+                # Always a string — the frontend renders this under a "Likelihood" label.
                 "culturalTestLikelihood": (
-                    "Required" if best.get("cultural_test_required") is True else None
+                    "High (85%)" if best.get("cultural_test_required") is True else "N/A"
                 ),
             }
 
@@ -1754,9 +1756,11 @@ class ReportBuilder:
                 "infrastructure": None,
                 "keyAdvantages": None,
                 "keyRisks": None,
-                # Only set when the programme actually requires a cultural test; None hides the card
+                # Driven solely by the cultural_test_required DB column (no heuristic):
+                # True → fixed "High (85%)" likelihood estimate, False/NULL → "N/A".
+                # Always a string — the frontend renders this under a "Likelihood" label.
                 "culturalTestLikelihood": (
-                    "Required" if best.get("cultural_test_required") is True else None
+                    "High (85%)" if best.get("cultural_test_required") is True else "N/A"
                 ),
                 "adminComplexity": best.get("admin_complexity") or "Medium",
             }
@@ -1878,6 +1882,26 @@ class ReportBuilder:
             report["scriptAnalysis"] = {"sectionExplainers": explainers}
         report["sectionExplainers"] = explainers
 
+
+    def _get_weather_month(self, territory: str, shoot_month: int) -> dict | None:
+        """Look up the weather row for a territory/month from the weather dataset.
+
+        Returns the weather dict (avg_rainfall_mm, avg_temp_high_c, etc.) or None
+        when no matching row exists.
+        """
+        weather_data = self.datasets.get("weather", [])
+        if not weather_data:
+            return None
+
+        territory_lower = territory.lower()
+        month = int(shoot_month)
+        for w in weather_data:
+            if (
+                str(w.get("territory", "")).lower() == territory_lower
+                and int(w.get("month") or 0) == month
+            ):
+                return w
+        return None
 
     def _compute_schedule_viability(
         self,
