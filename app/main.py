@@ -13,6 +13,7 @@ from app.core.database_client import create_client
 from app.core.db import init_db
 from app.core.limiter import limiter
 from app.core.scheduler import start_scheduler, stop_scheduler
+from app.modules.payments.plan_catalog import find_missing_price_ids
 from app.modules.scraper.service import ScraperService
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,16 @@ async def lifespan(app_: FastAPI):
         logger.warning("Could not seed scrape sources: %s", e)
     finally:
         db.close()
+    # Surface any missing Stripe price IDs loudly at boot. We warn rather than
+    # crash so a missing annual price can't take the whole API down, but the gap
+    # is visible before it strands a customer's plan change.
+    missing_prices = find_missing_price_ids(settings)
+    if missing_prices:
+        logger.warning(
+            "Stripe price config incomplete — plan resolution will fail for: %s. "
+            "Set the corresponding STRIPE_PRICE_* environment variables.",
+            ", ".join(missing_prices),
+        )
     start_scheduler()
     yield
     # Shutdown

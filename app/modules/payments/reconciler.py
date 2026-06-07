@@ -81,6 +81,30 @@ def run_subscription_reconciler(supabase: DatabaseClient, settings: Settings) ->
     return fixed
 
 
+def _to_utc_datetime(value) -> datetime | None:
+    """Coerce a stored period value into an aware UTC datetime for comparison.
+
+    Handles the three shapes a local value can take: a datetime (from the
+    timestamptz column in production), an ISO string (test fixtures / legacy
+    writes), or None. Naive datetimes are assumed UTC, matching how the app
+    always writes these fields.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _diff_subscription(local: dict, stripe_sub, settings: Settings) -> dict:
     """Return only the fields where local diverges from Stripe."""
     update: dict = {}
@@ -101,14 +125,18 @@ def _diff_subscription(local: dict, stripe_sub, settings: Settings) -> dict:
             period_start = period_start or items[0].get("current_period_start")
             period_end = period_end or items[0].get("current_period_end")
 
+    # Compare as instants, not as mixed types. The DB columns are timestamptz, so
+    # local values come back as datetime objects — comparing them to an ISO string
+    # would ALWAYS differ, making the reconciler "correct" the same period dates on
+    # every run without ever converging.
     if period_start:
-        iso = datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
-        if iso != local.get("current_period_start"):
-            update["current_period_start"] = iso
+        stripe_start = datetime.fromtimestamp(period_start, tz=timezone.utc)
+        if _to_utc_datetime(local.get("current_period_start")) != stripe_start:
+            update["current_period_start"] = stripe_start.isoformat()
     if period_end:
-        iso = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
-        if iso != local.get("current_period_end"):
-            update["current_period_end"] = iso
+        stripe_end = datetime.fromtimestamp(period_end, tz=timezone.utc)
+        if _to_utc_datetime(local.get("current_period_end")) != stripe_end:
+            update["current_period_end"] = stripe_end.isoformat()
 
     resolved_plan = resolve_plan_from_subscription(stripe_sub, settings)
 

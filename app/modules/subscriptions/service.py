@@ -276,6 +276,13 @@ class SubscriptionService:
         except Exception:
             return "your next billing date"
 
+    @staticmethod
+    def _count_chargeable(rows: list[dict] | None) -> int:
+        """Count report rows that count against quota — i.e. everything except
+        failed reports. A failed report (e.g. a Claude outage) must not consume a
+        user's monthly slot or their one free report."""
+        return sum(1 for row in (rows or []) if (row or {}).get("status") != "failed")
+
     def get_credits_remaining(self, user_id: str) -> int:
         result = (
             self.supabase.table("users")
@@ -294,6 +301,17 @@ class SubscriptionService:
             {"credits_remaining": new_value}
         ).eq("id", user_id).execute()
 
+    def refund_report_credit(self, user_id: str) -> None:
+        """Increment credits_remaining by 1 — the inverse of consume_report_credit.
+
+        Used when a report that consumed a pay-per-report credit fails (e.g. a
+        Claude outage), so the user is never charged for a report they didn't get.
+        """
+        current = self.get_credits_remaining(user_id)
+        self.supabase.table("users").update(
+            {"credits_remaining": current + 1}
+        ).eq("id", user_id).execute()
+
     def get_usage(self, user_id: str, current_plan: str) -> dict:
         """Return current-period report usage for the dashboard widget.
 
@@ -310,12 +328,12 @@ class SubscriptionService:
             # Free / pay-per-report path
             free_reports_result = (
                 self.supabase.table("reports")
-                .select("id")
+                .select("id, status")
                 .eq("user_id", user_id)
                 .eq("report_type", "free")
                 .execute()
             )
-            free_used = len(free_reports_result.data or [])
+            free_used = self._count_chargeable(free_reports_result.data)
             # Free users get exactly 1 lifetime trial
             limit: int | None = 1
             used = free_used
@@ -352,13 +370,13 @@ class SubscriptionService:
                 "reason": reason,
             }
 
-        query = self.supabase.table("reports").select("id").eq("user_id", user_id)
+        query = self.supabase.table("reports").select("id, status").eq("user_id", user_id)
         if period_start:
             query = query.gte("created_at", period_start)
         if period_end:
             query = query.lte("created_at", period_end)
 
-        used = len(query.execute().data or [])
+        used = self._count_chargeable(query.execute().data)
         remaining = max(0, report_limit - used)
         can_gen, reason = self.can_generate_report(user_id)
         return {
@@ -383,12 +401,12 @@ class SubscriptionService:
 
             free_reports = (
                 self.supabase.table("reports")
-                .select("id")
+                .select("id, status")
                 .eq("user_id", user_id)
                 .eq("report_type", "free")
                 .execute()
             )
-            free_report_count = len(free_reports.data or [])
+            free_report_count = self._count_chargeable(free_reports.data)
             if free_report_count > 0:
                 return (
                     False,
@@ -400,7 +418,7 @@ class SubscriptionService:
         if report_limit in (-1, None):
             return (True, "Unlimited reports")
 
-        query = self.supabase.table("reports").select("id").eq("user_id", user_id)
+        query = self.supabase.table("reports").select("id, status").eq("user_id", user_id)
         period_start = subscription.get("current_period_start")
         period_end = subscription.get("current_period_end")
         if period_start:
@@ -408,7 +426,7 @@ class SubscriptionService:
         if period_end:
             query = query.lte("created_at", period_end)
 
-        report_count = len(query.execute().data or [])
+        report_count = self._count_chargeable(query.execute().data)
         if report_count >= report_limit:
             # Subscription limit hit — credits act as overflow capacity.
             # A user who bought pay-as-you-go credits and then subscribed should

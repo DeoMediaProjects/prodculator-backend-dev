@@ -1,5 +1,6 @@
 """Tests for the subscription reconciler — drift detection between local and Stripe."""
 
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from app.core.config import Settings
@@ -106,6 +107,66 @@ class TestDiffSubscription:
         }
         diff = _diff_subscription(local, stripe_sub, _settings())
         assert diff["status"] == "past_due"
+
+    def test_no_period_drift_when_local_is_datetime(self):
+        """Regression: production reads period columns back as datetime objects.
+        Comparing them must NOT report perpetual drift (the reconciler was
+        re-'correcting' the same period dates on every hourly run)."""
+        local = {
+            "status": "active",
+            "cancel_at_period_end": False,
+            "plan_type": "producer",
+            # datetime objects — exactly what the timestamptz columns return.
+            "current_period_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "current_period_end": datetime(2026, 2, 1, tzinfo=timezone.utc),
+        }
+        stripe_sub = {
+            "status": "active",
+            "cancel_at_period_end": False,
+            "current_period_start": 1767225600,  # 2026-01-01 00:00 UTC
+            "current_period_end": 1769904000,    # 2026-02-01 00:00 UTC
+            "items": {"data": [{"price": {"id": "price_producer"}}]},
+        }
+        assert _diff_subscription(local, stripe_sub, _settings()) == {}
+
+    def test_naive_datetime_local_treated_as_utc(self):
+        """A naive datetime (timestamp-without-tz column) is assumed UTC, so it
+        still converges rather than drifting."""
+        local = {
+            "status": "active",
+            "cancel_at_period_end": False,
+            "plan_type": "producer",
+            "current_period_start": datetime(2026, 1, 1),  # naive
+            "current_period_end": datetime(2026, 2, 1),
+        }
+        stripe_sub = {
+            "status": "active",
+            "cancel_at_period_end": False,
+            "current_period_start": 1767225600,
+            "current_period_end": 1769904000,
+            "items": {"data": [{"price": {"id": "price_producer"}}]},
+        }
+        assert _diff_subscription(local, stripe_sub, _settings()) == {}
+
+    def test_detects_real_period_drift_with_datetime_local(self):
+        """Genuine period drift is still caught when local is a datetime."""
+        local = {
+            "status": "active",
+            "cancel_at_period_end": False,
+            "plan_type": "producer",
+            "current_period_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "current_period_end": datetime(2026, 1, 15, tzinfo=timezone.utc),  # wrong
+        }
+        stripe_sub = {
+            "status": "active",
+            "cancel_at_period_end": False,
+            "current_period_start": 1767225600,  # 2026-01-01
+            "current_period_end": 1769904000,    # 2026-02-01 — differs from local
+            "items": {"data": [{"price": {"id": "price_producer"}}]},
+        }
+        diff = _diff_subscription(local, stripe_sub, _settings())
+        assert "current_period_end" in diff
+        assert "current_period_start" not in diff
 
     def test_6_clears_stale_pending_when_schedule_gone(self):
         """#6 — rollover webhook applied the plan but left pending_plan set. The

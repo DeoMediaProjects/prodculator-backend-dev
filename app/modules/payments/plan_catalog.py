@@ -80,6 +80,41 @@ def resolve_plan_from_subscription(subscription: dict, settings: Settings) -> st
     return normalize_plan(plan) if plan else None
 
 
+# Price-ID settings every paid tier needs configured for plan resolution to work.
+# A gap here is what silently strands a downgrade/upgrade (the resolve_plan
+# fallback only saves rollovers, not fresh checkouts) — so we surface it at boot.
+_REQUIRED_PRICE_SETTINGS: dict[str, str] = {
+    "STRIPE_PRICE_PROFESSIONAL_GBP": "Professional (monthly, GBP)",
+    "STRIPE_PRICE_PROFESSIONAL_USD": "Professional (monthly, USD)",
+    "STRIPE_PRICE_PRODUCER_GBP": "Producer (monthly, GBP)",
+    "STRIPE_PRICE_PRODUCER_USD": "Producer (monthly, USD)",
+    "STRIPE_PRICE_STUDIO_GBP": "Studio (monthly, GBP)",
+    "STRIPE_PRICE_STUDIO_USD": "Studio (monthly, USD)",
+    "STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP": "Professional (annual, GBP)",
+    "STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD": "Professional (annual, USD)",
+    "STRIPE_PRICE_PRODUCER_ANNUAL_GBP": "Producer (annual, GBP)",
+    "STRIPE_PRICE_PRODUCER_ANNUAL_USD": "Producer (annual, USD)",
+    "STRIPE_PRICE_STUDIO_ANNUAL_GBP": "Studio (annual, GBP)",
+    "STRIPE_PRICE_STUDIO_ANNUAL_USD": "Studio (annual, USD)",
+}
+
+
+def find_missing_price_ids(settings: Settings) -> list[str]:
+    """Return human-readable labels for every required Stripe price ID that is
+    unset. Empty list means the price→plan catalog is fully configured.
+
+    Skipped entirely when Stripe isn't configured at all (no secret key) — local
+    dev / test environments shouldn't be spammed with warnings.
+    """
+    if not getattr(settings, "STRIPE_SECRET_KEY", ""):
+        return []
+    return [
+        label
+        for attr, label in _REQUIRED_PRICE_SETTINGS.items()
+        if not getattr(settings, attr, "")
+    ]
+
+
 def classify_change(current_plan: str, target_plan: str) -> str:
     """Return 'upgrade', 'downgrade', or 'same' for a plan transition."""
     current = _PLAN_HIERARCHY.get(normalize_plan(current_plan), 0)

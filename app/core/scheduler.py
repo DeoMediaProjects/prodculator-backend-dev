@@ -8,6 +8,63 @@ logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
 
+# Shared by every worker process. The one that wins pg_try_advisory_lock owns the
+# scheduler; the rest skip it, so jobs run exactly once regardless of worker count.
+_SCHEDULER_LOCK_KEY = 4_021_966_811
+_lock_conn = None
+
+
+def _acquire_singleton_lock() -> bool:
+    """Become the single scheduler owner across all worker processes (and hosts).
+
+    Holds a Postgres session-level advisory lock for the lifetime of a dedicated
+    connection — only one connection cluster-wide can hold it. No-ops (returns
+    True) on non-Postgres databases (local/dev/test), where there's a single
+    process anyway. Returns False on any error so we fail closed: a missed
+    scheduler run is safer than concurrent duplicate dunning/reconciler runs.
+    """
+    global _lock_conn
+    from sqlalchemy import text
+
+    from app.core.db import engine
+
+    if engine.dialect.name != "postgresql":
+        return True
+
+    try:
+        conn = engine.connect()
+        acquired = conn.execute(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": _SCHEDULER_LOCK_KEY}
+        ).scalar()
+        if acquired:
+            _lock_conn = conn  # keep open — closing it would release the lock
+            return True
+        conn.close()
+        return False
+    except Exception:
+        logger.exception("Scheduler: advisory-lock acquisition failed — not starting")
+        return False
+
+
+def _release_singleton_lock() -> None:
+    global _lock_conn
+    if _lock_conn is None:
+        return
+    from sqlalchemy import text
+
+    try:
+        _lock_conn.execute(
+            text("SELECT pg_advisory_unlock(:k)"), {"k": _SCHEDULER_LOCK_KEY}
+        )
+    except Exception:
+        logger.warning("Scheduler: advisory-lock release failed", exc_info=True)
+    finally:
+        try:
+            _lock_conn.close()
+        except Exception:
+            pass
+        _lock_conn = None
+
 # Maps sync_settings.schedule values to timedelta days
 _SCHEDULE_DAYS = {
     "monthly": 30,
@@ -173,6 +230,21 @@ def start_scheduler() -> None:
         _scheduler = None
         return
 
+    if not settings.SCHEDULER_ENABLED:
+        logger.info("APScheduler: SCHEDULER_ENABLED is false — not starting on this process")
+        _scheduler = None
+        return
+
+    # Gate to a single worker: only the process that wins the advisory lock runs
+    # the jobs. Without this, every Gunicorn/Uvicorn worker would start its own
+    # scheduler and run dunning/reconciler N times concurrently.
+    if not _acquire_singleton_lock():
+        logger.info(
+            "APScheduler: another worker owns the scheduler lock — not starting on this process"
+        )
+        _scheduler = None
+        return
+
     _scheduler.start()
     logger.info(
         "APScheduler started with jobs: %s",
@@ -185,3 +257,5 @@ def stop_scheduler() -> None:
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
         logger.info("APScheduler stopped")
+    # Release the advisory lock so another worker can take over on next startup.
+    _release_singleton_lock()

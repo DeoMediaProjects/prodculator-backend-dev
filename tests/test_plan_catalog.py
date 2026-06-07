@@ -4,6 +4,7 @@ from app.core.config import Settings
 from app.modules.payments.plan_catalog import (
     build_price_to_plan_map,
     classify_change,
+    find_missing_price_ids,
     resolve_plan_from_subscription,
 )
 
@@ -41,6 +42,54 @@ class TestPriceMap:
         assert m["price_pro_annual"] == "professional"
         assert m["price_producer_gbp"] == "producer"
         assert m["price_studio_usd"] == "studio"
+
+
+class TestFindMissingPriceIds:
+    _ALL_PRICES = {
+        "STRIPE_PRICE_PROFESSIONAL_GBP": "p1",
+        "STRIPE_PRICE_PROFESSIONAL_USD": "p2",
+        "STRIPE_PRICE_PRODUCER_GBP": "p3",
+        "STRIPE_PRICE_PRODUCER_USD": "p4",
+        "STRIPE_PRICE_STUDIO_GBP": "p5",
+        "STRIPE_PRICE_STUDIO_USD": "p6",
+        "STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP": "p7",
+        "STRIPE_PRICE_PROFESSIONAL_ANNUAL_USD": "p8",
+        "STRIPE_PRICE_PRODUCER_ANNUAL_GBP": "p9",
+        "STRIPE_PRICE_PRODUCER_ANNUAL_USD": "p10",
+        "STRIPE_PRICE_STUDIO_ANNUAL_GBP": "p11",
+        "STRIPE_PRICE_STUDIO_ANNUAL_USD": "p12",
+    }
+
+    def test_no_stripe_secret_skips_check(self):
+        # No STRIPE_SECRET_KEY -> dev/test, don't warn even with prices unset.
+        s = Settings(_env_file=None, JWT_SECRET_KEY="x" * 64)
+        assert find_missing_price_ids(s) == []
+
+    def test_reports_all_missing_when_configured_but_unset(self):
+        s = Settings(_env_file=None, JWT_SECRET_KEY="x" * 64, STRIPE_SECRET_KEY="sk_live_x")
+        missing = find_missing_price_ids(s)
+        assert len(missing) == 12  # every required price label
+
+    def test_empty_when_all_prices_set(self):
+        s = Settings(
+            _env_file=None,
+            JWT_SECRET_KEY="x" * 64,
+            STRIPE_SECRET_KEY="sk_live_x",
+            **self._ALL_PRICES,
+        )
+        assert find_missing_price_ids(s) == []
+
+    def test_reports_the_specific_gap(self):
+        prices = dict(self._ALL_PRICES)
+        del prices["STRIPE_PRICE_STUDIO_ANNUAL_USD"]
+        s = Settings(
+            _env_file=None,
+            JWT_SECRET_KEY="x" * 64,
+            STRIPE_SECRET_KEY="sk_live_x",
+            **prices,
+        )
+        missing = find_missing_price_ids(s)
+        assert missing == ["Studio (annual, USD)"]
 
 
 class TestResolvePlan:

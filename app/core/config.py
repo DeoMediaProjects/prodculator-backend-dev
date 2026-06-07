@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     ANTHROPIC_TIMEOUT_SCRIPT_CHUNK: int | None = 180
     ANTHROPIC_TIMEOUT_SCRIPT_AGGREGATE: int | None = None
     ANTHROPIC_TIMEOUT_REPORT: int | None = None
+    # Short timeout for the pre-flight reachability probe run before a report is
+    # charged. Kept low so a Claude outage fails fast instead of hanging the request.
+    ANTHROPIC_HEALTHCHECK_TIMEOUT: int = 10
 
     # Script analysis chunking controls
     SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False
@@ -108,6 +111,11 @@ class Settings(BaseSettings):
 
     # Scraper
     SCRAPER_ENABLED: bool = True
+    # Background scheduler (APScheduler). When running multiple web workers, a
+    # Postgres advisory lock ensures only ONE worker actually runs the jobs; set
+    # this to false to fully opt a process out (e.g. if you run a dedicated
+    # scheduler process).
+    SCHEDULER_ENABLED: bool = True
     SCRAPER_REQUEST_TIMEOUT: int = 30
     SCRAPER_MAX_TEXT_CHARS: int = 60000
 

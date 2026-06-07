@@ -3,6 +3,7 @@ import json
 from app.core.dependencies import get_current_user, get_optional_user
 from app.modules.reports import router as reports_router
 from app.modules.reports.router import get_report_service
+from app.modules.scripts.service import ClaudeUnavailableError, ScriptAnalysisService
 
 
 class _StubResult:
@@ -105,6 +106,9 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     client.app.dependency_overrides[get_optional_user] = lambda: auth_user
     client.app.dependency_overrides[get_report_service] = lambda: service
 
+    # Pre-flight Claude probe passes (Scriptelligence reachable).
+    monkeypatch.setattr(ScriptAnalysisService, "check_available", lambda self: None)
+
     def fake_task(report_id, *_args, **_kwargs):
         service._reports[report_id]["status"] = "completed"
         service._reports[report_id]["completed_at"] = "2026-01-01T00:01:00Z"
@@ -126,6 +130,38 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     )
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "completed"
+
+
+def test_report_create_blocked_when_claude_unavailable(client, auth_user, monkeypatch):
+    """When Scriptelligence (Claude) is unreachable, the report is NOT created
+    and the user is NOT charged — a 503 with a display message is returned."""
+    service = FakeReportService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_optional_user] = lambda: auth_user
+    client.app.dependency_overrides[get_report_service] = lambda: service
+
+    def boom(self):
+        raise ClaudeUnavailableError("Anthropic API unavailable (connection)")
+
+    monkeypatch.setattr(ScriptAnalysisService, "check_available", boom)
+
+    # If the pre-flight ever let this through, the background task would explode —
+    # makes an accidental charge loud rather than silent.
+    def fail_task(*_a, **_kw):
+        raise AssertionError("process_report_task must not run when Claude is down")
+
+    monkeypatch.setattr(reports_router, "process_report_task", fail_task)
+
+    response = client.post(
+        "/api/reports",
+        headers={"Authorization": "Bearer token"},
+        data={"body": json.dumps(VALID_REPORT_PAYLOAD)},
+        files={"script_file": ("script.txt", b"INT. HOUSE - DAY\nHello world.", "text/plain")},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Scriptelligence is currently not available"
+    # No report row created -> no quota charge.
+    assert service._reports == {}
 
 
 def test_report_access_denied_for_other_user(client, auth_user):
