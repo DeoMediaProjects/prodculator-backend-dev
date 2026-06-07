@@ -173,6 +173,26 @@ class TestCheckoutCompleted:
         assert user_updates[0]["data"]["user_type"] == "paid"
         assert user_updates[0]["filters"]["id"] == "user-1"
 
+    def test_captures_billing_country_and_state(self):
+        db = FakeSupabase()
+        handler = WebhookHandler(db)
+        session = self._make_session("professional")
+        session["customer_details"] = {"address": {"country": "US", "state": "CA"}}
+        handler.handle_event("evt_geo", "checkout.session.completed", session)
+
+        user_updates = db.writes.get("users:update", [])
+        assert user_updates[0]["data"]["country"] == "US"
+        assert user_updates[0]["data"]["state"] == "CA"
+
+    def test_missing_billing_address_does_not_set_geo(self):
+        db = FakeSupabase()
+        handler = WebhookHandler(db)
+        handler.handle_event("evt_nogeo", "checkout.session.completed", self._make_session("professional"))
+
+        user_updates = db.writes.get("users:update", [])
+        assert "country" not in user_updates[0]["data"]
+        assert "state" not in user_updates[0]["data"]
+
     def test_missing_user_id_does_nothing(self):
         db = FakeSupabase()
         handler = WebhookHandler(db)

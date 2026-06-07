@@ -21,6 +21,22 @@ _PLAN_LABEL: dict[str, str] = {
 }
 
 
+def _billing_geo_from_session(session: dict) -> dict[str, str]:
+    """Extract billing country/state from a Stripe checkout session.
+
+    Stripe populates ``customer_details.address`` with whatever billing address
+    the customer entered. Returns only the keys that are present so an absent
+    address never blanks out a value already on the user row.
+    """
+    address = (session.get("customer_details") or {}).get("address") or {}
+    geo: dict[str, str] = {}
+    if address.get("country"):
+        geo["country"] = address["country"]
+    if address.get("state"):
+        geo["state"] = address["state"]
+    return geo
+
+
 class WebhookHandler:
     def __init__(
         self,
@@ -137,11 +153,13 @@ class WebhookHandler:
             on_conflict="stripe_subscription_id",
         ).execute()
 
-        # Update user record so /api/auth/me reflects the new plan
+        # Update user record so /api/auth/me reflects the new plan. Capture the
+        # billing country/state from the checkout session at the same time so the
+        # admin Business Metrics dashboard can show geographic distribution.
         user_type = "paid" if plan_type != "free" else "free"
-        self.supabase.table("users").update(
-            {"plan": plan_type, "user_type": user_type}
-        ).eq("id", user_id).execute()
+        user_update: dict = {"plan": plan_type, "user_type": user_type}
+        user_update.update(_billing_geo_from_session(session))
+        self.supabase.table("users").update(user_update).eq("id", user_id).execute()
         self._bust_user_cache(user_id)
 
         self._send_email_to_user_id(

@@ -98,6 +98,13 @@ def upgrade() -> None:
         updated_at              TIMESTAMPTZ DEFAULT now()
     );
     """)
+    # If the table was already created by SQLModel.metadata.create_all() at app
+    # startup, its created_at/updated_at are NOT NULL with no DB-side default
+    # (the ORM uses a Python-side default_factory). Ensure the defaults exist so
+    # the seed INSERT below — which omits these columns — does not violate NOT
+    # NULL. Idempotent: a no-op when this migration created the table.
+    op.execute("ALTER TABLE territory_profiles ALTER COLUMN created_at SET DEFAULT now()")
+    op.execute("ALTER TABLE territory_profiles ALTER COLUMN updated_at SET DEFAULT now()")
     op.execute(SEED_SQL)
 
 

@@ -3,18 +3,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 
 from app.core.dependencies import get_current_admin, get_supabase
 from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.core.territories import resolve_territory
+from app.modules.admin.business_metrics_service import BusinessMetricsDashboardService
 from app.modules.admin.schemas import (
     ActivityItem,
     ActivityResponse,
     AdminListResponse,
     AdminUpsertRequest,
     AdminUser,
+    BusinessMetricsDashboardResponse,
     BusinessMetricsResponse,
     ProductionSignalsResponse,
     ServiceStatusItem,
@@ -71,6 +74,13 @@ def get_admin_service(supabase: DatabaseClient = Depends(get_supabase)) -> Admin
     return AdminService(supabase)
 
 
+def get_business_metrics_dashboard_service(
+    supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
+) -> BusinessMetricsDashboardService:
+    return BusinessMetricsDashboardService(supabase, settings)
+
+
 def _list_resource(
     service: AdminService,
     *,
@@ -117,6 +127,18 @@ async def get_metrics(
         return BusinessMetricsResponse(**service.get_business_metrics())
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch business metrics")
+
+
+@router.get("/business-metrics", response_model=BusinessMetricsDashboardResponse)
+async def get_business_metrics_dashboard(
+    _: AdminUser = Depends(RequirePermission("canViewBusinessMetrics")),
+    service: BusinessMetricsDashboardService = Depends(get_business_metrics_dashboard_service),
+):
+    try:
+        return BusinessMetricsDashboardResponse(**service.get_dashboard())
+    except Exception:
+        logger.exception("Failed to fetch business metrics dashboard")
+        raise HTTPException(status_code=500, detail="Failed to fetch business metrics dashboard")
 
 
 @router.get("/activity", response_model=ActivityResponse)
