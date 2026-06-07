@@ -18,7 +18,7 @@ from app.modules.calculator.schemas import (
     TerritoryScenario,
 )
 from app.modules.fx.service import FXService, TERRITORY_CURRENCY
-from app.modules.reports.builder import SCORE_WEIGHTS
+from app.modules.reports.builder import ReportBuilder, SCORE_WEIGHTS
 from app.modules.reports.helpers import (
     best_incentive,
     index_incentives_by_territory,
@@ -57,6 +57,12 @@ class CalculatorService:
         # ── 1. Fetch data from DB ──────────────────────────────────────────
         incentives = self._fetch_table("incentive_programs")
         crew_costs_raw = self._fetch_table("crew_costs")
+        territory_profiles_raw = self._fetch_table("territory_profiles")
+        territory_profiles = {
+            row["territory"]: row
+            for row in territory_profiles_raw
+            if row.get("territory")
+        }
 
         # ── 2. Convert budget to GBP ───────────────────────────────────────
         budget_gbp_info = self.fx.convert_budget(
@@ -133,14 +139,12 @@ class CalculatorService:
             fx_date_str = info.get("rate_date")
             break
 
-        # ── 6. Resolve baseline for crew cost & currency advantage ────────
+        # ── 6. Resolve baseline for crew cost scoring ─────────────────────
         baseline = getattr(request, "baseline", "GB")
         baseline_country = _BASELINE_CREW_COUNTRY.get(baseline, baseline)
         baseline_rate_gbp = self._compute_baseline_rate(
             baseline_country, crew_by_territory,
         )
-        baseline_currency = {"GB": "GBP", "US": "USD"}.get(baseline, request.budget_currency)
-
         # ── 7. Compute per-territory scenarios ─────────────────────────────
         weights = SCORE_WEIGHTS.get(request.production_priority, SCORE_WEIGHTS["full"])
         territory_scenarios: list[TerritoryScenario] = []
@@ -155,7 +159,7 @@ class CalculatorService:
                 fx_rates_from_budget=fx_rates_from_budget,
                 weights=weights,
                 baseline_rate_gbp=baseline_rate_gbp,
-                baseline_currency=baseline_currency,
+                territory_profiles=territory_profiles,
             )
             if scenario is not None:
                 territory_scenarios.append(scenario)
@@ -186,7 +190,7 @@ class CalculatorService:
         fx_rates_from_budget: dict[str, dict],
         weights: dict[str, float],
         baseline_rate_gbp: float = 900,
-        baseline_currency: str = "GBP",
+        territory_profiles: dict[str, dict] | None = None,
     ) -> TerritoryScenario | None:
         rows = territory_incentives.get(territory, [])
         if not rows:
@@ -247,7 +251,7 @@ class CalculatorService:
 
         # ── Currency advantage ─────────────────────────────────────────────
         ca_score, ca_warning = self.fx.compute_currency_advantage_score(
-            baseline_currency, territory_currency,
+            request.budget_currency, territory_currency,
         )
 
         # FX rate for this territory
@@ -257,6 +261,11 @@ class CalculatorService:
 
         # ── Crew cost index ────────────────────────────────────────────────
         crew_cost_index = self._crew_rate_anchor(territory, crew_by_territory, baseline_rate_gbp)
+        territory_profile = self._get_territory_profile(territory, territory_profiles or {})
+        crew_depth_score = self._profile_score(territory_profile, "crew_depth_score")
+        infrastructure_score = self._profile_score(territory_profile, "infrastructure_score")
+        crew_depth_for_score = crew_depth_score if crew_depth_score is not None else 50
+        infrastructure_for_score = infrastructure_score if infrastructure_score is not None else 50
 
         # Build crew rate strings in budget currency
         crew_rates = self._build_crew_rates(
@@ -345,31 +354,19 @@ class CalculatorService:
         payment_timeline = best.get("payment_timeline_notes")
 
         # ── Overall score ──────────────────────────────────────────────────
-        incentive_strength = self._compute_incentive_strength(
-            corrected["rate_gross"], corrected["rate_net"],
-        )
-        reliability = 50  # Default when no specific data
+        incentive_strength = ReportBuilder._compute_incentive_strength(best)
+        reliability, bankability_label = ReportBuilder._compute_reliability(best)
         overall_score = (
             weights.get("costEfficiency", 0) * (crew_cost_index or 50)
-            + weights.get("crewDepth", 0) * 50  # default — no AI fill here
-            + weights.get("infrastructure", 0) * 50  # default
+            + weights.get("crewDepth", 0) * crew_depth_for_score
+            + weights.get("infrastructure", 0) * infrastructure_for_score
             + weights.get("incentiveStrength", 0) * incentive_strength
             + weights.get("currencyAdvantage", 0) * ca_score
             + weights.get("incentiveReliability", 0) * reliability
         )
 
         # PR 8 — Bankability and Financial Return Score
-        from app.modules.reports.builder import _compute_bankability_label as _bl
-        bankability_label = _bl(
-            best.get("payment_reliability"),
-            best.get("payment_timeline_days_max"),
-        )
-        incentive_r_score = (
-            weights.get("incentiveReliability", 0.15) * 100
-        )
-        # Use the actual incentiveReliability score from reliability computation
-        _rel_score = reliability if reliability != 50 else 50
-        frs = max(0, min(100, int(round((incentive_strength * 0.50) + (_rel_score * 0.50)))))
+        frs = max(0, min(100, int(round((incentive_strength * 0.50) + (reliability * 0.50)))))
         if bankability_label == "NOT BANKABLE" or frs < 45:
             frs_verdict: str = "Caution"
         elif frs >= 70 and bankability_label == "BANKABLE":
@@ -398,6 +395,10 @@ class CalculatorService:
             fx_rate=fx_rate,
             fx_rate_date=fx_rate_date,
             crew_cost_index=crew_cost_index,
+            crew_depth_score=crew_depth_score,
+            crew_depth_tier=self._profile_tier(territory_profile, "crew_depth_tier"),
+            infrastructure_score=infrastructure_score,
+            infrastructure_tier=self._profile_tier(territory_profile, "infrastructure_tier"),
             crew_rates=crew_rates,
             net_saving=d_net,
             net_saving_display=net_display,
@@ -495,6 +496,56 @@ class CalculatorService:
         avg_rate = sum(rates_gbp) / len(rates_gbp)
         anchor = int(baseline_rate_gbp * _ANCHOR_MID / avg_rate)
         return max(20, min(85, anchor))
+
+    def _get_territory_profile(
+        self,
+        territory: str,
+        territory_profiles: dict[str, dict],
+    ) -> dict | None:
+        if not territory_profiles:
+            return None
+
+        candidates: list[str] = [territory]
+        t_obj = resolve_territory(territory)
+        if t_obj:
+            candidates.extend([t_obj.label, t_obj.iso])
+            if t_obj.parent:
+                candidates.extend([t_obj.parent.label, t_obj.parent.iso])
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            profile = territory_profiles.get(candidate)
+            if isinstance(profile, dict):
+                return profile
+
+        territory_lower = territory.lower()
+        for profile in territory_profiles.values():
+            if not isinstance(profile, dict):
+                continue
+            row_territory = str(profile.get("territory") or "").lower()
+            row_iso = str(profile.get("iso_code") or "").lower()
+            if territory_lower in {row_territory, row_iso}:
+                return profile
+        return None
+
+    @staticmethod
+    def _profile_score(profile: dict | None, key: str) -> int | None:
+        if not profile:
+            return None
+        raw = to_float(profile.get(key))
+        if raw is None:
+            return None
+        return max(0, min(100, int(round(raw))))
+
+    @staticmethod
+    def _profile_tier(profile: dict | None, key: str) -> str | None:
+        if not profile:
+            return None
+        raw = str(profile.get(key) or "").strip()
+        return raw or None
 
     def _compute_baseline_rate(
         self, country_code: str, crew_by_territory: dict[str, list[dict]],

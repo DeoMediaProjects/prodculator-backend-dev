@@ -19,7 +19,7 @@ from app.modules.reports.schemas import (
     UpdateProjectDetailsRequest,
 )
 from app.modules.reports.service import ReportService
-from app.modules.scripts.service import ScriptAnalysisService
+from app.modules.scripts.service import ClaudeUnavailableError, ScriptAnalysisService
 from app.modules.email_gating.service import EmailGatingService
 from app.modules.subscriptions.service import SubscriptionService
 
@@ -189,9 +189,28 @@ async def create_report(
     # Explicitly delete the bytes so they are not referenced beyond this scope
     del file_bytes
 
+    # Pre-flight: confirm Scriptelligence (Claude) is reachable BEFORE we charge
+    # for the report (create the row / consume a credit). If it's down, the user
+    # is never charged — they get a clear, retryable error to display instead.
+    try:
+        script_service.check_available()
+    except ClaudeUnavailableError as exc:
+        logger.warning(
+            "Report creation blocked — Scriptelligence unavailable: user_id=%s reason=%s",
+            user.id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Scriptelligence is currently not available",
+        )
+
     try:
         started = perf_counter()
         metadata = body_data.model_dump(exclude={"script_file_path"})
+        # Record whether this report consumed a pay-per-report credit so the
+        # background task can refund it if generation ultimately fails.
+        metadata["_credit_consumed"] = using_credit
         report_id = service.create_report(
             user_id=user.id,
             script_title=body_data.script_title,
@@ -1122,6 +1141,26 @@ def process_report_task(
                 },
             )
             logger.info("Report marked failed: report_id=%s", report_id)
+
+            # Never charge for a report that didn't generate. The failed row is
+            # already excluded from the quota count; if it also consumed a
+            # pay-per-report credit, hand that credit back.
+            if ((report_row or {}).get("request_metadata") or {}).get("_credit_consumed"):
+                try:
+                    from app.modules.subscriptions.service import SubscriptionService
+
+                    SubscriptionService(supabase).refund_report_credit(user_id)
+                    logger.info(
+                        "Refunded pay-per-report credit after failure: report_id=%s user_id=%s",
+                        report_id,
+                        user_id,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to refund pay-per-report credit: report_id=%s user_id=%s",
+                        report_id,
+                        user_id,
+                    )
             try:
                 email_service.send(
                     user_email,

@@ -35,6 +35,10 @@ class User(SQLModel, table=True):
     is_blocked: bool = Field(default=False)
     blocked_at: datetime | None = None
     last_active: datetime | None = None
+    # Billing geography captured from Stripe (ISO-3166 country code, state/province
+    # code) — drives the admin Business Metrics geographic distribution.
+    country: str | None = None
+    state: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

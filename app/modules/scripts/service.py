@@ -22,6 +22,17 @@ from app.modules.scripts.schemas import (
 
 logger = logging.getLogger(__name__)
 
+
+class ClaudeUnavailableError(Exception):
+    """The Anthropic API is unreachable/overloaded — distinct from a content
+    processing failure.
+
+    Callers use this to avoid charging the user (pre-flight probe) and to mark a
+    report failed rather than silently returning a heuristic fallback when an
+    outage strikes mid-generation.
+    """
+
+
 ALLOWED_EXTENSIONS = {"pdf", "txt", "fountain", "fdx"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_PROMPT_TEXT_CHARS = 240
@@ -213,6 +224,44 @@ class ScriptAnalysisService:
             max_retries=0,  # We handle retries ourselves in _call_anthropic_with_retry
         )
 
+    def check_available(self) -> None:
+        """Pre-flight reachability probe — call BEFORE charging for a report.
+
+        Issues a minimal (max_tokens=1) request against the configured model with
+        a short timeout. Raises ClaudeUnavailableError if the API can't be reached
+        for any reason (missing key, connection/timeout/overloaded/rate-limit, or
+        an unexpected error), so the caller can refuse to charge and surface
+        "Scriptelligence is currently not available" to the user. Returns None when
+        the probe succeeds.
+        """
+        if not self.settings.ANTHROPIC_API_KEY:
+            raise ClaudeUnavailableError("Anthropic API key is not configured")
+
+        timeout = getattr(self.settings, "ANTHROPIC_HEALTHCHECK_TIMEOUT", 10) or 10
+        client = self._build_client(timeout)
+        try:
+            client.messages.create(
+                model=self.settings.ANTHROPIC_MODEL,
+                max_tokens=1,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+        except Exception as exc:
+            if self._is_rate_limit_error(exc):
+                kind = "rate_limit"
+            elif self._is_timeout_error(exc):
+                kind = "timeout"
+            elif self._is_connection_error(exc):
+                kind = "connection"
+            else:
+                kind = "other"
+            logger.error(
+                "Claude availability probe failed: kind=%s exc_type=%s error=%s",
+                kind,
+                type(exc).__name__,
+                exc,
+            )
+            raise ClaudeUnavailableError(f"Anthropic API unavailable ({kind}): {exc}") from exc
+
     def _stage_max_tokens(self, stage: str) -> int:
         legacy = self.settings.ANTHROPIC_MAX_TOKENS
         stage_specific: int | None
@@ -317,6 +366,10 @@ class ScriptAnalysisService:
             analysis_meta.setdefault("fallbackUsed", False)
             self._emit_script_analysis_metrics(script_title, script_content, analysis_meta)
             return result, analysis_meta
+        except ClaudeUnavailableError:
+            # A total Anthropic outage must NOT be masked as a heuristic fallback
+            # report — propagate so the caller marks the report failed and refunds.
+            raise
         except Exception as exc:
             analysis_meta.update(
                 {
@@ -442,6 +495,7 @@ class ScriptAnalysisService:
 
         chunk_results: list[dict[str, Any]] = []
         failed_chunks = 0
+        availability_failures = 0
         failed_chunk_details: list[dict[str, Any]] = []
         stop_reason_counts: Counter[str] = Counter()
         for idx, chunk_text in enumerate(chunks, start=1):
@@ -451,6 +505,12 @@ class ScriptAnalysisService:
                 chunk_results.append(chunk_payload)
             except Exception as exc:
                 failed_chunks += 1
+                if (
+                    self._is_connection_error(exc)
+                    or self._is_timeout_error(exc)
+                    or self._is_rate_limit_error(exc)
+                ):
+                    availability_failures += 1
                 stop_reason = self._infer_stop_reason(exc)
                 if stop_reason:
                     stop_reason_counts[stop_reason] += 1
@@ -472,6 +532,15 @@ class ScriptAnalysisService:
                 )
 
         if not chunk_results:
+            # No chunk yielded usable signal. If EVERY failure was an availability
+            # error (connection/timeout/overloaded/rate-limit), this is an outage,
+            # not a content problem — raise the typed error so the report is failed
+            # and the user refunded rather than handed a heuristic fallback.
+            if failed_chunks > 0 and availability_failures == failed_chunks:
+                raise ClaudeUnavailableError(
+                    f"All {failed_chunks} script chunks failed due to Anthropic "
+                    f"availability errors"
+                )
             raise ValueError("Chunk extraction produced no usable results")
 
         aggregated = self._aggregate_chunk_results(
@@ -1382,8 +1451,29 @@ class ScriptAnalysisService:
         raise ValueError("Anthropic returned no text content")
 
     @staticmethod
-    def _default_scoring_methodology() -> dict:
+    def _default_scoring_methodology(production_priority: str = "full") -> dict:
         """Return a static scoring-methodology block that explains how scores work."""
+        from app.modules.reports.builder import SCORE_WEIGHTS
+
+        labels = {
+            "incentiveStrength": "Incentive Strength",
+            "incentiveReliability": "Incentive Reliability",
+            "costEfficiency": "Cost Efficiency",
+            "currencyAdvantage": "Currency Advantage",
+            "crewDepth": "Crew Depth",
+            "infrastructure": "Infrastructure",
+        }
+        mode_labels = {
+            "full": "Full picture",
+            "incentive": "Maximise incentive return",
+            "location": "Location and creative fit first",
+        }
+        weights = SCORE_WEIGHTS.get(production_priority, SCORE_WEIGHTS["full"])
+        weight_line = " · ".join(
+            f"{labels[key]} {int(round(weight * 100))}%"
+            for key, weight in weights.items()
+        )
+
         return {
             "overview": (
                 "Each territory is scored out of 100 based on six weighted "
@@ -1396,35 +1486,39 @@ class ScriptAnalysisService:
                     "key": "costEfficiency",
                     "description": (
                         "Measures how far your budget stretches in this territory "
-                        "— crew day-rates, stage hire, equipment rental, and "
-                        "general cost of living relative to comparable markets."
+                        "through crew day rates, equipment, and production costs. "
+                        "Computed from published rate scales in our database, "
+                        "benchmarked against the UK market and converted at live "
+                        "exchange rates."
                     ),
                 },
                 {
                     "name": "Crew Depth",
                     "key": "crewDepth",
                     "description": (
-                        "Availability of experienced, English-speaking crew across "
-                        "all key departments — camera, grip, electric, art, VFX, "
-                        "and post-production."
+                        "Measures whether the territory can staff all key departments "
+                        "without significant importation of experienced crew. Rated "
+                        "Established, Growing, or Emerging from verified production "
+                        "volume data and industry sources."
                     ),
                 },
                 {
                     "name": "Infrastructure",
                     "key": "infrastructure",
                     "description": (
-                        "Quality and capacity of studio stages, post-production "
-                        "facilities, equipment houses, and supporting logistics "
-                        "such as transport and accommodation."
+                        "Measures the physical production ecosystem: sound stages, "
+                        "equipment houses, post-production facilities, and logistics. "
+                        "Rated Established, Growing, or Emerging from verified facility "
+                        "data."
                     ),
                 },
                 {
                     "name": "Incentive Strength",
                     "key": "incentiveStrength",
                     "description": (
-                        "Value of available tax credits, rebates, and grants — "
-                        "factoring in the rebate percentage, spend caps, "
-                        "qualification complexity, and typical payment timelines."
+                        "Measures the financial value of the available rebate or tax "
+                        "credit, factoring in rate, qualifying spend, caps, and access "
+                        "complexity. Computed from the verified incentive database."
                     ),
                 },
                 {
@@ -1432,27 +1526,26 @@ class ScriptAnalysisService:
                     "key": "currencyAdvantage",
                     "description": (
                         "Purchasing power of the production's budget currency "
-                        "versus the territory's local currency. Computed from "
-                        "live exchange rates at report generation time."
+                        "in the shoot territory at report generation time. Computed "
+                        "from live exchange rates; above 50 means more local purchasing "
+                        "power, below 50 means less."
                     ),
                 },
                 {
                     "name": "Incentive Reliability",
                     "key": "incentiveReliability",
                     "description": (
-                        "How bankable is the incentive? Based on payment reliability "
-                        "score, payment timeline, and programme stability. A high "
-                        "rate with low reliability should not be included in "
-                        "investor projections without verification."
+                        "Measures whether the incentive is bankable: whether a lender "
+                        "will advance funds against it before payout. Based on payment "
+                        "track record, stability, and current risk flags."
                     ),
                 },
             ],
             "weightingNote": (
-                "Dimension weights are adjusted to match the production priority "
-                "you selected. 'Incentive-first' emphasises incentive strength "
-                "(40%). 'Location-first' emphasises crew depth and infrastructure "
-                "(25% each). Currency advantage is always 10%. Incentive "
-                "reliability is 5–10%."
+                f"{mode_labels.get(production_priority, mode_labels['full'])} mode "
+                f"uses these weights: {weight_line}. Full picture and Maximise "
+                "incentive return are recommended for investor-facing reports; "
+                "Location and creative fit first is for creative location decisions."
             ),
             "colorKey": {
                 "green": "Score ≥ 70 — strong fit",
@@ -1640,9 +1733,9 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                 is_preview,
                 int((perf_counter() - started) * 1000),
             )
-            # Fall back: return skeleton with safe defaults for narrative fields
-            self._fill_narrative_defaults(skeleton)
             production_priority = datasets.get("_production_priority", "full")
+            # Fall back: return skeleton with safe defaults for narrative fields
+            self._fill_narrative_defaults(skeleton, production_priority)
             ReportBuilder.compute_overall_scores(skeleton, production_priority)
             return skeleton
 
@@ -1654,8 +1747,8 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                 "Failed to parse narrative fill JSON, using defaults: raw_chars=%s",
                 len(raw),
             )
-            self._fill_narrative_defaults(skeleton)
             production_priority = datasets.get("_production_priority", "full")
+            self._fill_narrative_defaults(skeleton, production_priority)
             ReportBuilder.compute_overall_scores(skeleton, production_priority)
             return skeleton
 
@@ -1665,6 +1758,9 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
         # Compute overall scores now that AI has filled 3 qualitative dimensions
         production_priority = datasets.get("_production_priority", "full")
         ReportBuilder.compute_overall_scores(report, production_priority)
+        report["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology(
+            production_priority,
+        )
 
         # Post-AI financial audit: flag any rate% in narratives that deviate from DB
         audit_warnings = self._audit_financial_claims(report)
@@ -1810,10 +1906,13 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             territory = loc.get("name", "")
             narr = location_narratives.get(territory, {})
 
-            # costEfficiency: AI may refine within ±15 of the DB anchor
+            # costEfficiency: DB-derived anchor wins when present. AI can only
+            # fill legacy skeletons where no deterministic value exists.
             cost_anchor = loc.pop("_costEfficiencyAnchor", None)
             ai_cost = narr.get("costEfficiency")
-            if isinstance(ai_cost, (int, float)):
+            if isinstance(loc.get("costEfficiency"), (int, float)):
+                pass
+            elif isinstance(ai_cost, (int, float)):
                 ai_cost_int = max(0, min(100, int(ai_cost)))
                 if cost_anchor is not None:
                     ai_cost_int = max(cost_anchor - 15, min(cost_anchor + 15, ai_cost_int))
@@ -1821,8 +1920,11 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             elif loc.get("costEfficiency") is None:
                 loc["costEfficiency"] = cost_anchor if cost_anchor is not None else 50
 
-            # crewDepth and infrastructure: pure AI estimates
+            # crewDepth and infrastructure: maintained territory-profile scores
+            # win when present; AI can only fill legacy skeletons with no score.
             for dim in ("crewDepth", "infrastructure"):
+                if isinstance(loc.get(dim), (int, float)):
+                    continue
                 val = narr.get(dim)
                 if isinstance(val, (int, float)):
                     loc[dim] = max(0, min(100, int(val)))
@@ -1934,12 +2036,17 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                 loc.pop("_costEfficiencyAnchor", None)
 
         # Add scoring methodology
-        skeleton["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology()
+        skeleton["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology(
+            skeleton.get("productionPriority", "full"),
+        )
 
         return skeleton
 
     @staticmethod
-    def _fill_narrative_defaults(skeleton: dict) -> None:
+    def _fill_narrative_defaults(
+        skeleton: dict,
+        production_priority: str = "full",
+    ) -> None:
         """Fill safe defaults for all AI-narrative fields when AI call fails."""
         if not skeleton.get("genre"):
             skeleton["genre"] = "Drama"
@@ -2002,7 +2109,9 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                 if dive.get("keyRisks") is None:
                     dive["keyRisks"] = []
 
-        skeleton["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology()
+        skeleton["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology(
+            production_priority,
+        )
 
     def _fallback_analysis(self, request_metadata: dict, is_preview: bool) -> dict:
         """Return fallback analysis when production analysis API call fails."""
@@ -2081,7 +2190,9 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             "comparables": [],
             "weatherLogistics": [],
             "fundingOpportunities": [],
-            "scoringMethodology": self._default_scoring_methodology(),
+            "scoringMethodology": self._default_scoring_methodology(
+                request_metadata.get("production_priority", "full"),
+            ),
         }
 
     def _sanitize(self, data: dict[str, Any]) -> ScriptAnalysisResult:

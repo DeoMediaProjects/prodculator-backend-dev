@@ -21,7 +21,12 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 
 
-def seed_admin(email: str, password: str, name: str | None = None) -> None:
+def seed_admin(
+    email: str,
+    password: str,
+    name: str | None = None,
+    role: str = "master_admin",
+) -> None:
     settings = get_settings()
     engine = create_engine(settings.DB_URL)
 
@@ -38,14 +43,15 @@ def seed_admin(email: str, password: str, name: str | None = None) -> None:
         admin_id = str(uuid4())
         session.execute(
             text(
-                "INSERT INTO admins (id, email, password_hash, name, created_at) "
-                "VALUES (:id, :email, :password_hash, :name, :created_at)"
+                "INSERT INTO admins (id, email, password_hash, name, role, created_at) "
+                "VALUES (:id, :email, :password_hash, :name, :role, :created_at)"
             ),
             {
                 "id": admin_id,
                 "email": email.strip().lower(),
                 "password_hash": hash_password(password),
                 "name": name or None,
+                "role": role,
                 "created_at": datetime.now(timezone.utc),
             },
         )
@@ -62,6 +68,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Seed an admin user")
     parser.add_argument("--email", help="Admin email address")
     parser.add_argument("--name", help="Admin display name (optional)")
+    parser.add_argument(
+        "--role", default="master_admin", help="Admin role (default: master_admin)"
+    )
     args = parser.parse_args()
 
     email = args.email or input("Email: ").strip()
@@ -81,7 +90,7 @@ def main() -> None:
 
     name = args.name or input("Name (optional, press Enter to skip): ").strip() or None
 
-    seed_admin(email=email, password=password, name=name)
+    seed_admin(email=email, password=password, name=name, role=args.role)
 
 
 if __name__ == "__main__":

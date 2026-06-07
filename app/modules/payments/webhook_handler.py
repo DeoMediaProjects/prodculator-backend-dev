@@ -21,18 +21,47 @@ _PLAN_LABEL: dict[str, str] = {
 }
 
 
+def _billing_geo_from_session(session: dict) -> dict[str, str]:
+    """Extract billing country/state from a Stripe checkout session.
+
+    Stripe populates ``customer_details.address`` with whatever billing address
+    the customer entered. Returns only the keys that are present so an absent
+    address never blanks out a value already on the user row.
+    """
+    address = (session.get("customer_details") or {}).get("address") or {}
+    geo: dict[str, str] = {}
+    if address.get("country"):
+        geo["country"] = address["country"]
+    if address.get("state"):
+        geo["state"] = address["state"]
+    return geo
+
+
 class WebhookHandler:
-    def __init__(self, supabase: DatabaseClient, settings: Settings | None = None):
+    def __init__(
+        self,
+        supabase: DatabaseClient,
+        settings: Settings | None = None,
+        background_tasks=None,
+    ):
         self.supabase = supabase
         self.settings = settings
         self.email_service = EmailService(settings) if settings else None
+        # Optional FastAPI BackgroundTasks. When supplied, the slow SMTP send is
+        # deferred until after the webhook responds 200 to Stripe, so a slow
+        # email provider can't push the response past Stripe's delivery timeout.
+        self.background_tasks = background_tasks
 
     def handle_event(self, event_id: str, event_type: str, data_object: dict) -> None:
         """Dispatch webhook event to appropriate handler.
 
         event_id is the Stripe event ID used for idempotency deduplication.
         """
-        # Deduplication: skip events we've already processed.
+        # Deduplication: skip events we've already fully processed. The marker is
+        # recorded only AFTER the handler succeeds (see end of method) — if it
+        # were written first, a mid-handler failure would mark the event done and
+        # Stripe's retry would be skipped, leaving a customer charged but never
+        # upgraded.
         existing = (
             self.supabase.table("processed_webhook_events")
             .select("event_id")
@@ -43,10 +72,6 @@ class WebhookHandler:
         if existing.data:
             logger.info("Skipping duplicate webhook event: %s", event_id)
             return
-
-        self.supabase.table("processed_webhook_events").insert(
-            {"event_id": event_id, "processed_at": datetime.now(timezone.utc).isoformat()}
-        ).execute()
 
         handlers = {
             "checkout.session.completed": self._handle_checkout_completed,
@@ -62,9 +87,30 @@ class WebhookHandler:
         }
         handler = handlers.get(event_type)
         if handler:
+            # Let exceptions propagate: the route returns 500 and Stripe retries.
+            # Because the dedup marker below has not been written yet, the retry
+            # reprocesses the event. The handlers' DB writes are idempotent
+            # (upsert on stripe_subscription_id, plan set to a fixed value), so
+            # reprocessing converges rather than double-applying.
             handler(data_object)
         else:
             logger.info("Unhandled webhook event: %s", event_type)
+
+        # Record the marker now that the work has committed. Tolerate a unique
+        # violation from a concurrent delivery of the same event — the PRIMARY
+        # KEY on event_id makes the second insert raise. Both deliveries ran the
+        # same idempotent work, so the loser just moves on.
+        try:
+            self.supabase.table("processed_webhook_events").insert(
+                {"event_id": event_id, "processed_at": datetime.now(timezone.utc).isoformat()}
+            ).execute()
+        except Exception as exc:
+            # Clear the failed transaction so the request's session is reusable.
+            try:
+                self.supabase.session.rollback()
+            except Exception:
+                pass
+            logger.info("Event %s already recorded by a concurrent delivery: %s", event_id, exc)
 
     def _handle_checkout_completed(self, session: dict) -> None:
         user_id = session.get("metadata", {}).get("userId")
@@ -107,11 +153,13 @@ class WebhookHandler:
             on_conflict="stripe_subscription_id",
         ).execute()
 
-        # Update user record so /api/auth/me reflects the new plan
+        # Update user record so /api/auth/me reflects the new plan. Capture the
+        # billing country/state from the checkout session at the same time so the
+        # admin Business Metrics dashboard can show geographic distribution.
         user_type = "paid" if plan_type != "free" else "free"
-        self.supabase.table("users").update(
-            {"plan": plan_type, "user_type": user_type}
-        ).eq("id", user_id).execute()
+        user_update: dict = {"plan": plan_type, "user_type": user_type}
+        user_update.update(_billing_geo_from_session(session))
+        self.supabase.table("users").update(user_update).eq("id", user_id).execute()
         self._bust_user_cache(user_id)
 
         self._send_email_to_user_id(
@@ -191,22 +239,61 @@ class WebhookHandler:
         resolved_plan: str | None = None
         if self.settings:
             resolved_plan = resolve_plan_from_subscription(subscription, self.settings)
-        if resolved_plan:
-            payload["plan_type"] = resolved_plan
-            payload["report_limit"] = PLAN_REPORT_LIMITS.get(resolved_plan, 3)
 
         # Fetch the current row BEFORE updating so we have the previous plan_type
-        # available for the downgrade_applied email (the UPDATE result returns the
-        # post-write state, losing the old value).
+        # (for the downgrade_applied email) and the pending-downgrade markers.
         pre_update = (
             self.supabase.table("subscriptions")
-            .select("plan_type, pending_plan, user_id")
+            .select("plan_type, pending_plan, stripe_schedule_id, user_id")
             .eq("stripe_subscription_id", subscription_id)
             .limit(1)
             .execute()
         )
         pre_row = (pre_update.data or [{}])[0]
         previous_plan = pre_row.get("plan_type")
+        pending_plan = pre_row.get("pending_plan")
+
+        # A pending downgrade is backed by a Stripe Subscription Schedule (created
+        # with end_behavior="release"). Stripe clears subscription.schedule once
+        # that schedule completes or is released, so "we had a schedule locally but
+        # Stripe no longer reports one" means the rollover has happened (or the
+        # schedule was cancelled out-of-band). During the pending window Stripe
+        # still reports the schedule, so unrelated subscription.updated events
+        # (e.g. a card update) won't be mistaken for a rollover.
+        had_local_schedule = bool(pre_row.get("stripe_schedule_id")) or bool(pending_plan)
+        schedule_fired = had_local_schedule and not subscription.get("schedule")
+
+        # #7 — price→plan resolution fails if a price ID isn't configured in
+        # settings. If a schedule we created has now fired, trust the pending_plan
+        # we recorded rather than stranding the user on their old (higher) tier.
+        if not resolved_plan and schedule_fired and pending_plan:
+            resolved_plan = normalize_plan(pending_plan)
+            logger.error(
+                "subscription %s: could not resolve plan from price; falling back to "
+                "recorded pending_plan=%s after schedule fired. Check Stripe price IDs "
+                "in settings — automatic resolution is broken.",
+                subscription_id,
+                resolved_plan,
+            )
+        elif not resolved_plan and (pending_plan or pre_row.get("stripe_schedule_id")):
+            logger.error(
+                "subscription %s: could not resolve plan from price while a downgrade "
+                "was pending (pending_plan=%s). Entitlement NOT updated — check Stripe "
+                "price IDs in settings.",
+                subscription_id,
+                pending_plan,
+            )
+
+        if resolved_plan:
+            payload["plan_type"] = resolved_plan
+            payload["report_limit"] = PLAN_REPORT_LIMITS.get(resolved_plan, 3)
+
+        # #6 / #8 — once the schedule has fired, clear the pending markers no matter
+        # which plan the rollover actually landed on. Folding this into the same
+        # UPDATE keeps it atomic with the plan/period write.
+        if schedule_fired:
+            payload["pending_plan"] = None
+            payload["stripe_schedule_id"] = None
 
         result = (
             self.supabase.table("subscriptions")
@@ -226,20 +313,18 @@ class WebhookHandler:
             return
 
         if not resolved_plan:
+            # Status/period dates (and any pending-marker clear) were still
+            # persisted above; we just can't mirror an unknown plan to the user.
             return
 
-        row = rows[0]
-        user_id = row.get("user_id")
+        user_id = rows[0].get("user_id")
         if not user_id:
             return
 
-        # If a downgrade was scheduled (pending_plan set) and the now-active plan
-        # matches it, the rollover has happened — clear the pending marker and
-        # the schedule reference, then notify the user.
-        if row.get("pending_plan") == resolved_plan:
-            self.supabase.table("subscriptions").update(
-                {"pending_plan": None, "stripe_schedule_id": None}
-            ).eq("stripe_subscription_id", subscription_id).execute()
+        # Notify the user only when the rollover landed on the plan they were told
+        # it would (pending_plan). An out-of-band schedule change to a different
+        # plan still clears the marker above, but we skip the now-inaccurate email.
+        if schedule_fired and pending_plan and normalize_plan(pending_plan) == resolved_plan:
             self._send_email_to_user_id(
                 user_id,
                 "downgrade_applied",
@@ -417,6 +502,8 @@ class WebhookHandler:
     def _send_email_to_user_id(self, user_id: str, template_name: str, context: dict) -> None:
         if not self.email_service:
             return
+        # Resolve the address synchronously — the DB session is request-scoped
+        # and is closed once the webhook responds, so the lookup must happen now.
         try:
             user_result = (
                 self.supabase.table("users").select("email").eq("id", user_id).limit(1).execute()
@@ -424,6 +511,27 @@ class WebhookHandler:
             rows = user_result.data or []
             if not rows or not rows[0].get("email"):
                 return
-            self.email_service.send(rows[0]["email"], template_name, context)
+            email = rows[0]["email"]
         except Exception as exc:
-            logger.warning("Unable to send webhook email (%s): %s", template_name, exc)
+            logger.warning("Unable to look up email recipient (%s): %s", template_name, exc)
+            return
+
+        self._dispatch_email(email, template_name, context)
+
+    def _dispatch_email(self, email: str, template_name: str, context: dict) -> None:
+        """Send the email, deferring the slow SMTP call off the response path
+        when a BackgroundTasks instance is available. Never raises."""
+        email_service = self.email_service
+        if email_service is None:
+            return
+
+        def _send() -> None:
+            try:
+                email_service.send(email, template_name, context)
+            except Exception as exc:
+                logger.warning("Unable to send webhook email (%s): %s", template_name, exc)
+
+        if self.background_tasks is not None:
+            self.background_tasks.add_task(_send)
+        else:
+            _send()

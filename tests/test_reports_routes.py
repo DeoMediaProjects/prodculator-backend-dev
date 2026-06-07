@@ -3,12 +3,55 @@ import json
 from app.core.dependencies import get_current_user, get_optional_user
 from app.modules.reports import router as reports_router
 from app.modules.reports.router import get_report_service
+from app.modules.scripts.service import ClaudeUnavailableError, ScriptAnalysisService
+
+
+class _StubResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class _StubQuery:
+    """Minimal query stub for the subscription/usage check the create-report
+    route runs via SubscriptionService(service.supabase). Models an empty
+    account that owns one pay-per-report credit, so a paid report is allowed."""
+
+    def __init__(self, table_name):
+        self._table = table_name
+        self._single = False
+
+    def select(self, *_): return self
+    def eq(self, *_): return self
+    def in_(self, *_): return self
+    def gte(self, *_): return self
+    def lte(self, *_): return self
+    def limit(self, *_): return self
+    def update(self, *_): return self
+
+    def single(self):
+        self._single = True
+        return self
+
+    def execute(self):
+        if self._table == "users":
+            row = {"credits_remaining": 1}
+            return _StubResult(row if self._single else [row])
+        # subscriptions / reports: empty — no active sub, no prior reports.
+        return _StubResult(None if self._single else [])
+
+
+class _StubSupabase:
+    def table(self, name):
+        return _StubQuery(name)
 
 
 class FakeReportService:
     def __init__(self):
         self._reports = {}
         self._counter = 0
+        # The route builds SubscriptionService(service.supabase) for the usage
+        # gate; the real ReportService exposes .supabase, so the fake must too.
+        self.supabase = _StubSupabase()
 
     def create_report(
         self,
@@ -63,6 +106,9 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     client.app.dependency_overrides[get_optional_user] = lambda: auth_user
     client.app.dependency_overrides[get_report_service] = lambda: service
 
+    # Pre-flight Claude probe passes (Scriptelligence reachable).
+    monkeypatch.setattr(ScriptAnalysisService, "check_available", lambda self: None)
+
     def fake_task(report_id, *_args, **_kwargs):
         service._reports[report_id]["status"] = "completed"
         service._reports[report_id]["completed_at"] = "2026-01-01T00:01:00Z"
@@ -84,6 +130,38 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     )
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "completed"
+
+
+def test_report_create_blocked_when_claude_unavailable(client, auth_user, monkeypatch):
+    """When Scriptelligence (Claude) is unreachable, the report is NOT created
+    and the user is NOT charged — a 503 with a display message is returned."""
+    service = FakeReportService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_optional_user] = lambda: auth_user
+    client.app.dependency_overrides[get_report_service] = lambda: service
+
+    def boom(self):
+        raise ClaudeUnavailableError("Anthropic API unavailable (connection)")
+
+    monkeypatch.setattr(ScriptAnalysisService, "check_available", boom)
+
+    # If the pre-flight ever let this through, the background task would explode —
+    # makes an accidental charge loud rather than silent.
+    def fail_task(*_a, **_kw):
+        raise AssertionError("process_report_task must not run when Claude is down")
+
+    monkeypatch.setattr(reports_router, "process_report_task", fail_task)
+
+    response = client.post(
+        "/api/reports",
+        headers={"Authorization": "Bearer token"},
+        data={"body": json.dumps(VALID_REPORT_PAYLOAD)},
+        files={"script_file": ("script.txt", b"INT. HOUSE - DAY\nHello world.", "text/plain")},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Scriptelligence is currently not available"
+    # No report row created -> no quota charge.
+    assert service._reports == {}
 
 
 def test_report_access_denied_for_other_user(client, auth_user):

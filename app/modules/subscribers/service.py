@@ -301,7 +301,9 @@ class SubscriberAdminService:
         if not user_result.data:
             raise ValueError("User not found")
 
-        current = user_result.data.get("credits_remaining", 0)
+        # credits_remaining may be NULL on legacy rows — coerce to 0 (matches
+        # the pay-per-report webhook path) so the addition can't blow up.
+        current = user_result.data.get("credits_remaining") or 0
         new_credits = max(0, current + adjustment)
 
         updated = (

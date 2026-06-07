@@ -179,6 +179,30 @@ class TestLocationNarratives:
         assert loc["crewDepth"] == 50
         assert loc["infrastructure"] == 50
 
+    def test_precomputed_dimensions_are_not_overwritten_by_ai(self):
+        skel = _skeleton(territories=["UK"])
+        loc = skel["locationRankings"][0]
+        loc["costEfficiency"] = 68
+        loc["crewDepth"] = 82
+        loc["infrastructure"] = 64
+        loc["_costEfficiencyAnchor"] = 68
+
+        ai = {
+            "locationNarratives": {
+                "UK": {
+                    "costEfficiency": 10,
+                    "crewDepth": 12,
+                    "infrastructure": 14,
+                },
+            },
+        }
+
+        result = merge(skel, ai)
+        loc = result["locationRankings"][0]
+        assert loc["costEfficiency"] == 68
+        assert loc["crewDepth"] == 82
+        assert loc["infrastructure"] == 64
+
     def test_reasoning_from_ai(self):
         skel = _skeleton(territories=["UK"])
         ai = {"locationNarratives": {"UK": {"reasoning": ["Strong studios", "Tax credit"]}}}
@@ -388,6 +412,16 @@ class TestFullMerge:
         skel = _skeleton()
         result = merge(skel, {})
         assert result.get("scoringMethodology") is not None
+
+    def test_scoring_methodology_uses_selected_priority_weights(self):
+        method = ScriptAnalysisService._default_scoring_methodology("incentive")
+        note = method["weightingNote"]
+
+        assert "Maximise incentive return mode" in note
+        assert "Incentive Strength 45%" in note
+        assert "Incentive Reliability 15%" in note
+        assert "Programme Reliability" not in note
+        assert "40%" not in note
 
 
 # ── _fill_narrative_defaults ─────────────────────────────────────────────────

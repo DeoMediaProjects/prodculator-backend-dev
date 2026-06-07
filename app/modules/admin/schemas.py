@@ -174,3 +174,53 @@ class TaskItem(BaseModel):
 
 class TasksResponse(BaseModel):
     items: list[TaskItem]
+
+
+# ── Business Metrics dashboard ────────────────────────────────────────────────
+
+class CurrencyAmount(BaseModel):
+    currency: str
+    amount: float
+
+
+class PlanCount(BaseModel):
+    plan: str
+    count: int
+
+
+class RoleCount(BaseModel):
+    role: str
+    count: int
+
+
+class GeoCountry(BaseModel):
+    country_code: str
+    country: str
+    users: int
+    percentage: float
+    revenue_usd: float
+
+
+class GeoState(BaseModel):
+    state_code: str
+    state: str
+    users: int
+    revenue_usd: float
+
+
+class BusinessMetricsDashboardResponse(BaseModel):
+    total_users: int
+    total_paid_users: int
+    active_subscriptions: int
+    mrr_usd: float
+    arr_usd: float
+    mrr_by_currency: list[CurrencyAmount]
+    monthly_churn_percent: float
+    free_to_paid_percent: float
+    avg_days_to_convert: float | None = None
+    activation_rate_percent: float
+    plan_distribution: list[PlanCount]
+    role_distribution: list[RoleCount]
+    geo_available: bool
+    geographic: list[GeoCountry]
+    us_states: list[GeoState]
