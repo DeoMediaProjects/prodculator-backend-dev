@@ -13,6 +13,7 @@ import pytest
 
 from app.modules.reports.builder import (
     ReportBuilder,
+    SCORE_WEIGHTS,
     _compute_bankability_label,
     _incentive_rate_score,
     _incentive_qualification_score,
@@ -134,6 +135,7 @@ def _make_datasets(
     producer_country: str | None = None,
     currency_advantage_scores: dict | None = None,
     visa_requirements: dict | None = None,
+    territory_profiles: dict | None = None,
 ) -> dict:
     ds: dict = {
         "incentives": incentives or [],
@@ -155,6 +157,7 @@ def _make_datasets(
         "_producer_country": producer_country,
         "_currency_advantage_scores": currency_advantage_scores,
         "_visa_requirements": visa_requirements,
+        "_territory_profiles": territory_profiles or {},
         "_fx_rates_from_budget": {},
     }
     return ds
@@ -271,12 +274,36 @@ class TestBuildLocationRankings:
         assert isinstance(loc["incentiveStrength"], int)
         assert isinstance(loc["incentiveReliability"], int)
         assert loc["bankabilityLabel"] in ("BANKABLE", "VERIFY FIRST", "NOT BANKABLE")
-        # AI-filled fields should be None
+        # Profile/AI-filled fields are None when no source profile or crew data exists.
         assert loc["costEfficiency"] is None
         assert loc["crewDepth"] is None
         assert loc["infrastructure"] is None
         assert loc["reasoning"] is None
         assert loc["keyAdvantages"] is None
+
+    def test_crew_depth_and_infrastructure_from_territory_profile(self):
+        inc = _make_incentive()
+        ds = _make_datasets(
+            incentives=[inc],
+            territory_profiles={
+                "United Kingdom": {
+                    "territory": "United Kingdom",
+                    "iso_code": "GB",
+                    "crew_depth_tier": "established",
+                    "crew_depth_score": 82,
+                    "infrastructure_tier": "growing",
+                    "infrastructure_score": 64,
+                },
+            },
+        )
+
+        report = _build(ds)
+        loc = report["locationRankings"][0]
+
+        assert loc["crewDepth"] == 82
+        assert loc["crewDepthTier"] == "Established"
+        assert loc["infrastructure"] == 64
+        assert loc["infrastructureTier"] == "Growing"
 
     def test_payment_speed_from_db(self):
         inc = _make_incentive(payment_timeline_notes="6-12 months post-completion")
@@ -305,6 +332,34 @@ class TestBuildLocationRankings:
         )
         report = _build(ds)
         assert report["locationRankings"][0]["currencyAdvantage"] == 78
+
+
+class TestScoreWeights:
+    def test_weights_match_public_methodology(self):
+        assert SCORE_WEIGHTS["full"] == {
+            "incentiveStrength": 0.30,
+            "incentiveReliability": 0.15,
+            "costEfficiency": 0.20,
+            "currencyAdvantage": 0.15,
+            "crewDepth": 0.10,
+            "infrastructure": 0.10,
+        }
+        assert SCORE_WEIGHTS["incentive"] == {
+            "incentiveStrength": 0.45,
+            "incentiveReliability": 0.15,
+            "costEfficiency": 0.15,
+            "currencyAdvantage": 0.15,
+            "crewDepth": 0.05,
+            "infrastructure": 0.05,
+        }
+        assert SCORE_WEIGHTS["location"] == {
+            "crewDepth": 0.25,
+            "infrastructure": 0.20,
+            "costEfficiency": 0.20,
+            "incentiveStrength": 0.15,
+            "incentiveReliability": 0.10,
+            "currencyAdvantage": 0.10,
+        }
 
 
 class TestWeatherRiskInjection:

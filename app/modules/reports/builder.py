@@ -54,16 +54,19 @@ _RESTRICTING_FEST_GENRES: frozenset[str] = frozenset({
 
 SCORE_WEIGHTS = {
     "full": {
-        "costEfficiency": 0.25, "crewDepth": 0.20, "infrastructure": 0.20,
-        "incentiveStrength": 0.20, "currencyAdvantage": 0.10, "incentiveReliability": 0.05,
+        "incentiveStrength": 0.30, "incentiveReliability": 0.15,
+        "costEfficiency": 0.20, "currencyAdvantage": 0.15,
+        "crewDepth": 0.10, "infrastructure": 0.10,
     },
     "incentive": {
-        "costEfficiency": 0.15, "crewDepth": 0.15, "infrastructure": 0.15,
-        "incentiveStrength": 0.40, "currencyAdvantage": 0.10, "incentiveReliability": 0.05,
+        "incentiveStrength": 0.45, "incentiveReliability": 0.15,
+        "costEfficiency": 0.15, "currencyAdvantage": 0.15,
+        "crewDepth": 0.05, "infrastructure": 0.05,
     },
     "location": {
-        "costEfficiency": 0.17, "crewDepth": 0.25, "infrastructure": 0.25,
-        "incentiveStrength": 0.13, "currencyAdvantage": 0.10, "incentiveReliability": 0.10,
+        "crewDepth": 0.25, "infrastructure": 0.20,
+        "costEfficiency": 0.20, "incentiveStrength": 0.15,
+        "incentiveReliability": 0.10, "currencyAdvantage": 0.10,
     },
 }
 
@@ -143,6 +146,7 @@ class ReportBuilder:
         self._production_format: str | None = datasets.get("_production_format")
         self._production_priority: str = datasets.get("_production_priority", "full")
         self._currency_scores: dict | None = datasets.get("_currency_advantage_scores")
+        self._territory_profiles: dict = datasets.get("_territory_profiles") or {}
 
         # Budget info
         budget_gbp_data = datasets.get("_budget_gbp")
@@ -304,6 +308,9 @@ class ReportBuilder:
 
             # Crew cost anchor: DB-driven seed for costEfficiency (AI may refine within ±15)
             cost_anchor = self._crew_rate_anchor(territory)
+            territory_profile = self._get_territory_profile(territory)
+            crew_depth_score = self._profile_score(territory_profile, "crew_depth_score")
+            infrastructure_score = self._profile_score(territory_profile, "infrastructure_score")
 
             loc: dict = {
                 "name": territory,
@@ -314,10 +321,16 @@ class ReportBuilder:
                 "incentiveReliability": reliability_score,
                 "currencyAdvantage": currency_score,
                 "bankabilityLabel": bankability_label,
-                # Partially DB-seeded dimensions (AI fills crewDepth + infrastructure; costEfficiency anchored)
+                # DB/profile-driven dimensions.
                 "costEfficiency": cost_anchor,  # DB anchor; AI refines within ±15
-                "crewDepth": None,
-                "infrastructure": None,
+                "crewDepth": crew_depth_score,
+                "infrastructure": infrastructure_score,
+                "crewDepthTier": self._profile_tier_label(
+                    territory_profile, "crew_depth_tier",
+                ),
+                "infrastructureTier": self._profile_tier_label(
+                    territory_profile, "infrastructure_tier",
+                ),
                 # Internal anchor for AI clamping — stripped before response
                 "_costEfficiencyAnchor": cost_anchor,
                 # AI-filled narratives
@@ -1996,7 +2009,8 @@ class ReportBuilder:
 
     # ── Scoring helpers ────────────────────────────────────────────────────
 
-    def _compute_reliability(self, db_row: dict) -> tuple[int, str]:
+    @staticmethod
+    def _compute_reliability(db_row: dict) -> tuple[int, str]:
         """Compute incentiveReliability score and bankabilityLabel."""
         reliability = to_float(db_row.get("payment_reliability"))
         timeline_max = to_float(db_row.get("payment_timeline_days_max"))
@@ -2027,6 +2041,55 @@ class ReportBuilder:
             if computed is not None:
                 return computed
         return 50
+
+    def _get_territory_profile(self, territory: str) -> dict | None:
+        """Return the maintained profile row for a territory, if available."""
+        if not self._territory_profiles:
+            return None
+
+        candidates: list[str] = [territory]
+        t_obj = resolve_territory(territory)
+        if t_obj:
+            candidates.extend([t_obj.label, t_obj.iso])
+            if t_obj.parent:
+                candidates.extend([t_obj.parent.label, t_obj.parent.iso])
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            profile = self._territory_profiles.get(candidate)
+            if isinstance(profile, dict):
+                return profile
+
+        territory_lower = territory.lower()
+        for profile in self._territory_profiles.values():
+            if not isinstance(profile, dict):
+                continue
+            row_territory = str(profile.get("territory") or "").lower()
+            row_iso = str(profile.get("iso_code") or "").lower()
+            if territory_lower in {row_territory, row_iso}:
+                return profile
+        return None
+
+    @staticmethod
+    def _profile_score(profile: dict | None, key: str) -> int | None:
+        if not profile:
+            return None
+        raw = to_float(profile.get(key))
+        if raw is None:
+            return None
+        return max(0, min(100, int(round(raw))))
+
+    @staticmethod
+    def _profile_tier_label(profile: dict | None, key: str) -> str | None:
+        if not profile:
+            return None
+        raw = str(profile.get(key) or "").strip()
+        if not raw:
+            return None
+        return raw.replace("_", " ").title()
 
     @staticmethod
     def _compute_incentive_strength(db_row: dict) -> int:

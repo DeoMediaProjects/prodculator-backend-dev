@@ -142,6 +142,8 @@ class LocationRanking(BaseModel):
     keyRisks: list[str] | None = None
     # v3 scoring dimensions
     incentiveReliability: int | None = None   # 0-100 (new 6th dimension)
+    crewDepthTier: Literal["Established", "Growing", "Emerging"] | str | None = None
+    infrastructureTier: Literal["Established", "Growing", "Emerging"] | str | None = None
     bankabilityLabel: Literal["BANKABLE", "VERIFY FIRST", "NOT BANKABLE"] | None = None
     # Weather-schedule integration (populated by ReportValidator)
     weatherRiskImpact: int | None = None  # negative score deduction from weather risk

@@ -56,6 +56,10 @@ class TerritoryScenario(BaseModel):
     fx_rate: float | None = None
     fx_rate_date: str | None = None
     crew_cost_index: float | None = None
+    crew_depth_score: int | None = None
+    crew_depth_tier: str | None = None
+    infrastructure_score: int | None = None
+    infrastructure_tier: str | None = None
     crew_rates: dict[str, str] = {}
     net_saving: float
     net_saving_display: str
