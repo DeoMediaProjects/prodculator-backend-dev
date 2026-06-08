@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import redis as sync_redis
+import redis.asyncio as aioredis
 
 from app.core.database_client import DatabaseClient
 
@@ -115,7 +116,12 @@ class WebhookHandler:
     def _handle_checkout_completed(self, session: dict) -> None:
         user_id = session.get("metadata", {}).get("userId")
         if not user_id:
-            logger.warning("checkout.session.completed missing metadata.userId")
+            logger.error(
+                "CRITICAL: checkout.session.completed missing metadata.userId. "
+                "Session ID: %s, Customer: %s. User was charged but cannot be upgraded!",
+                session.get("id"),
+                session.get("customer")
+            )
             return
 
         # One-time purchase (pay-per-report) — increment credits_remaining.
@@ -153,13 +159,24 @@ class WebhookHandler:
             on_conflict="stripe_subscription_id",
         ).execute()
 
-        # Update user record so /api/auth/me reflects the new plan. Capture the
-        # billing country/state from the checkout session at the same time so the
-        # admin Business Metrics dashboard can show geographic distribution.
+        # Update user record so /api/auth/me reflects the new plan. This is the
+        # CRITICAL entitlement write — the customer has paid and must receive what
+        # they bought — so it carries ONLY the plan fields. Anything non-essential
+        # (e.g. billing geography) is written separately below so it can never
+        # fail this UPDATE and strand a paying customer on the free tier.
         user_type = "paid" if plan_type != "free" else "free"
-        user_update: dict = {"plan": plan_type, "user_type": user_type}
-        user_update.update(_billing_geo_from_session(session))
-        self.supabase.table("users").update(user_update).eq("id", user_id).execute()
+        self.supabase.table("users").update(
+            {"plan": plan_type, "user_type": user_type}
+        ).eq("id", user_id).execute()
+
+        # Best-effort, analytics-only: capture billing country/state for the admin
+        # Business Metrics dashboard. Isolated from the upgrade above so a missing
+        # column or a bad address value degrades gracefully instead of 500-ing the
+        # webhook (which would make Stripe retry forever, never upgrading the user).
+        self._capture_billing_geo(user_id, session)
+
+        # Bust cache AFTER all critical writes are confirmed successful. This ensures
+        # that when /api/auth/me reads from the DB (cache miss), it sees the upgraded plan.
         self._bust_user_cache(user_id)
 
         self._send_email_to_user_id(
@@ -183,6 +200,26 @@ class WebhookHandler:
                     "new_plan_name": _PLAN_LABEL.get(plan_type, plan_type.title()),
                 },
             )
+
+    def _capture_billing_geo(self, user_id: str, session: dict) -> None:
+        """Persist billing country/state from the checkout session, best-effort.
+
+        Never raises: the plan upgrade has already committed by the time this runs,
+        and geography is analytics-only. On failure we roll back the poisoned
+        transaction so the shared request session stays usable for the dedup insert
+        and email lookup that follow.
+        """
+        geo = _billing_geo_from_session(session)
+        if not geo:
+            return
+        try:
+            self.supabase.table("users").update(geo).eq("id", user_id).execute()
+        except Exception as exc:
+            try:
+                self.supabase.session.rollback()
+            except Exception:
+                pass
+            logger.warning("Billing geo capture skipped for user %s: %s", user_id, exc)
 
     def _handle_credit_purchase(self, user_id: str) -> None:
         """Increment credits_remaining by 1 for a pay-per-report purchase."""
@@ -494,7 +531,8 @@ class WebhookHandler:
             return
         try:
             r = sync_redis.from_url(self.settings.REDIS_URL, decode_responses=True)
-            r.delete(f"user_profile:{user_id}")
+            cache_key = f"user_profile:{user_id}"
+            r.delete(cache_key)
             r.close()
         except Exception as exc:
             logger.warning("Cache bust failed for user %s: %s", user_id, exc)
