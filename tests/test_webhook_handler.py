@@ -180,9 +180,17 @@ class TestCheckoutCompleted:
         session["customer_details"] = {"address": {"country": "US", "state": "CA"}}
         handler.handle_event("evt_geo", "checkout.session.completed", session)
 
+        # Billing geo is written in its own best-effort UPDATE, decoupled from the
+        # critical plan upgrade so a geo-write failure can't strand the customer.
         user_updates = db.writes.get("users:update", [])
-        assert user_updates[0]["data"]["country"] == "US"
-        assert user_updates[0]["data"]["state"] == "CA"
+        geo_writes = [u for u in user_updates if "country" in u["data"]]
+        assert len(geo_writes) == 1
+        assert geo_writes[0]["data"] == {"country": "US", "state": "CA"}
+
+        # The plan upgrade is its own UPDATE and carries no geo fields.
+        plan_writes = [u for u in user_updates if "plan" in u["data"]]
+        assert len(plan_writes) == 1
+        assert "country" not in plan_writes[0]["data"]
 
     def test_missing_billing_address_does_not_set_geo(self):
         db = FakeSupabase()
@@ -477,3 +485,106 @@ class TestScheduledDowngradeRollover:
         assert sub["pending_plan"] == "professional"
         assert sub["stripe_schedule_id"] == "sched_1"
         assert db.store["users"][0]["plan"] == "studio"
+
+
+# ---------------------------------------------------------------------------
+# Real-DB regression: a failing billing-geo write must not block the upgrade.
+#
+# The fake-DB tests above never validate columns, so they can't catch the class
+# of bug where the user UPDATE itself fails. These run against a real (SQLite)
+# DatabaseClient with the billing-geo columns ABSENT — exactly the production
+# state if the add_user_billing_geo migration hasn't been applied — and assert
+# the paying customer is still upgraded.
+# ---------------------------------------------------------------------------
+
+import tempfile
+
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session as SASession
+
+import app.core.database_client as dbc
+from app.core.database_client import DatabaseClient
+
+
+def _make_sqlite_db(*, with_geo_columns: bool) -> tuple[object, object]:
+    """Create a temp SQLite DB with the columns the checkout handler touches."""
+    engine = create_engine(f"sqlite:///{tempfile.mkstemp(suffix='.db')[1]}")
+    geo_cols = ", country TEXT, state TEXT" if with_geo_columns else ""
+    with engine.begin() as conn:
+        conn.execute(text(
+            f"CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, plan TEXT, "
+            f"user_type TEXT, credits_remaining INTEGER{geo_cols})"
+        ))
+        conn.execute(text(
+            "CREATE TABLE subscriptions (id TEXT PRIMARY KEY, user_id TEXT, "
+            "stripe_customer_id TEXT, stripe_subscription_id TEXT, plan_type TEXT, "
+            "status TEXT, report_limit INTEGER, cancel_at_period_end BOOLEAN, "
+            "current_period_start TEXT, current_period_end TEXT, created_at TEXT, "
+            "pending_plan TEXT, stripe_schedule_id TEXT, past_due_since TEXT, "
+            "cancelled_at TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE processed_webhook_events (event_id TEXT PRIMARY KEY, processed_at TEXT)"
+        ))
+        conn.execute(text(
+            "INSERT INTO users (id, email, plan, user_type, credits_remaining) "
+            "VALUES ('user-1', 'u@example.com', 'free', 'free', 0)"
+        ))
+    return engine
+
+
+def _checkout_session_with_address() -> dict:
+    # Real Stripe checkout sessions include the billing address the customer typed.
+    return {
+        "mode": "subscription",
+        "metadata": {"userId": "user-1", "planType": "professional"},
+        "subscription": "sub_123",
+        "customer": "cus_123",
+        "customer_details": {"address": {"country": "US", "state": "CA"}},
+    }
+
+
+def _user_row(engine) -> dict:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT plan, user_type FROM users WHERE id='user-1'")
+        ).first()
+    return dict(row._mapping)
+
+
+class TestCheckoutUpgradeResilientToGeoFailure:
+    @pytest.fixture(autouse=True)
+    def _reset_metadata(self):
+        # The reflected-schema cache is a module global; reset it so each test
+        # reflects its own throwaway SQLite schema.
+        dbc._shared_metadata = None
+        yield
+        dbc._shared_metadata = None
+
+    def test_upgrade_succeeds_when_geo_columns_missing(self):
+        engine = _make_sqlite_db(with_geo_columns=False)
+        db = DatabaseClient(SASession(engine), Settings(_env_file=None, JWT_SECRET_KEY="x" * 64))
+
+        # Must not raise — a 500 here makes Stripe retry forever, never upgrading.
+        WebhookHandler(db).handle_event(
+            "evt_geo_missing", "checkout.session.completed", _checkout_session_with_address()
+        )
+
+        assert _user_row(engine) == {"plan": "professional", "user_type": "paid"}
+
+    def test_upgrade_and_geo_both_persist_when_columns_exist(self):
+        engine = _make_sqlite_db(with_geo_columns=True)
+        db = DatabaseClient(SASession(engine), Settings(_env_file=None, JWT_SECRET_KEY="x" * 64))
+
+        WebhookHandler(db).handle_event(
+            "evt_geo_ok", "checkout.session.completed", _checkout_session_with_address()
+        )
+
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT plan, user_type, country, state FROM users WHERE id='user-1'")
+            ).first()
+        assert dict(row._mapping) == {
+            "plan": "professional", "user_type": "paid", "country": "US", "state": "CA",
+        }
