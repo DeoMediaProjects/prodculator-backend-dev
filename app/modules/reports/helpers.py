@@ -190,10 +190,14 @@ def is_zero_rate(rate_gross: Any, rate_net: Any) -> bool:
 def format_rate(rate_gross: Any, rate_net: Any) -> str | None:
     gross = to_float(rate_gross)
     net = to_float(rate_net)
-    if gross is not None and gross > 0:
-        return f"{gross:g}%"
+    if net is not None and net > 0 and gross is not None and gross > 0:
+        if abs(gross - net) < 0.1:
+            return f"{net:g}%"
+        return f"{net:g}% net ({gross:g}% gross)"
     if net is not None and net > 0:
-        return f"{net:g}%"
+        return f"{net:g}% net"
+    if gross is not None and gross > 0:
+        return f"{gross:g}% gross"
     return None
 
 

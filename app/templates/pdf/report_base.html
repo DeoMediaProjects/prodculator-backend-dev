@@ -825,7 +825,7 @@
   {% endif %}
 
   {# v3 Headline Net Budget #}
-  {% if report.executiveSummary and report.executiveSummary.headlineNetBudget %}
+  {% if not is_preview and report.executiveSummary and report.executiveSummary.headlineNetBudget %}
   <div class="headline-budget">
     <div class="headline-budget-label">Headline Net Budget (After Top Rebate)</div>
     <div class="headline-budget-value">{{ report.executiveSummary.headlineNetBudget }}</div>
@@ -836,7 +836,7 @@
   {% endif %}
 
   {# v3 Key Flags (max 3) #}
-  {% if report.executiveSummary and report.executiveSummary.keyFlags %}
+  {% if not is_preview and report.executiveSummary and report.executiveSummary.keyFlags %}
   <div class="key-flags">
     {% for flag in report.executiveSummary.keyFlags[:3] %}
     <div class="key-flag">
@@ -872,7 +872,7 @@
       <span class="gold" style="font-size: 22px; font-weight: 700;">{{ es.recommendedTerritoryScore }}/100</span>
     </div>
     <div class="rec-stats">
-      {% if es.recommendedTerritoryRebate %}
+      {% if not is_preview and es.recommendedTerritoryRebate %}
       <div class="rec-stat">
         <div class="rec-stat-label">Tax Rebate</div>
         <div class="rec-stat-value">{{ es.recommendedTerritoryRebate }}</div>
@@ -884,7 +884,7 @@
         <div class="rec-stat-value">{{ es.recommendedTerritoryInfrastructure }}</div>
       </div>
       {% endif %}
-      {% if es.recommendedTerritoryPaymentSpeed %}
+      {% if not is_preview and es.recommendedTerritoryPaymentSpeed %}
       <div class="rec-stat">
         <div class="rec-stat-label">Payment Speed</div>
         <div class="rec-stat-value">{{ es.recommendedTerritoryPaymentSpeed }}</div>
@@ -960,7 +960,19 @@
   {% endif %}
 
   {# v3 Action Timeline #}
-  {% if report.executiveSummary and report.executiveSummary.actionTimeline %}
+  {% if is_preview %}
+  <h3>Action Timeline</h3>
+  <div class="card card-gold">
+    <p style="font-size: 10px; margin: 0;">
+      {% set urgent_count = report.previewUrgentActionCount|default(0) %}
+      {% if urgent_count and urgent_count > 0 %}
+      This production has {{ urgent_count }} time-sensitive action{{ "" if urgent_count == 1 else "s" }}. Upgrade to see the prioritised action plan.
+      {% else %}
+      This production has prioritised actions identified. Upgrade to see the full action plan.
+      {% endif %}
+    </p>
+  </div>
+  {% elif report.executiveSummary and report.executiveSummary.actionTimeline %}
   <h3>Action Timeline</h3>
   <div class="action-timeline">
     {% for item in report.executiveSummary.actionTimeline %}
@@ -1051,6 +1063,17 @@
   {% endif %}
 
   {% for loc in report.locationRankings[:10] %}
+  {% if loc.lockedPreview %}
+  <div class="card" style="border: 1px solid rgba(212,175,55,0.35);">
+    <div class="card-header">
+      <div>
+        <h3 style="margin: 0;">#{{ loop.index }} {{ loc.name }}</h3>
+        <span class="muted">Ranked comparison available in the full report</span>
+      </div>
+      <span class="locked-val">&#128274; Upgrade to unlock</span>
+    </div>
+  </div>
+  {% else %}
   <div class="card{% if loop.index == 1 %} card-gold{% endif %}">
     <div class="card-header">
       <div>
@@ -1067,7 +1090,7 @@
     </div>
 
     <div class="stat-grid" style="margin-bottom: 8px;">
-      {% if loc.rebatePercent %}
+      {% if not is_preview and loc.rebatePercent %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
         <div class="stat-label">Tax Rebate</div>
         <div class="stat-value" style="font-size: 14px;">{{ loc.rebatePercent }}</div>
@@ -1085,7 +1108,7 @@
         <div class="stat-value" style="font-size: 14px;">{{ loc.culturalTestLikelihood }}</div>
       </div>
       {% endif %}
-      {% if loc.paymentSpeed %}
+      {% if not is_preview and loc.paymentSpeed %}
       <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
         <div class="stat-label">Payment Speed</div>
         <div class="stat-value" style="font-size: 12px;">{{ loc.paymentSpeed }}</div>
@@ -1117,7 +1140,7 @@
       {% if val is not none %}
       <tr>
         <td>{{ name }}</td>
-        <td>{{ val }}/100</td>
+        <td>{% if is_preview %}<span class="locked-val">&#128274; Upgrade</span>{% else %}{{ val }}/100{% endif %}</td>
         <td>
           <div class="score-bar">
             <div class="score-bar-fill {% if val >= 70 %}score-high{% elif val >= 40 %}score-mid{% else %}score-low{% endif %}" style="width: {{ val }}%"></div>
@@ -1141,10 +1164,11 @@
     </div>
     {% endif %}
   </div>
+  {% endif %}
   {% endfor %}
 
   {# Alternative Strategy #}
-  {% if report.alternativeStrategy %}
+  {% if not is_preview and report.alternativeStrategy %}
   <div class="card card-gold" style="margin-top: 16px;">
     <h4 class="gold" style="margin-top: 0;">Alternative Strategy</h4>
     <p style="font-size: 10px;">{{ report.alternativeStrategy }}</p>
@@ -1889,6 +1913,16 @@
 
   <div class="card">
     <h3>Recommended Actions</h3>
+    {% if report_type == "preview" %}
+    <p style="font-size: 10px; line-height: 1.6;">
+      {% set urgent_count = report.previewUrgentActionCount|default(0) %}
+      {% if urgent_count and urgent_count > 0 %}
+      {{ urgent_count }} urgent action{{ "" if urgent_count == 1 else "s" }} identified for this production. Upgrade to see the specific actions, deadlines, and reasons.
+      {% else %}
+      Actions have been identified for this production. Upgrade to see the specific actions, deadlines, and reasons.
+      {% endif %}
+    </p>
+    {% else %}
     <ol style="padding-left: 20px; line-height: 2;">
       {# Urgent / time-sensitive actions from actionTimeline come first #}
       {% if report.executiveSummary and report.executiveSummary.actionTimeline %}
@@ -1914,6 +1948,7 @@
       <li>Commission detailed location scouts in shortlisted territories</li>
       <li>Review comparable production budgets and adjust financial model accordingly</li>
     </ol>
+    {% endif %}
   </div>
 
   {% if report_type == "preview" %}

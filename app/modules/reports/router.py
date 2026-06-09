@@ -117,6 +117,7 @@ async def create_report(
                 request_metadata=metadata,
                 script_service=script_service,
             )
+            analysis = _build_free_tier_report_data(analysis)
             elapsed_ms = int((perf_counter() - started) * 1000)
             logger.info(
                 "Preview report generated: title=%s elapsed_ms=%s location_rankings=%s",
@@ -468,14 +469,40 @@ async def download_pdf(
 def _build_free_tier_report_data(report_data: dict) -> dict:
     """Return a filtered copy of report_data for the free-tier preview PDF.
 
-    Section structure (territory names, labels) is kept so users can see
-    what each section covers. Only financial result values are stripped.
-    Sections with no meaningful structural preview (comparables,
-    fundingOpportunities) are removed entirely — the template renders a
-    partial locked preview using is_preview=True.
+    This is also used for free-tier API responses, so sensitive values must
+    be removed from the payload rather than hidden only by the frontend.
     """
     import copy
+
     data = copy.deepcopy(report_data)
+
+    rankings_raw = [
+        loc for loc in data.get("locationRankings", [])
+        if isinstance(loc, dict)
+    ]
+    urgent_count = _preview_urgent_action_count(data)
+    complexity_count = _preview_complexity_factor_count(data)
+    data["previewUrgentActionCount"] = urgent_count
+    data["previewComplexityFactorCount"] = complexity_count
+
+    summary = data.get("executiveSummary")
+    if isinstance(summary, dict):
+        summary["keyInsights"] = _build_preview_key_insights(
+            data, rankings_raw, urgent_count, complexity_count,
+        )
+        for key in (
+            "headlineNetBudget",
+            "recommendedTerritoryRebate",
+            "recommendedTerritoryPaymentSpeed",
+            "actionTimeline",
+            "keyFlags",
+        ):
+            summary.pop(key, None)
+
+    data.pop("alternativeStrategy", None)
+    data.pop("scriptIntelligence", None)
+    data.pop("dimensionVerdicts", None)
+    data["nextSteps"] = []
 
     # Remove completely — no useful structural preview for free users
     data.pop("investorSummary", None)
@@ -483,12 +510,38 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
     data.pop("comparables", None)
     data.pop("fundingOpportunities", None)
 
-    # locationRankings: show top 3 territories, strip reasoning (Key Intelligence is paid-only)
+    # locationRankings: show the top territory details; show locked placeholders
+    # for additional ranked territories without leaking their names or scores.
     if "locationRankings" in data:
         stripped = []
-        for loc in data["locationRankings"][:3]:
+        for idx, loc in enumerate(rankings_raw[:3]):
+            if idx > 0:
+                stripped.append({
+                    "name": f"Territory #{idx + 1}",
+                    "country": "Locked",
+                    "score": None,
+                    "lockedPreview": True,
+                    "isAssessmentOnly": True,
+                })
+                continue
             loc_copy = dict(loc)
-            loc_copy.pop("reasoning", None)
+            loc_copy["isAssessmentOnly"] = True
+            for key in (
+                "reasoning",
+                "keyAdvantages",
+                "keyRisks",
+                "rebatePercent",
+                "rebateAmount",
+                "paymentSpeed",
+                "culturalTestLikelihood",
+                "adminComplexity",
+                "financialReturnScore",
+                "financialReturnVerdict",
+                "scheduleViabilityScore",
+                "contingencyDaysEstimate",
+                "costEfficiencyWeatherPenalty",
+            ):
+                loc_copy.pop(key, None)
             stripped.append(loc_copy)
         data["locationRankings"] = stripped
 
@@ -525,6 +578,139 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
         ]
 
     return data
+
+
+def _preview_urgent_action_count(data: dict) -> int:
+    steps = data.get("nextSteps")
+    if isinstance(steps, list):
+        count = sum(
+            1 for step in steps
+            if isinstance(step, dict)
+            and str(step.get("priority") or "").upper() == "URGENT"
+        )
+        if count:
+            return count
+
+    timeline = (data.get("executiveSummary") or {}).get("actionTimeline")
+    if isinstance(timeline, list):
+        return len([item for item in timeline if isinstance(item, dict)])
+    return 0
+
+
+def _preview_complexity_factor_count(data: dict) -> int:
+    script_intel = data.get("scriptIntelligence")
+    if isinstance(script_intel, dict):
+        drivers = script_intel.get("complexityDrivers")
+        if isinstance(drivers, list) and drivers:
+            return len(drivers)
+
+    summary = data.get("executiveSummary")
+    if isinstance(summary, dict):
+        flags = summary.get("keyFlags")
+        if isinstance(flags, list) and flags:
+            return len(flags)
+    return 0
+
+
+def _preview_verdict(label: str | None) -> str:
+    value = (label or "").strip().upper()
+    if value == "BANKABLE":
+        return "Bankable"
+    if value == "VERIFY FIRST":
+        return "Verify First"
+    if value in {"NOT BANKABLE", "CAUTION"}:
+        return "Caution"
+    return "Review Required"
+
+
+def _first_summary_paragraph(summary: dict | None) -> str | None:
+    if not isinstance(summary, dict):
+        return None
+    key_insights = summary.get("keyInsights")
+    if not isinstance(key_insights, str):
+        return None
+    paragraphs = [p.strip() for p in key_insights.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return None
+    for paragraph in paragraphs:
+        if "production overview" in paragraph.lower():
+            return paragraph
+    return paragraphs[0]
+
+
+def _redact_preview_financial_text(text: str) -> str:
+    import re
+
+    text = re.sub(r"[£€$]\s?\d[\d,]*(?:\.\d+)?\s?(?:[KkMm])?", "[upgrade to see estimate]", text)
+    text = re.sub(r"\b\d+(?:\.\d+)?%", "[upgrade to see rate]", text)
+    return text
+
+
+def _build_preview_key_insights(
+    data: dict,
+    rankings: list[dict],
+    urgent_count: int,
+    complexity_count: int,
+) -> str:
+    summary = data.get("executiveSummary") if isinstance(data.get("executiveSummary"), dict) else {}
+    overview = _first_summary_paragraph(summary)
+    if not overview:
+        title = data.get("scriptTitle") or data.get("title") or "this production"
+        overview = (
+            "**Production Overview**\n"
+            f"Prodculator has built a production intelligence preview for {title}, "
+            "using the submitted format, budget, territory, and schedule inputs to "
+            "identify the leading production-location strategy."
+        )
+    else:
+        overview = _redact_preview_financial_text(overview)
+
+    paragraphs = [overview]
+
+    if rankings:
+        top = rankings[0]
+        top_name = top.get("name") or summary.get("recommendedTerritory")
+        if top_name:
+            paragraphs.append(
+                "**Primary Recommendation**\n"
+                f"{top_name} is the lead territory recommendation. "
+                f"Its incentive bankability verdict is {_preview_verdict(top.get('bankabilityLabel'))}. "
+                "Upgrade to see the net rate, estimated rebate, qualifying spend, and payment timeline."
+            )
+
+    if len(rankings) > 1:
+        second = rankings[1]
+        second_name = second.get("name")
+        if second_name:
+            paragraphs.append(
+                "**Second Territory**\n"
+                f"{second_name} is also in the comparison set with a "
+                f"{_preview_verdict(second.get('bankabilityLabel'))} verdict. "
+                "Upgrade to see the financial trade-off against the primary recommendation."
+            )
+
+    complexity = data.get("complexity") or "production"
+    factor_text = (
+        f"{complexity_count} specific production factor"
+        f"{'' if complexity_count == 1 else 's'}"
+        if complexity_count > 0 else "specific production factors"
+    )
+    paragraphs.append(
+        "**Production Complexity Snapshot**\n"
+        f"This production carries {complexity} complexity from {factor_text}. "
+        "Upgrade to see the full script intelligence analysis."
+    )
+
+    if urgent_count > 0:
+        action_text = f"{urgent_count} time-sensitive action{'' if urgent_count == 1 else 's'}"
+    else:
+        action_text = "time-sensitive actions"
+    paragraphs.append(
+        "**Strategic Recommendations**\n"
+        f"This production has {action_text}. Upgrade to see the prioritised action plan."
+    )
+
+    return "\n\n".join(paragraphs)
 
 
 def _apply_watermark(pdf_bytes: bytes) -> bytes:
@@ -865,16 +1051,7 @@ def _format_report_response(report: dict, settings: Settings, user_plan: str = "
             analysis["locationRankings"] = analysis["locationRankings"][:territory_limit]
 
         if is_free:
-            # Strip all premium sections for Explorer users
-            for key in (
-                "financialAnalysis",
-                "crewInsights",
-                "comparables",
-                "weatherLogistics",
-                "fundingOpportunities",
-                "investorSummary",
-            ):
-                analysis.pop(key, None)
+            analysis = _build_free_tier_report_data(analysis)
         elif not has_investor_summary:
             # Professional: full report but no Investor Summary section
             analysis.pop("investorSummary", None)

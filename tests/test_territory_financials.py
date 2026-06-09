@@ -129,6 +129,7 @@ def test_gbp_territory_rebate_amounts():
 
     assert "1,657,500" in entry["net_rebate"]
     assert "2,210,000" in entry["gross_rebate"]
+    assert entry["rate"] == "25.5% net (34% gross)"
     assert "8,000,000" in entry["qualifying_spend"]
     assert "6,500,000" in entry["net_qualifying_spend"]
     assert "80%" in entry["qualifying_spend_pct"]
@@ -253,8 +254,8 @@ def test_budget_cap_switches_to_alternative_programme():
     svc._pre_compute_territory_financials(datasets)
     entry = datasets["_territory_financials"]["United Kingdom"]
 
-    # Should use AVEC rates (34% / 25.5%), not IFTC (53% / 39.75%)
-    assert "34%" in entry["rate"]
+    # Should use AVEC rates (25.5% net / 34% gross), not IFTC (39.75% net / 53% gross)
+    assert entry["rate"] == "25.5% net (34% gross)"
     assert "53%" not in entry["rate"]
     # Net rebate: £30M × 80% QS - 15% ATL = £19.5M × 25.5% = £4,972,500
     assert "4,972,500" in entry["net_rebate"]
