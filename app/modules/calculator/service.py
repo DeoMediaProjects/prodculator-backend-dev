@@ -234,8 +234,8 @@ class CalculatorService:
             )
             return d_amount, f"{sym}{d_amount:,.0f}"
 
-        gross_rebate_gbp = corrected["gross_rebate"]
-        d_rebate, rebate_display = _display(gross_rebate_gbp)
+        rebate_gbp = corrected["net_rebate"]
+        d_rebate, rebate_display = _display(rebate_gbp)
         d_qs, qs_display = _display(corrected["qualifying_spend"])
         qs_pct = corrected["qualifying_spend_pct"]
 
@@ -310,7 +310,7 @@ class CalculatorService:
         if crew_cost_index is not None:
             crew_saving_gbp = budget_gbp * (crew_cost_index - _ANCHOR_MID) / 200.0
 
-        net_saving_gbp = gross_rebate_gbp + max(ca_value_gbp, 0) + max(crew_saving_gbp, 0)
+        net_saving_gbp = rebate_gbp + max(ca_value_gbp, 0) + max(crew_saving_gbp, 0)
         if vfx_uplift_value is not None:
             # Add VFX uplift as GBP before display conversion
             vfx_uplift_gbp = budget_gbp * (request.vfx_pct / 100.0) * ((vfx_uplift_rate or 0) / 100.0)

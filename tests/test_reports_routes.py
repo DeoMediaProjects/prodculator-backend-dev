@@ -2,7 +2,7 @@ import json
 
 from app.core.dependencies import get_current_user, get_optional_user
 from app.modules.reports import router as reports_router
-from app.modules.reports.router import get_report_service
+from app.modules.reports.router import _build_free_tier_report_data, get_report_service
 from app.modules.scripts.service import ClaudeUnavailableError, ScriptAnalysisService
 
 
@@ -98,6 +98,114 @@ VALID_REPORT_PAYLOAD = {
     "location_strategy": "open",
     "production_priority": "full",
 }
+
+
+def test_free_tier_report_data_redacts_financial_and_action_detail():
+    report_data = {
+        "genre": "Drama",
+        "tone": "Specific script tone",
+        "scale": "Feature Film",
+        "complexity": "High",
+        "executiveSummary": {
+            "keyInsights": (
+                "**Production Overview**\nSpecific protagonist and location detail.\n\n"
+                "**Primary Recommendation**\nUnited Kingdom FRS: 84 - Bankable with a net rate of 39.75%, estimated net rebate is £318,000.\n\n"
+                "**Second Territory**\nFrance has a 30% rate and €277,752 rebate.\n\n"
+                "**Third Territory**\nSpain has a 30% rate and €295,112 rebate.\n\n"
+                "**Strategic Recommendations**\nApply for the BFI cultural test immediately."
+            ),
+            "headlineNetBudget": "approximately £682,000",
+            "recommendedTerritory": "United Kingdom",
+            "recommendedTerritoryRebate": "£318,000",
+            "recommendedTerritoryPaymentSpeed": "6-12 months",
+            "keyFlags": ["BFI cultural test timing", "Music rights clearance"],
+            "actionTimeline": [{"action": "Apply for BFI cultural test", "deadline": "2 weeks"}],
+        },
+        "locationRankings": [
+            {
+                "name": "United Kingdom",
+                "country": "United Kingdom",
+                "score": 84,
+                "costEfficiency": 70,
+                "crewDepth": 80,
+                "infrastructure": 85,
+                "incentiveStrength": 90,
+                "currencyAdvantage": 50,
+                "incentiveReliability": 90,
+                "bankabilityLabel": "BANKABLE",
+                "rebatePercent": "39.75% net (53% gross)",
+                "reasoning": ["Script-specific intelligence"],
+                "keyRisks": ["Specific risk"],
+                "paymentSpeed": "6-12 months",
+            },
+            {"name": "France", "country": "France", "score": 76, "bankabilityLabel": "VERIFY FIRST"},
+            {"name": "Spain", "country": "Spain", "score": 72, "bankabilityLabel": "VERIFY FIRST"},
+        ],
+        "incentiveEstimates": [
+            {
+                "territory": "United Kingdom",
+                "program": "IFTC",
+                "rate": "39.75% net (53% gross)",
+                "estimatedRebate": "£318,000",
+                "requirements": ["Theatrical release"],
+            }
+        ],
+        "financialAnalysis": {
+            "budgetScenarios": [
+                {
+                    "territory": "United Kingdom",
+                    "programme": "IFTC",
+                    "netRebate": "£318,000",
+                }
+            ]
+        },
+        "nextSteps": [
+            {"priority": "URGENT", "action": "Apply for BFI cultural test", "reason": "Blocking"}
+        ],
+        "scriptIntelligence": {
+            "complexityDrivers": [
+                {"flag": "Music rights", "detail": "Specific detail"},
+                {"flag": "Location", "detail": "Specific detail"},
+            ]
+        },
+        "alternativeStrategy": "Fallback to France if BFI fails.",
+        "dimensionVerdicts": {"United Kingdom": {"costEfficiency": "Specific verdict"}},
+        "comparables": [{"title": "Example"}],
+        "fundingOpportunities": [{"name": "Grant"}],
+    }
+
+    result = _build_free_tier_report_data(report_data)
+
+    summary = result["executiveSummary"]
+    assert "headlineNetBudget" not in summary
+    assert "recommendedTerritoryRebate" not in summary
+    assert "actionTimeline" not in summary
+    assert "keyFlags" not in summary
+    assert "£318,000" not in summary["keyInsights"]
+    assert "39.75%" not in summary["keyInsights"]
+    assert "Third Territory" not in summary["keyInsights"]
+    assert "Upgrade to see" in summary["keyInsights"]
+
+    assert result["previewUrgentActionCount"] == 1
+    assert result["previewComplexityFactorCount"] == 2
+    assert result["nextSteps"] == []
+    assert "scriptIntelligence" not in result
+    assert "alternativeStrategy" not in result
+    assert "dimensionVerdicts" not in result
+
+    top = result["locationRankings"][0]
+    assert top["name"] == "United Kingdom"
+    assert "reasoning" not in top
+    assert "rebatePercent" not in top
+    assert result["locationRankings"][1]["lockedPreview"] is True
+    assert result["locationRankings"][1]["name"] == "Territory #2"
+
+    incentive = result["incentiveEstimates"][0]
+    assert incentive == {"territory": "United Kingdom", "program": "IFTC"}
+    scenario = result["financialAnalysis"]["budgetScenarios"][0]
+    assert scenario == {"territory": "United Kingdom", "programme": "IFTC"}
+    assert "comparables" not in result
+    assert "fundingOpportunities" not in result
 
 
 def test_report_create_triggers_background_and_status_transitions(client, auth_user, monkeypatch):

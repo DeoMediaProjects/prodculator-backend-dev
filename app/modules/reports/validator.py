@@ -92,7 +92,10 @@ class ReportValidator:
                     territory_financials = datasets.get("_territory_financials") or {}
                     tf = territory_financials.get(top["name"])
                     if tf:
-                        summary["recommendedTerritoryRebate"] = tf.get("gross_rebate")
+                        summary["recommendedTerritoryRebate"] = (
+                            tf.get("net_rebate")
+                            or tf.get("gross_rebate")
+                        )
                         summary["headlineNetBudget"] = tf.get("headline_net_budget")
 
                     # Refresh payment speed from incentive data

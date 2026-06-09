@@ -689,7 +689,11 @@ class TestAssertIntegrity:
         # Add territory financials so headline can be refreshed
         datasets["_territory_financials"] = {
             "UK": {"gross_rebate": "£1,000,000", "headline_net_budget": "approximately £19,000,000"},
-            "Canada": {"gross_rebate": "C$2,000,000", "headline_net_budget": "approximately C$34,000,000"},
+            "Canada": {
+                "gross_rebate": "C$2,000,000",
+                "net_rebate": "C$1,500,000",
+                "headline_net_budget": "approximately C$34,000,000",
+            },
         }
         datasets["incentives"] = [
             {"program_name": "AVEC", "territory": "UK", "rate_gross": 25,
@@ -701,7 +705,7 @@ class TestAssertIntegrity:
         assert result["executiveSummary"]["recommendedTerritory"] == "Canada"
         assert result["executiveSummary"]["recommendedTerritoryScore"] == 80
         # Financial headline must match Canada, not UK
-        assert result["executiveSummary"]["recommendedTerritoryRebate"] == "C$2,000,000"
+        assert result["executiveSummary"]["recommendedTerritoryRebate"] == "C$1,500,000"
         assert "C$34,000,000" in result["executiveSummary"]["headlineNetBudget"]
         assert "CRA" in result["executiveSummary"]["recommendedTerritoryPaymentSpeed"]
 

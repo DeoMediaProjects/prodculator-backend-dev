@@ -19,6 +19,7 @@ from app.modules.reports.builder import (
     _incentive_qualification_score,
     _incentive_stability_score,
 )
+from app.modules.reports.helpers import format_rate
 
 
 # ── Test fixtures ──────────────────────────────────────────────────────────
@@ -170,6 +171,19 @@ def _build(datasets: dict, request_metadata: dict | None = None) -> dict:
     ).build()
 
 
+class TestFormatRate:
+    def test_net_rate_is_primary_when_gross_and_net_differ(self):
+        assert format_rate(53, 39.75) == "39.75% net (53% gross)"
+        assert format_rate(34, 25.5) == "25.5% net (34% gross)"
+
+    def test_matching_gross_and_net_are_shown_once(self):
+        assert format_rate(30, 30) == "30%"
+
+    def test_labels_single_available_rate(self):
+        assert format_rate(34, None) == "34% gross"
+        assert format_rate(None, 25.5) == "25.5% net"
+
+
 # ── Scoring tests ──────────────────────────────────────────────────────────
 
 
@@ -270,7 +284,7 @@ class TestBuildLocationRankings:
         assert len(rankings) == 1
         loc = rankings[0]
         assert loc["name"] == "United Kingdom"
-        assert loc["rebatePercent"] == "34%"
+        assert loc["rebatePercent"] == "34% gross"
         assert isinstance(loc["incentiveStrength"], int)
         assert isinstance(loc["incentiveReliability"], int)
         assert loc["bankabilityLabel"] in ("BANKABLE", "VERIFY FIRST", "NOT BANKABLE")
@@ -450,10 +464,25 @@ class TestBuildIncentiveEstimates:
         est = estimates[0]
         assert est["territory"] == "United Kingdom"
         assert est["program"] == "AVEC"
-        assert est["rate"] == "34%"
+        assert est["rate"] == "34% gross"
         assert est["estimatedRebate"] == "£2,720,000"
         assert est["paymentSpeed"] == "6-12 months post-completion"
         assert est["dataSource"] == "BFI"
+
+    def test_estimate_uses_net_rebate_as_primary_amount(self):
+        inc = _make_incentive(rate_gross=53.0, rate_net=39.75)
+        tf = {
+            "United Kingdom": {
+                "gross_rebate": "£424,000",
+                "net_rebate": "£318,000",
+            }
+        }
+        ds = _make_datasets(incentives=[inc], territory_financials=tf)
+        report = _build(ds)
+
+        est = report["incentiveEstimates"][0]
+        assert est["rate"] == "39.75% net (53% gross)"
+        assert est["estimatedRebate"] == "£318,000"
 
     def test_supplementary_stub(self):
         primary = _make_incentive(program="AVEC", territory="United Kingdom")
@@ -725,6 +754,21 @@ class TestBuildExecutiveSummary:
         assert summary["shootDays"] == 8
         assert summary["recommendedTerritoryRebate"] == "£2,720,000"
 
+    def test_recommended_rebate_uses_net_amount(self):
+        inc = _make_incentive(rate_gross=53.0, rate_net=39.75)
+        tf = {
+            "United Kingdom": {
+                "gross_rebate": "£424,000",
+                "net_rebate": "£318,000",
+                "headline_net_budget": "approximately £682,000",
+            }
+        }
+        ds = _make_datasets(incentives=[inc], territory_financials=tf)
+        report = _build(ds)
+
+        summary = report["executiveSummary"]
+        assert summary["recommendedTerritoryRebate"] == "£318,000"
+
     def test_shoot_duration_flag_injected(self):
         inc = _make_incentive()
         ds = _make_datasets(incentives=[inc], shoot_weeks=30, production_format="Feature Film")
@@ -926,7 +970,7 @@ class TestComputeOverallScores:
         # DB-populated fields
         assert dive["name"] == "United Kingdom"
         assert dive["country"] == "United Kingdom"
-        assert dive["rebate"] == "25%"
+        assert dive["rebate"] == "20% net (25% gross)"
         assert dive["estimatedRebate"] == "£500,000"
         assert dive["paymentSpeed"] != ""
         # AI-filled fields should be None in skeleton

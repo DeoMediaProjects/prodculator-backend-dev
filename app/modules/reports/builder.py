@@ -654,7 +654,11 @@ class ReportBuilder:
             # Estimated rebate from pre-computed financials
             tf = self._territory_financials.get(territory)
             if tf:
-                est["estimatedRebate"] = tf.get("gross_rebate", "See programme terms")
+                est["estimatedRebate"] = (
+                    tf.get("net_rebate")
+                    or tf.get("gross_rebate")
+                    or "See programme terms"
+                )
             else:
                 est["estimatedRebate"] = "See programme terms"
 
@@ -1130,7 +1134,10 @@ class ReportBuilder:
             # Pre-computed financial headline
             tf = self._territory_financials.get(top)
             if tf:
-                summary["recommendedTerritoryRebate"] = tf.get("gross_rebate")
+                summary["recommendedTerritoryRebate"] = (
+                    tf.get("net_rebate")
+                    or tf.get("gross_rebate")
+                )
                 summary["headlineNetBudget"] = tf.get("headline_net_budget")
 
         # Shoot days (authoritative from user input)
@@ -1755,7 +1762,11 @@ class ReportBuilder:
             # Estimated rebate from pre-computed financials
             tf = self._territory_financials.get(territory)
             if tf:
-                estimated_rebate = tf.get("gross_rebate", "See programme terms")
+                estimated_rebate = (
+                    tf.get("net_rebate")
+                    or tf.get("gross_rebate")
+                    or "See programme terms"
+                )
             else:
                 estimated_rebate = "See programme terms"
 

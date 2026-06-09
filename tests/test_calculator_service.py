@@ -135,3 +135,37 @@ def test_calculator_uses_budget_currency_reliability_and_profile_scores():
         (expected_strength + expected_reliability) * 0.5
     )
     assert territory.overall_score == round(expected_overall, 1)
+
+
+def test_calculator_displays_net_rate_and_net_rebate():
+    incentive = _incentive()
+    incentive["rate_gross"] = 30.0
+    incentive["rate_net"] = 20.0
+    incentive["currency"] = "USD"
+    db = _FakeDB(
+        {
+            "incentive_programs": [incentive],
+            "crew_costs": [],
+            "territory_profiles": [],
+        }
+    )
+    service = CalculatorService(db, db.settings)
+    fake_fx = _FakeFX()
+    service.fx = fake_fx
+
+    response = service.compute_scenario(
+        ScenarioRequest(
+            budget_amount=1_000_000,
+            budget_currency="USD",
+            vfx_pct=0,
+            production_format="Feature Film",
+            production_priority="full",
+            territories=["Hungary"],
+            baseline="GB",
+        )
+    )
+
+    territory = response.territories[0]
+    assert territory.rate_display == "20% net (30% gross)"
+    assert territory.estimated_rebate_display == "$200,000"
+    assert territory.estimated_rebate == 200_000
