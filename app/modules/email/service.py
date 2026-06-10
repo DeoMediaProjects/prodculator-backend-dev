@@ -27,6 +27,8 @@ EMAIL_SUBJECTS: dict[str, str] = {
     "grant_alert": "New grant opportunity for your watchlist",
     "festival_deadline": "Festival deadline reminder",
     "admin_invite": "You've been invited to Prodculator Admin",
+    "support_inquiry": "New Prodculator support inquiry",
+    "support_inquiry_confirmation": "We received your Prodculator inquiry",
 }
 
 
@@ -98,7 +100,7 @@ class EmailService:
         normalised.setdefault("app_url", app_url)
         normalised.setdefault("dashboard_url", f"{app_url}/dashboard")
         normalised.setdefault("login_url", f"{app_url}/login")
-        normalised.setdefault("support_email", "support@prodculator.com")
+        normalised.setdefault("support_email", self.settings.CONTACT_EMAIL or "support@prodculator.com")
         normalised.setdefault("billing_email", "billing@prodculator.com")
         normalised.setdefault("currency", "USD")
 

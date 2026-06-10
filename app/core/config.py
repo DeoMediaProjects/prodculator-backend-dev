@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     # SendGrid
     SENDGRID_API_KEY: str = ""
     SENDGRID_FROM_EMAIL: str = "noreply@prodculator.com"
+    CONTACT_EMAIL: str = "support@prodculator.com"
 
     # Firebase / Google Auth
     FIREBASE_PROJECT_ID: str = ""
