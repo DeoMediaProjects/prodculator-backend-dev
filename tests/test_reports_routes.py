@@ -2,7 +2,11 @@ import json
 
 from app.core.dependencies import get_current_user, get_optional_user
 from app.modules.reports import router as reports_router
-from app.modules.reports.router import _build_free_tier_report_data, get_report_service
+from app.modules.reports.router import (
+    _build_free_tier_report_data,
+    get_email_gating_service,
+    get_report_service,
+)
 from app.modules.scripts.service import ClaudeUnavailableError, ScriptAnalysisService
 
 
@@ -84,6 +88,59 @@ class FakeReportService:
 
     def get_report_by_share_token(self, share_token: str):
         return None
+
+    def generate_preview_report(self, request_metadata, script_service):
+        return {
+            "genre": ", ".join(request_metadata.get("genre") or []),
+            "tone": "Preview tone",
+            "scale": request_metadata.get("format") or "Feature Film",
+            "complexity": "Medium",
+            "executiveSummary": {
+                "keyInsights": "Preview generated from backend datasets.",
+                "keyFlags": ["Weather risk"],
+                "actionTimeline": [
+                    {"action": "Verify incentive", "deadline": "Before shoot"}
+                ],
+            },
+            "locationRankings": [
+                {
+                    "name": "United Kingdom",
+                    "country": "United Kingdom",
+                    "score": 80,
+                    "costEfficiency": 70,
+                    "crewDepth": 80,
+                    "infrastructure": 85,
+                    "incentiveStrength": 90,
+                    "currencyAdvantage": 60,
+                    "reasoning": ["Backend preview route"],
+                }
+            ],
+            "incentiveEstimates": [
+                {
+                    "territory": "United Kingdom",
+                    "program": "IFTC",
+                    "rate": "25%",
+                    "estimatedRebate": "GBP 100,000",
+                }
+            ],
+            "nextSteps": [{"priority": "URGENT", "action": "Verify incentive"}],
+            "scriptIntelligence": {
+                "complexityDrivers": [{"flag": "Weather", "detail": "Rain"}]
+            },
+        }
+
+
+class FakeEmailGatingService:
+    def __init__(self):
+        self.records: list[tuple[str, bool]] = []
+        self.blocked: set[str] = set()
+
+    def is_blocked(self, email: str) -> bool:
+        return email in self.blocked
+
+    def create_record(self, email: str, report_generated: bool = False):
+        self.records.append((email, report_generated))
+        return {"email": email, "report_generated": report_generated}
 
 
 VALID_REPORT_PAYLOAD = {
@@ -238,6 +295,100 @@ def test_report_create_triggers_background_and_status_transitions(client, auth_u
     )
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "completed"
+
+
+def test_preview_report_accepts_json_and_records_email_gating(client):
+    service = FakeReportService()
+    gating = FakeEmailGatingService()
+    client.app.dependency_overrides[get_report_service] = lambda: service
+    client.app.dependency_overrides[get_email_gating_service] = lambda: gating
+
+    response = client.post(
+        "/api/reports/preview",
+        json={
+            **VALID_REPORT_PAYLOAD,
+            "report_type": "preview",
+            "email": "preview@example.com",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reportType"] == "preview"
+    assert body["analysis"]["locationRankings"][0]["name"] == "United Kingdom"
+    assert gating.records == [("preview@example.com", True)]
+
+
+def test_multipart_endpoint_rejects_preview_pointing_to_json_endpoint(client):
+    """Previews are served only by POST /api/reports/preview now; the multipart
+    endpoint rejects report_type=preview with a clear pointer."""
+    service = FakeReportService()
+    client.app.dependency_overrides[get_report_service] = lambda: service
+
+    response = client.post(
+        "/api/reports",
+        data={"body": json.dumps({**VALID_REPORT_PAYLOAD, "report_type": "preview"})},
+    )
+    assert response.status_code == 400
+    assert "/api/reports/preview" in response.json()["detail"]
+
+
+def test_report_create_enqueues_on_rq_when_queue_enabled(client, auth_user, monkeypatch):
+    """When the durable queue is enabled, report generation is enqueued onto RQ
+    and is NOT run in-process — the API only creates the job and returns."""
+    service = FakeReportService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_optional_user] = lambda: auth_user
+    client.app.dependency_overrides[get_report_service] = lambda: service
+    monkeypatch.setattr(ScriptAnalysisService, "check_available", lambda self: None)
+
+    class FakeQueue:
+        name = "reports"
+
+        def __init__(self):
+            self.calls = []
+
+        def enqueue(self, func, args=None, **kwargs):
+            self.calls.append((func, args, kwargs))
+
+    fake_queue = FakeQueue()
+    monkeypatch.setattr(reports_router, "get_report_queue", lambda settings: fake_queue)
+
+    # If the inline path ever runs while queueing is enabled, fail loudly.
+    def fail_task(*_a, **_kw):
+        raise AssertionError("process_report_task must not run inline when queued")
+
+    monkeypatch.setattr(reports_router, "process_report_task", fail_task)
+
+    response = client.post(
+        "/api/reports",
+        headers={"Authorization": "Bearer token"},
+        data={"body": json.dumps(VALID_REPORT_PAYLOAD)},
+        files={"script_file": ("script.txt", b"INT. HOUSE - DAY\nHello world.", "text/plain")},
+    )
+    assert response.status_code == 200
+    report_id = response.json()["report_id"]
+
+    # Exactly one job enqueued, with the task reference and plain-string args
+    # (no Settings object — the worker re-resolves settings itself).
+    assert len(fake_queue.calls) == 1
+    func, args, kwargs = fake_queue.calls[0]
+    assert func is fail_task
+    assert args == (
+        report_id,
+        auth_user.id,
+        auth_user.email,
+        "INT. HOUSE - DAY\nHello world.",
+        "script.txt",
+    )
+    assert all(isinstance(a, str) for a in args)
+
+    # Nothing ran inline, so the report is still processing.
+    status_response = client.get(
+        f"/api/reports/{report_id}/status",
+        headers={"Authorization": "Bearer token"},
+    )
+    assert status_response.json()["status"] == "processing"
 
 
 def test_report_create_blocked_when_claude_unavailable(client, auth_user, monkeypatch):

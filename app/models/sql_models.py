@@ -26,6 +26,7 @@ class User(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     email: str = Field(index=True, nullable=False, unique=True)
     password_hash: str | None = None
+    google_uid: str | None = Field(default=None, index=True)
     name: str | None = None
     company: str | None = None
     role: str | None = None
@@ -63,6 +64,7 @@ class Subscription(SQLModel, table=True):
     cancelled_at: datetime | None = None
     pending_plan: str | None = None
     past_due_since: datetime | None = None
+    stripe_schedule_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -21,6 +21,20 @@ uvicorn app.main:app --reload
 
 API docs available at http://localhost:8000/api/docs
 
+### Report worker (durable queue)
+
+Paid/B2B report generation runs on a durable Redis-backed RQ queue by default
+(`REPORT_QUEUE_ENABLED=true`), so you must run a worker alongside the API:
+
+```bash
+# run at least one worker (needs the same REDIS_URL and DB_URL as the API)
+python -m app.worker
+```
+
+For quick local dev without a worker, set `REPORT_QUEUE_ENABLED=false` to fall
+back to in-process FastAPI BackgroundTasks — convenient, but not durable across
+restarts. The test suite forces this off automatically.
+
 ## Docker
 
 ```bash

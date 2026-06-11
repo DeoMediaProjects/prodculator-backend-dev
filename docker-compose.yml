@@ -9,9 +9,33 @@ services:
       DB_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prodculator}
       REDIS_URL: redis://redis:6379/0
       BACKEND_URL: http://localhost:${BACKEND_PORT:-8001}
+      # Route report generation onto the durable RQ queue (processed by `worker`).
+      REPORT_QUEUE_ENABLED: "true"
       # AWS S3 credentials are loaded from .env — no local storage volume needed
     ports:
       - "${BACKEND_PORT:-8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m app.worker
+    env_file:
+      - .env
+    environment:
+      DB_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prodculator}
+      REDIS_URL: redis://redis:6379/0
+      REPORT_QUEUE_ENABLED: "true"
+      # The worker owns background jobs only — keep the API's startup side effects
+      # (scraper seeding, APScheduler) out of this process.
+      SCRAPER_ENABLED: "false"
+      SCHEDULER_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy

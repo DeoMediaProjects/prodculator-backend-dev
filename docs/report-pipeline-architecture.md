@@ -133,3 +133,37 @@ Helpers module contains shared pure functions used by both the builder and the v
         |
     Complete Report
     (PDF rendering, persistence, delivery)
+
+---
+
+## Execution and Job Queue
+
+The pipeline above is the *work*. Where that work runs is a separate concern.
+
+Paid and B2B reports are long-running and failure-prone (multiple AI calls, PDF
+render and upload, transactional emails). The `POST /api/reports` handler does
+the cheap, synchronous parts inline — validate the request, read and extract the
+script text in memory, run a Claude reachability pre-flight so a user is never
+charged for an unreachable service, create the report row, and consume a credit
+where applicable — then hands the heavy pipeline off to a worker via
+`_dispatch_report_job`. The handler returns immediately with the `report_id`,
+and the frontend polls `GET /api/reports/{report_id}/status`. The report row's
+`status` column (`processing` / `completed` / `failed`) is the durable source of
+truth for progress.
+
+Dispatch has two modes, controlled by `REPORT_QUEUE_ENABLED`:
+
+- **Durable queue (production).** The job is enqueued onto a Redis-backed RQ
+  queue (`app/core/queue.py`) and executed by a separate worker process
+  (`python -m app.worker`). Because the job lives in Redis and is owned by the
+  worker, a web-process deploy, crash, or restart mid-generation no longer loses
+  the work. Run at least one worker alongside the web process.
+- **In-process fallback (local dev, tests).** When disabled, the job runs in
+  FastAPI `BackgroundTasks` in the web process — no Redis or worker required.
+
+`process_report_task` is the single job body for both modes. It is enqueued by
+reference (RQ stores its dotted path) with plain-string arguments only; it
+re-resolves `Settings` from its own environment rather than receiving a settings
+object, so the worker is self-contained. On failure it records the failed status
+on the report row and refunds any pay-per-report credit that was consumed, so a
+report that never generated is never charged.
