@@ -89,6 +89,24 @@ def create_verification_token(user_id: str, email: str, settings: Settings | Non
     )
 
 
+def create_password_reset_token(user_id: str, email: str, settings: Settings | None = None) -> str:
+    """Create a 1-hour signed JWT used as the password-reset link token."""
+    cfg = settings or get_settings()
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(hours=1)
+    return _encode(
+        {
+            "sub": user_id,
+            "email": email,
+            "type": "password_reset",
+            "jti": str(uuid4()),
+            "iat": int(now.timestamp()),
+            "exp": int(expires.timestamp()),
+        },
+        cfg.JWT_SECRET_KEY,
+    )
+
+
 def decode_token(token: str, settings: Settings | None = None) -> dict[str, Any]:
     cfg = settings or get_settings()
     try:

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.cache import get_redis
-from app.core.database_client import DatabaseClient
+from app.core.database_client import DatabaseClient, EmailNotVerifiedError
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase, get_current_user
 from app.core.firebase import verify_firebase_token
@@ -19,6 +19,7 @@ from app.modules.auth.schemas import (
     SignUpResponse,
     TokenResponse,
     ResetPasswordRequest,
+    ConfirmResetPasswordRequest,
     ResendVerificationRequest,
     UpdatePasswordRequest,
     RefreshTokenRequest,
@@ -74,6 +75,10 @@ async def signin(
     """Sign in with email and password."""
     try:
         return auth_service.sign_in(email=body.email, password=body.password)
+    except EmailNotVerifiedError as e:
+        # 403 (not 401) so the client can distinguish "credentials are fine but the
+        # email isn't verified yet" from "wrong email/password" and offer a resend.
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception:
@@ -146,6 +151,24 @@ async def reset_password(
     except Exception:
         pass  # Don't reveal whether the email exists
     return SuccessResponse(message="Password reset email sent")
+
+
+@router.post("/reset-password/confirm", response_model=SuccessResponse)
+@limiter.limit("5/minute")
+async def confirm_reset_password(
+    request: Request,
+    body: ConfirmResetPasswordRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Complete a password reset using the token from the reset email."""
+    try:
+        auth_service.confirm_password_reset(token=body.token, new_password=body.new_password)
+        return SuccessResponse(message="Password updated successfully")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.error("Password reset confirmation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to reset password")
 
 
 @router.post("/resend-verification", response_model=SuccessResponse)

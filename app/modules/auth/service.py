@@ -6,6 +6,7 @@ from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.security import (
     create_access_token,
+    create_password_reset_token,
     create_refresh_token,
     create_verification_token,
     decode_token,
@@ -107,6 +108,14 @@ class AuthService:
 
         data = result.data
         user_type = data.get("user_type", "free")
+
+        # Flip the account to verified. This is what makes the magic link meaningful:
+        # until it runs, sign-in is rejected by AuthClient.sign_in_with_password.
+        if not data.get("email_verified", False):
+            self.supabase.table("users").update(
+                {"email_verified": True}
+            ).eq("id", user_id).execute()
+
         access_token, expires_in = create_access_token(user_id, user_type, self.settings)
         refresh_token = create_refresh_token(user_id, user_type, self.settings)
 
@@ -357,17 +366,68 @@ class AuthService:
         )
 
     def reset_password(self, email: str, redirect_url: str) -> None:
-        """Trigger password reset flow."""
-        self.supabase.auth.reset_password_email(
-            email, {"redirect_to": f"{redirect_url}/reset-password"}
+        """Generate a password-reset token and email a reset link via Brevo.
+
+        Silent no-op if the address is not registered — the caller never reveals
+        whether an account exists.
+        """
+        email = email.strip().lower()
+        result = (
+            self.supabase.table("users")
+            .select("id,email,name,password_hash")
+            .eq("email", email)
+            .single()
+            .execute()
         )
+        if not result.data:
+            return  # Don't reveal whether the address is registered
+
+        data = result.data
+        # Accounts created via Google have no password to reset.
+        if not data.get("password_hash"):
+            return
+
+        reset_token = create_password_reset_token(data["id"], email, self.settings)
+        reset_url = f"{redirect_url}/reset-password?token={reset_token}"
+
+        self.email_service.send(
+            to_email=email,
+            template_name="reset_password",
+            context={"name": data.get("name"), "reset_url": reset_url},
+        )
+
+    def confirm_password_reset(self, token: str, new_password: str) -> None:
+        """Validate a password-reset token and set the account's new password."""
+        try:
+            claims = decode_token(token, self.settings)
+        except ValueError:
+            raise ValueError("Reset link is invalid or has expired.")
+
+        if claims.get("type") != "password_reset":
+            raise ValueError("Invalid reset token.")
+
+        user_id = claims.get("sub")
+        if not user_id:
+            raise ValueError("Invalid reset token.")
+
+        result = (
+            self.supabase.table("users")
+            .select("id")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            raise ValueError("User not found.")
+
+        self.supabase.auth.admin.update_user_by_id(user_id, {"password": new_password})
 
     def resend_verification(self, email: str, redirect_url: str) -> None:
         """Re-generate a verification token and re-send the verification email."""
         email = email.strip().lower()
         result = (
             self.supabase.table("users")
-            .select("id,email,name")
+            .select("id,email,name,email_verified")
             .eq("email", email)
             .single()
             .execute()
@@ -376,6 +436,9 @@ class AuthService:
             return  # Silently — don't reveal whether the address is registered
 
         data = result.data
+        if data.get("email_verified", False):
+            return  # Already verified — nothing to resend
+
         verification_token = create_verification_token(data["id"], email, self.settings)
         verification_url = f"{redirect_url}/auth/callback?token={verification_token}"
 

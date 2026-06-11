@@ -32,6 +32,9 @@ class User(SQLModel, table=True):
     user_type: str = Field(default="free")
     credits_remaining: int = 0
     plan: str = Field(default="free")
+    # New accounts start unverified; set True once the email-verification link is
+    # used (or for OAuth sign-ups, where the provider has already verified the email).
+    email_verified: bool = Field(default=False)
     is_blocked: bool = Field(default=False)
     blocked_at: datetime | None = None
     last_active: datetime | None = None

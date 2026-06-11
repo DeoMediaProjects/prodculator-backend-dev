@@ -45,6 +45,11 @@ class UpdatePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class ConfirmResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 

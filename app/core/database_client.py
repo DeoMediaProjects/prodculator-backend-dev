@@ -22,6 +22,15 @@ from app.core.security import (
 from app.core.storage import StorageClient
 
 
+class EmailNotVerifiedError(ValueError):
+    """Raised on sign-in when the account exists but its email is not yet verified.
+
+    Subclasses ValueError so existing ``except ValueError`` handlers still treat it
+    as a client error, while letting the API layer catch it specifically to return
+    a distinct status and prompt the user to resend the verification email.
+    """
+
+
 @dataclass
 class QueryResult:
     data: Any = None
@@ -93,6 +102,7 @@ class AuthClient:
             "user_type": "free",
             "credits_remaining": 0,
             "plan": "free",
+            "email_verified": False,
             "created_at": datetime.now(timezone.utc),
         }
         self.client.session.execute(insert(users).values(**insert_payload))
@@ -116,6 +126,15 @@ class AuthClient:
         stored_hash = user.get("password_hash")
         if not stored_hash or not verify_password(password, stored_hash):
             raise ValueError("Invalid email or password")
+
+        # Enforce email verification — the magic link must be used before the
+        # account can authenticate. Raised as EmailNotVerifiedError so the API
+        # layer can return a distinct status/message and the UI can offer a resend.
+        if not user.get("email_verified", False):
+            raise EmailNotVerifiedError(
+                "Please verify your email address before signing in. "
+                "Check your inbox for the verification link."
+            )
 
         return self._issue_tokens(user["id"], user["email"], user.get("user_type", "free"))
 
@@ -243,6 +262,8 @@ class AuthClient:
             "user_type": "free",
             "credits_remaining": 0,
             "plan": "free",
+            # Google has already verified the address, so no email step is needed.
+            "email_verified": True,
             "created_at": datetime.now(timezone.utc),
         }
         self.client.session.execute(insert(users).values(**insert_payload))

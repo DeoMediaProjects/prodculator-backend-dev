@@ -17,6 +17,7 @@ BREVO_SEND_TIMEOUT = 10
 
 EMAIL_SUBJECTS: dict[str, str] = {
     "verify_email": "Verify your Prodculator account",
+    "reset_password": "Reset your Prodculator password",
     "welcome": "Welcome to Prodculator",
     "report_ready": "Your Prodculator report is ready",
     "payment_confirmation": "Payment confirmation",
