@@ -88,7 +88,7 @@ def _settings() -> Settings:
         _env_file=None,
         JWT_SECRET_KEY="x" * 64,
         STRIPE_SECRET_KEY="sk_test_dummy",
-        SENDGRID_API_KEY="",  # email send is skipped — we only assert DB writes
+        BREVO_API_KEY="",  # email send is skipped — we only assert DB writes
         REDIS_URL="redis://localhost:6379/0",
     )
 

@@ -82,9 +82,10 @@ class Settings(BaseSettings):
     SCRIPT_CHUNK_OVERLAP_TOKENS: int = 200
     SCRIPT_MAX_CHUNKS: int = 80
 
-    # SendGrid
-    SENDGRID_API_KEY: str = ""
-    SENDGRID_FROM_EMAIL: str = "noreply@prodculator.com"
+    # Brevo (transactional email)
+    BREVO_API_KEY: str = ""
+    BREVO_FROM_EMAIL: str = "noreply@prodculator.com"
+    BREVO_FROM_NAME: str = "Prodculator"
     CONTACT_EMAIL: str = "support@prodculator.com"
 
     # Firebase / Google Auth

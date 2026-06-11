@@ -178,7 +178,7 @@ async def get_system_status(
     except Exception:
         services.append({"name": "Redis Cache", "status": "degraded", "last_checked": now})
 
-    for name in ["OpenAI API", "Stripe Payment Processing", "SendGrid Email Delivery"]:
+    for name in ["OpenAI API", "Stripe Payment Processing", "Brevo Email Delivery"]:
         services.append({"name": name, "status": "unknown", "last_checked": now})
 
     return SystemStatusResponse(
