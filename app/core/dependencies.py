@@ -1,8 +1,9 @@
 import redis.asyncio as aioredis
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
+from app.core.auth_cookies import extract_access_token
 from app.core.cache import get_redis
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
@@ -11,9 +12,19 @@ from app.core.security import is_token_revoked
 from app.modules.admin.schemas import AdminUser
 from app.modules.auth.schemas import AuthUser
 
-_bearer_scheme = HTTPBearer(auto_error=True)
+# auto_error=False so a missing Authorization header is not an immediate 403 —
+# the token may instead arrive in an httpOnly cookie, which we check next.
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 _USER_PROFILE_TTL = 300  # 5 minutes
+
+
+def _require_token(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str:
+    """Return the access token from the Bearer header or the auth cookie, or 401."""
+    token = extract_access_token(request, credentials.credentials if credentials else None)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return token
 
 
 def get_supabase(
@@ -32,12 +43,14 @@ def get_db_client(
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     supabase: DatabaseClient = Depends(get_supabase),
     settings: Settings = Depends(get_settings),
 ) -> AuthUser:
-    """Extract and verify JWT, check blocklist, return user profile."""
-    token = credentials.credentials
+    """Extract and verify JWT (from Bearer header or httpOnly cookie), check
+    blocklist, return user profile."""
+    token = _require_token(request, credentials)
 
     try:
         user_response = supabase.auth.get_user(token)
@@ -105,12 +118,14 @@ async def get_current_user(
 
 
 async def get_current_admin(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     supabase: DatabaseClient = Depends(get_supabase),
     settings: Settings = Depends(get_settings),
 ) -> AdminUser:
-    """Validate token against the admins table. Rejects user tokens."""
-    token = credentials.credentials
+    """Validate token (Bearer header or httpOnly cookie) against the admins
+    table. Rejects user tokens."""
+    token = _require_token(request, credentials)
 
     try:
         admin_response = supabase.auth.get_admin(token)
@@ -193,18 +208,17 @@ class RequirePlan:
         return user
 
 
-_optional_bearer_scheme = HTTPBearer(auto_error=False)
-
-
 async def get_optional_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     supabase: DatabaseClient = Depends(get_supabase),
     settings: Settings = Depends(get_settings),
 ) -> AuthUser | None:
-    """Optional auth; returns None if no token provided."""
-    if not credentials:
+    """Optional auth; returns None if no token (header or cookie) is provided."""
+    token = extract_access_token(request, credentials.credentials if credentials else None)
+    if not token:
         return None
     try:
-        return await get_current_user(credentials, supabase, settings)
+        return await get_current_user(request, credentials, supabase, settings)
     except HTTPException:
         return None

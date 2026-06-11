@@ -100,14 +100,14 @@ def test_stripe(settings: Settings) -> tuple[bool, str]:
         return False, str(e)
 
 
-def test_sendgrid(settings: Settings) -> tuple[bool, str]:
-    key = settings.SENDGRID_API_KEY
+def test_brevo(settings: Settings) -> tuple[bool, str]:
+    key = settings.BREVO_API_KEY
     if not key:
-        return False, "SENDGRID_API_KEY not configured"
+        return False, "BREVO_API_KEY not configured"
     try:
         resp = httpx.get(
-            "https://api.sendgrid.com/v3/scopes",
-            headers={"Authorization": f"Bearer {key}"},
+            "https://api.brevo.com/v3/account",
+            headers={"api-key": key, "accept": "application/json"},
             timeout=_TIMEOUT,
         )
         if resp.status_code == 200:

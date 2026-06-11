@@ -2,7 +2,7 @@
 
 > **Last Updated:** March 14, 2026  
 > **Codebase Branch:** `feat/s3-storage`  
-> **Stack:** Python 3.11 · FastAPI · SQLModel/SQLAlchemy · Anthropic Claude · Stripe · AWS S3 · Redis · SendGrid · Firebase Auth
+> **Stack:** Python 3.11 · FastAPI · SQLModel/SQLAlchemy · Anthropic Claude · Stripe · AWS S3 · Redis · Brevo · Firebase Auth
 
 ---
 
@@ -71,7 +71,7 @@ The backend is a **FastAPI** application that orchestrates:
     └──────────┘  └─────────────┘  └─────────────┘
           │
     ┌─────▼────┐  ┌─────────────┐  ┌─────────────┐
-    │  Redis   │  │   Stripe    │  │  SendGrid   │
+    │  Redis   │  │   Stripe    │  │    Brevo    │
     │ (Cache)  │  │ (Payments)  │  │  (Email)    │
     └──────────┘  └─────────────┘  └─────────────┘
 ```
@@ -481,7 +481,7 @@ This ensures data quality for the AI analysis pipeline.
 
 ### 10.1 Email Service (`app/modules/email/`)
 
-- **SendGrid** integration with Jinja2 HTML templates.
+- **Brevo** integration with Jinja2 HTML templates.
 - Template types: `welcome`, `report_ready`, `processing_started`, `payment_confirmation`, `grant_alert`, `festival_deadline`, `admin_invite`.
 - Templates stored in `app/templates/emails/`.
 
@@ -603,7 +603,7 @@ All configuration is in `app/core/config.py` via Pydantic Settings (`.env` file 
 | **Chunking**      | `SCRIPT_ANALYSIS_CHUNKED_ENABLED`, `SCRIPT_CHUNK_TARGET_TOKENS`, `SCRIPT_CHUNK_OVERLAP_TOKENS`, `SCRIPT_MAX_CHUNKS` |
 | **Storage**       | `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_REGION`, presigned URL expiry           |
 | **Payments**      | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, price IDs per plan/currency                                           |
-| **Email**         | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`                                                                           |
+| **Email**         | `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`                                                              |
 | **External APIs** | `TMDB_API_KEY`, `EXCHANGE_RATE_API_KEY`, `BLS_API_KEY`, `FRED_API_KEY`, `GOOGLE_MAPS_API_KEY`                       |
 | **Scraper**       | `SCRAPER_ENABLED`, `SCRAPER_REQUEST_TIMEOUT`, `SCRAPER_MAX_TEXT_CHARS`                                              |
 
@@ -639,7 +639,7 @@ All configuration is in `app/core/config.py` via Pydantic Settings (`.env` file 
 - [ ] Configure AWS S3 credentials
 - [ ] Set Anthropic API key
 - [ ] Configure Stripe keys + webhook secret
-- [ ] Configure SendGrid API key
+- [ ] Configure Brevo API key
 - [ ] Configure Firebase service account
 - [ ] Set up Redis instance
 - [ ] Run `alembic upgrade head`

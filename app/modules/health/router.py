@@ -18,7 +18,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         "database_configured": bool(settings.DB_URL),
         "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
         "stripe_configured": bool(settings.STRIPE_SECRET_KEY),
-        "sendgrid_configured": bool(settings.SENDGRID_API_KEY),
+        "brevo_configured": bool(settings.BREVO_API_KEY),
     }
 
 

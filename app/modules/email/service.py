@@ -3,17 +3,21 @@ import re
 from pathlib import Path
 from typing import Any
 
+import httpx
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Attachment, Disposition, FileContent, FileName, FileType, Mail
 
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 _CAMEL_CASE_BOUNDARY_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
+# Brevo transactional email API — https://developers.brevo.com/reference/sendtransacemail
+BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email"
+BREVO_SEND_TIMEOUT = 10
+
 EMAIL_SUBJECTS: dict[str, str] = {
     "verify_email": "Verify your Prodculator account",
+    "reset_password": "Reset your Prodculator password",
     "welcome": "Welcome to Prodculator",
     "report_ready": "Your Prodculator report is ready",
     "payment_confirmation": "Payment confirmation",
@@ -27,6 +31,8 @@ EMAIL_SUBJECTS: dict[str, str] = {
     "grant_alert": "New grant opportunity for your watchlist",
     "festival_deadline": "Festival deadline reminder",
     "admin_invite": "You've been invited to Prodculator Admin",
+    "support_inquiry": "New Prodculator support inquiry",
+    "support_inquiry_confirmation": "We received your Prodculator inquiry",
 }
 
 
@@ -58,27 +64,38 @@ class EmailService:
         attachments: list[dict[str, Any]] | None = None,
     ) -> None:
         subject, html = self.render(template_name, context)
-        if not self.settings.SENDGRID_API_KEY:
-            logger.warning("SENDGRID_API_KEY not configured; email send skipped (to=%s)", to_email)
+        if not self.settings.BREVO_API_KEY:
+            logger.warning("BREVO_API_KEY not configured; email send skipped (to=%s)", to_email)
             return
 
-        message = Mail(
-            from_email=self.settings.SENDGRID_FROM_EMAIL,
-            to_emails=to_email,
-            subject=subject,
-            html_content=html,
+        payload: dict[str, Any] = {
+            "sender": {
+                "email": self.settings.BREVO_FROM_EMAIL,
+                "name": self.settings.BREVO_FROM_NAME,
+            },
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "htmlContent": html,
+        }
+        # Brevo infers the content type from the filename, so only content + name
+        # are needed. Attachment content is already base64-encoded by callers.
+        if attachments:
+            payload["attachment"] = [
+                {"content": attachment["content"], "name": attachment["filename"]}
+                for attachment in attachments
+            ]
+
+        response = httpx.post(
+            BREVO_SEND_URL,
+            headers={
+                "api-key": self.settings.BREVO_API_KEY,
+                "accept": "application/json",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=BREVO_SEND_TIMEOUT,
         )
-        for attachment in attachments or []:
-            message.add_attachment(
-                Attachment(
-                    file_content=FileContent(attachment["content"]),
-                    file_name=FileName(attachment["filename"]),
-                    file_type=FileType(attachment["type"]),
-                    disposition=Disposition("attachment"),
-                )
-            )
-        client = SendGridAPIClient(self.settings.SENDGRID_API_KEY)
-        client.send(message)
+        response.raise_for_status()
 
     @staticmethod
     def _camel_to_snake(key: str) -> str:
@@ -98,7 +115,7 @@ class EmailService:
         normalised.setdefault("app_url", app_url)
         normalised.setdefault("dashboard_url", f"{app_url}/dashboard")
         normalised.setdefault("login_url", f"{app_url}/login")
-        normalised.setdefault("support_email", "support@prodculator.com")
+        normalised.setdefault("support_email", self.settings.CONTACT_EMAIL or "support@prodculator.com")
         normalised.setdefault("billing_email", "billing@prodculator.com")
         normalised.setdefault("currency", "USD")
 

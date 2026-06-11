@@ -26,12 +26,16 @@ class User(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     email: str = Field(index=True, nullable=False, unique=True)
     password_hash: str | None = None
+    google_uid: str | None = Field(default=None, index=True)
     name: str | None = None
     company: str | None = None
     role: str | None = None
     user_type: str = Field(default="free")
     credits_remaining: int = 0
     plan: str = Field(default="free")
+    # New accounts start unverified; set True once the email-verification link is
+    # used (or for OAuth sign-ups, where the provider has already verified the email).
+    email_verified: bool = Field(default=False)
     is_blocked: bool = Field(default=False)
     blocked_at: datetime | None = None
     last_active: datetime | None = None
@@ -60,6 +64,7 @@ class Subscription(SQLModel, table=True):
     cancelled_at: datetime | None = None
     pending_plan: str | None = None
     past_due_since: datetime | None = None
+    stripe_schedule_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -116,6 +121,28 @@ class EmailGatingRecord(SQLModel, table=True):
     email: str = Field(index=True, nullable=False)
     report_generated: bool = Field(default=False)
     blocked: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SupportInquiry(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "support_inquiries"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    user_id: str = Field(index=True, nullable=False)
+    user_email: str = Field(index=True, nullable=False)
+    user_name: str | None = None
+    company: str | None = None
+    role: str | None = None
+    plan: str | None = None
+    category: str = Field(default="general", index=True)
+    message: str
+    selected_faq_question: str | None = None
+    selected_faq_answer: str | None = None
+    page_url: str | None = None
+    internal_email_sent: bool = Field(default=False)
+    auto_reply_sent: bool = Field(default=False)
+    email_error: str | None = None
+    status: str = Field(default="open", index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

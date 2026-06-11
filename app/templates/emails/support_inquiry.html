@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Prodculator Support Inquiry</title>
+  <style>
+    body { margin:0; padding:0; background:#0d0d0d; font-family:Arial, Helvetica, sans-serif; }
+    .wrapper { background:#0d0d0d; padding:24px 12px; }
+    .container { max-width:680px; margin:0 auto; background:#111111; border:1px solid #272727; border-radius:8px; overflow:hidden; }
+    .header { background:#0a0a0a; padding:24px; border-bottom:3px solid #D4AF37; }
+    .logo { margin:0; color:#D4AF37; font-weight:800; letter-spacing:3px; font-size:22px; }
+    .title { margin:8px 0 0 0; color:#fff; font-size:22px; line-height:1.35; }
+    .content { padding:24px; }
+    .label { margin:0 0 6px 0; color:#D4AF37; font-size:12px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; }
+    .body { margin:0 0 16px 0; color:#d7d7d7; font-size:14px; line-height:1.7; }
+    .box { background:#151515; border:1px solid #2b2b2b; border-left:4px solid #D4AF37; border-radius:6px; padding:16px; margin:16px 0; }
+    .meta { width:100%; border-collapse:collapse; margin:0 0 18px 0; }
+    .meta td { border-bottom:1px solid #242424; color:#d7d7d7; font-size:13px; padding:10px 0; vertical-align:top; }
+    .meta td:first-child { color:#8d8d8d; width:150px; padding-right:14px; }
+    .link { color:#D4AF37 !important; text-decoration:none !important; }
+    .footer { background:#0a0a0a; border-top:1px solid #1f1f1f; padding:18px 24px; color:#666; font-size:11px; line-height:1.6; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <p class="logo">PRODCULATOR</p>
+        <h1 class="title">New support inquiry</h1>
+      </div>
+
+      <div class="content">
+        <p class="label">Inquiry Details</p>
+        <table class="meta">
+          <tr>
+            <td>Inquiry ID</td>
+            <td>{{ inquiry_id }}</td>
+          </tr>
+          <tr>
+            <td>Submitted</td>
+            <td>{{ submitted_at }}</td>
+          </tr>
+          <tr>
+            <td>Category</td>
+            <td>{{ category | title }}</td>
+          </tr>
+          <tr>
+            <td>User</td>
+            <td>
+              {{ user_name | default(user_email, true) }}<br />
+              <a class="link" href="mailto:{{ user_email }}">{{ user_email }}</a>
+            </td>
+          </tr>
+          <tr>
+            <td>Plan</td>
+            <td>{{ plan | default("unknown", true) }}</td>
+          </tr>
+          {% if company or role %}
+          <tr>
+            <td>Profile</td>
+            <td>{{ company | default("No company", true) }}{% if role %} - {{ role }}{% endif %}</td>
+          </tr>
+          {% endif %}
+          {% if page_url %}
+          <tr>
+            <td>Page</td>
+            <td><a class="link" href="{{ page_url }}">{{ page_url }}</a></td>
+          </tr>
+          {% endif %}
+        </table>
+
+        {% if selected_faq_question %}
+        <div class="box">
+          <p class="label">Selected FAQ</p>
+          <p class="body"><strong>{{ selected_faq_question }}</strong></p>
+          {% if selected_faq_answer %}
+          <p class="body" style="margin-bottom:0;">{{ selected_faq_answer }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="box">
+          <p class="label">Message</p>
+          <p class="body" style="white-space:pre-wrap; margin-bottom:0;">{{ message }}</p>
+        </div>
+      </div>
+
+      <div class="footer">
+        This message was generated from the authenticated dashboard support widget.
+      </div>
+    </div>
+  </div>
+</body>
+</html>

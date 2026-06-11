@@ -1,12 +1,15 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from app.core.auth_cookies import ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER
 from app.core.cache import close_redis, init_redis
 from app.core.config import get_settings
 from app.core.database_client import create_client
@@ -45,6 +48,7 @@ from app.modules.watchlist.router import router as watchlist_router
 from app.modules.calculator.router import router as calculator_router
 from app.modules.territories.router import router as territories_router
 from app.modules.milestones.router import router as milestones_router
+from app.modules.support.router import router as support_router
 
 settings = get_settings()
 
@@ -67,14 +71,15 @@ async def lifespan(app_: FastAPI):
     init_redis(settings)
     if settings.AUTO_CREATE_DB_SCHEMA:
         init_db()
-    # Seed scrape sources on startup (skip gracefully if table missing)
-    db = create_client()
-    try:
-        ScraperService(db, settings).seed_sources()
-    except Exception as e:
-        logger.warning("Could not seed scrape sources: %s", e)
-    finally:
-        db.close()
+    if settings.SCRAPER_ENABLED:
+        # Seed scrape sources on startup (skip gracefully if table missing)
+        db = create_client()
+        try:
+            ScraperService(db, settings).seed_sources()
+        except Exception as e:
+            logger.warning("Could not seed scrape sources: %s", e)
+        finally:
+            db.close()
     # Surface any missing Stripe price IDs loudly at boot. We warn rather than
     # crash so a missing annual price can't take the whole API down, but the gap
     # is visible before it strands a customer's plan change.
@@ -104,13 +109,41 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+
+# Defined before CORS so CORS remains the outermost middleware — a rejected
+# request still receives CORS headers and the browser can read the 403.
+@app.middleware("http")
+async def csrf_protect(request: Request, call_next):
+    """Double-submit CSRF check for cookie-authenticated, state-changing requests.
+
+    Only applies when the request is authenticated via the httpOnly access cookie
+    AND carries no Authorization header. Bearer/API clients are not vulnerable to
+    CSRF (the browser never auto-attaches a Bearer token), so they are exempt —
+    which is also why the existing header-authenticated test suite is unaffected.
+    """
+    if (
+        settings.AUTH_COOKIE_ENABLED
+        and request.method not in _CSRF_SAFE_METHODS
+        and request.cookies.get(ACCESS_COOKIE)
+        and not request.headers.get("authorization")
+    ):
+        header_token = request.headers.get(CSRF_HEADER)
+        cookie_token = request.cookies.get(CSRF_COOKIE)
+        if not header_token or not cookie_token or not secrets.compare_digest(header_token, cookie_token):
+            return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid"})
+    return await call_next(request)
+
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-CSRF-Token"],
 )
 
 
@@ -155,6 +188,7 @@ app.include_router(subscriptions_router)
 app.include_router(calculator_router)
 app.include_router(territories_router)
 app.include_router(milestones_router)
+app.include_router(support_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)

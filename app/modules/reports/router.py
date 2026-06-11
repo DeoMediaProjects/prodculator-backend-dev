@@ -8,11 +8,13 @@ from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.db import get_db_context
 from app.core.dependencies import get_supabase, get_current_user, get_optional_user, RequirePlan
+from app.core.queue import get_report_queue
 from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
 from app.modules.email.service import EmailService
 from app.modules.reports.pdf_service import PDFService
 from app.modules.reports.schemas import (
+    CreateReportRequest,
     PreviewReportResponse,
     ReportResponse,
     ReportStatusResponse,
@@ -62,6 +64,79 @@ def _resolve_pdf_url(s3_key: str | None, settings: Settings) -> str | None:
         return None
 
 
+def _generate_preview_response(
+    *,
+    body_data: CreateReportRequest,
+    user: AuthUser | None,
+    service: ReportService,
+    email_gating_service: EmailGatingService,
+    settings: Settings,
+) -> PreviewReportResponse:
+    # Email gating: always use the authenticated user's email; fall back to provided email
+    # for anonymous requests only. This prevents DoS via spoofed email.
+    gate_email = user.email if user else body_data.email
+    if gate_email and email_gating_service.is_blocked(gate_email):
+        raise HTTPException(
+            status_code=403,
+            detail="This email address has been blocked from generating free reports",
+        )
+
+    started = perf_counter()
+    try:
+        script_service = ScriptAnalysisService(settings)
+        metadata = body_data.model_dump(exclude={"script_file_path"})
+        analysis = service.generate_preview_report(
+            request_metadata=metadata,
+            script_service=script_service,
+        )
+        analysis = _build_free_tier_report_data(analysis)
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "Preview report generated: title=%s elapsed_ms=%s location_rankings=%s",
+            body_data.script_title,
+            elapsed_ms,
+            len(analysis.get("locationRankings", [])),
+        )
+
+        # Record email gating usage after successful generation.
+        if gate_email:
+            try:
+                email_gating_service.create_record(gate_email, report_generated=True)
+            except Exception:
+                logger.warning("Failed to record email gating for %s", gate_email)
+
+        return PreviewReportResponse(analysis=analysis)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Preview report generation failed: title=%s", body_data.script_title)
+        raise HTTPException(status_code=500, detail="Failed to generate preview report")
+
+
+@router.post("/preview", response_model=PreviewReportResponse)
+async def create_preview_report(
+    body: CreateReportRequest,
+    user: AuthUser | None = Depends(get_optional_user),
+    service: ReportService = Depends(get_report_service),
+    email_gating_service: EmailGatingService = Depends(get_email_gating_service),
+    settings: Settings = Depends(get_settings),
+):
+    """Create a synchronous preview report from a JSON body.
+
+    Full paid reports still use the multipart ``POST /api/reports`` endpoint,
+    because they upload a script file. Preview has no file upload, so JSON is
+    the simpler and less error-prone contract for the frontend.
+    """
+    body_data = body.model_copy(update={"report_type": "preview"})
+    return _generate_preview_response(
+        body_data=body_data,
+        user=user,
+        service=service,
+        email_gating_service=email_gating_service,
+        settings=settings,
+    )
+
+
 @router.post("")
 async def create_report(
     background_tasks: BackgroundTasks,
@@ -71,21 +146,22 @@ async def create_report(
     body: str = Form(...),
     user: AuthUser | None = Depends(get_optional_user),
     service: ReportService = Depends(get_report_service),
-    email_gating_service: EmailGatingService = Depends(get_email_gating_service),
     settings: Settings = Depends(get_settings),
 ):
-    """Create a new report. Previews return synchronously; paid/b2b are async.
+    """Create a paid/B2B report (async). Returns a ``report_id`` to poll for status.
+
+    Preview reports use the dedicated JSON endpoint ``POST /api/reports/preview``;
+    this multipart endpoint handles only paid/B2B reports, which upload a script.
 
     The request must be submitted as **multipart/form-data** with:
     - ``body``: JSON string of report metadata (see CreateReportRequest schema).
-    - ``script_file``: the script file (PDF/txt/fountain/fdx) — required for paid/b2b.
+    - ``script_file``: the script file (PDF/txt/fountain/fdx) — required.
 
     Scripts are **never persisted** to storage; they are read into memory, analysed,
     then discarded.
     """
     # Parse the JSON body from the form field
     try:
-        from app.modules.reports.schemas import CreateReportRequest
         body_data = CreateReportRequest.model_validate(json.loads(body))
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
@@ -97,48 +173,12 @@ async def create_report(
         bool(user),
     )
 
+    # Previews are served by the dedicated JSON endpoint POST /api/reports/preview.
     if body_data.report_type == "preview":
-        # Email gating: always use the authenticated user's email; fall back to provided email
-        # for anonymous requests only. This prevents DoS via spoofed email.
-        gate_email = user.email if user else body_data.email
-        if gate_email:
-            if email_gating_service.is_blocked(gate_email):
-                raise HTTPException(
-                    status_code=403,
-                    detail="This email address has been blocked from generating free reports",
-                )
-
-        # Preview: synchronous, no DB row, no auth required
-        started = perf_counter()
-        try:
-            script_service = ScriptAnalysisService(settings)
-            metadata = body_data.model_dump(exclude={"script_file_path"})
-            analysis = service.generate_preview_report(
-                request_metadata=metadata,
-                script_service=script_service,
-            )
-            analysis = _build_free_tier_report_data(analysis)
-            elapsed_ms = int((perf_counter() - started) * 1000)
-            logger.info(
-                "Preview report generated: title=%s elapsed_ms=%s location_rankings=%s",
-                body_data.script_title,
-                elapsed_ms,
-                len(analysis.get("locationRankings", [])),
-            )
-
-            # Record email gating usage after successful generation
-            if gate_email:
-                try:
-                    email_gating_service.create_record(gate_email, report_generated=True)
-                except Exception:
-                    logger.warning("Failed to record email gating for %s", gate_email)
-
-            return PreviewReportResponse(analysis=analysis)
-        except HTTPException:
-            raise
-        except Exception:
-            logger.exception("Preview report generation failed: title=%s", body_data.script_title)
-            raise HTTPException(status_code=500, detail="Failed to generate preview report")
+        raise HTTPException(
+            status_code=400,
+            detail="Preview reports use POST /api/reports/preview (JSON body, no file upload).",
+        )
 
     # --- Paid / B2B flow ---
 
@@ -219,14 +259,14 @@ async def create_report(
             script_file_path=None,  # never stored
             request_metadata=metadata,
         )
-        background_tasks.add_task(
-            process_report_task,
-            report_id,
-            user.id,
-            user.email,
-            script_text,
-            filename,
-            settings,
+        _dispatch_report_job(
+            background_tasks=background_tasks,
+            report_id=report_id,
+            user_id=user.id,
+            user_email=user.email,
+            script_text=script_text,
+            filename=filename,
+            settings=settings,
         )
 
         # Consume a pay-per-report credit whenever the report was credit-funded.
@@ -476,10 +516,12 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
 
     data = copy.deepcopy(report_data)
 
-    rankings_raw = [
-        loc for loc in data.get("locationRankings", [])
-        if isinstance(loc, dict)
-    ]
+    def dict_rows(value: object) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
+
+    rankings_raw = dict_rows(data.get("locationRankings"))
     urgent_count = _preview_urgent_action_count(data)
     complexity_count = _preview_complexity_factor_count(data)
     data["previewUrgentActionCount"] = urgent_count
@@ -546,15 +588,18 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
         data["locationRankings"] = stripped
 
     # incentiveEstimates: keep territory + program, strip all financial values
-    if data.get("incentiveEstimates"):
+    incentive_estimates = dict_rows(data.get("incentiveEstimates"))
+    if incentive_estimates:
         data["incentiveEstimates"] = [
             {"territory": inc.get("territory", ""), "program": inc.get("program", "")}
-            for inc in data["incentiveEstimates"]
+            for inc in incentive_estimates
         ]
+    else:
+        data.pop("incentiveEstimates", None)
 
     # financialAnalysis: keep territory + programme per scenario, strip values
     fa = data.get("financialAnalysis") or {}
-    scenarios = fa.get("budgetScenarios") or []
+    scenarios = dict_rows(fa.get("budgetScenarios")) if isinstance(fa, dict) else []
     if scenarios:
         data["financialAnalysis"] = {
             "budgetScenarios": [
@@ -565,17 +610,9 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
     else:
         data.pop("financialAnalysis", None)
 
-    # crewInsights: keep territory name only, strip cost/quality/specialties
-    if data.get("crewInsights"):
-        data["crewInsights"] = [
-            {"territory": c.get("territory", "")} for c in data["crewInsights"]
-        ]
-
-    # weatherLogistics: keep territory name only, strip weather data
-    if data.get("weatherLogistics"):
-        data["weatherLogistics"] = [
-            {"territory": w.get("territory", "")} for w in data["weatherLogistics"]
-        ]
+    # Premium operational sections are removed entirely for free-tier users.
+    data.pop("crewInsights", None)
+    data.pop("weatherLogistics", None)
 
     return data
 
@@ -1110,19 +1147,69 @@ def _compact_script_analysis_meta(meta: dict | None) -> dict:
 
 
 
+def _dispatch_report_job(
+    *,
+    background_tasks: BackgroundTasks,
+    report_id: str,
+    user_id: str,
+    user_email: str,
+    script_text: str,
+    filename: str,
+    settings: Settings,
+) -> None:
+    """Hand report generation off to a worker.
+
+    When the durable queue is enabled (``REPORT_QUEUE_ENABLED``), the job is
+    enqueued on RQ and processed by a separate worker process — so it survives a
+    web-process restart. Otherwise it falls back to in-process FastAPI
+    ``BackgroundTasks`` (the legacy path), which keeps local dev and the test
+    suite working without a running worker or Redis.
+
+    Either way the report row is the durable record of progress; the API only
+    ever creates the job and polls status.
+    """
+    queue = get_report_queue(settings)
+    if queue is not None:
+        # Enqueue by function reference (RQ stores its dotted path). Args are
+        # plain strings — Settings is intentionally NOT passed, since the worker
+        # re-resolves it from its own environment inside process_report_task.
+        queue.enqueue(
+            process_report_task,
+            args=(report_id, user_id, user_email, script_text, filename),
+            job_timeout=settings.REPORT_QUEUE_JOB_TIMEOUT,
+            description=f"report:{report_id}",
+        )
+        logger.info("Enqueued report job on RQ: report_id=%s queue=%s", report_id, queue.name)
+        return
+
+    # Legacy in-process path — referenced by bare name so tests can monkeypatch it.
+    background_tasks.add_task(
+        process_report_task,
+        report_id,
+        user_id,
+        user_email,
+        script_text,
+        filename,
+    )
+
+
 def process_report_task(
     report_id: str,
     user_id: str,
     user_email: str,
     script_text: str,
     script_filename: str,
-    settings: Settings,
 ) -> None:
     """Background task: analyse pre-extracted script text -> generate report -> upload PDF to S3.
 
     The script file is **never written to disk or S3**. The caller extracts text in the
     request handler and passes only the plain-text string here.
+
+    Settings are resolved here (rather than passed in) so the function is safe to
+    enqueue on RQ: the worker re-imports this module and loads settings from its
+    own environment.
     """
+    settings = get_settings()
     with get_db_context() as db:
         started = perf_counter()
         current_step = "init"

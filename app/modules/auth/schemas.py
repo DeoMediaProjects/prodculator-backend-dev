@@ -45,8 +45,15 @@ class UpdatePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class ConfirmResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    # Optional: cookie-based clients send no body and supply the refresh token via
+    # the httpOnly refresh cookie instead.
+    refresh_token: str | None = None
 
 
 class GoogleAuthRequest(BaseModel):

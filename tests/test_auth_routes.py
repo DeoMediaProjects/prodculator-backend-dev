@@ -1,3 +1,4 @@
+from app.core.database_client import EmailNotVerifiedError
 from app.core.dependencies import get_current_user, get_supabase
 from app.modules.auth.router import get_auth_service
 from app.modules.admin.auth_router import get_auth_service as get_admin_auth_service
@@ -35,6 +36,11 @@ class FakeAuthService:
         return self._token_response()
 
     def reset_password(self, **kwargs):
+        return None
+
+    def confirm_password_reset(self, token: str = "", new_password: str = ""):
+        if token == "invalid-token":
+            raise ValueError("Reset link is invalid or has expired.")
         return None
 
     def resend_verification(self, **kwargs):
@@ -169,6 +175,79 @@ def test_verify_email_rejects_missing_token(client):
     """Schema rejects requests with no token field."""
     client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService()
     response = client.post("/api/auth/verify-email", json={})
+    assert response.status_code == 422
+
+
+# ── signin ────────────────────────────────────────────────────────────────────
+
+def test_signin_returns_tokens(client):
+    client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService()
+    response = client.post(
+        "/api/auth/signin",
+        json={"email": "user@example.com", "password": "password123"},
+    )
+    assert response.status_code == 200
+    assert response.json()["access_token"] == "access"
+
+
+def test_signin_unverified_email_returns_403(client):
+    """Credentials are valid but the email isn't verified → 403, distinct from 401."""
+    class UnverifiedService(FakeAuthService):
+        def sign_in(self, **kwargs):
+            raise EmailNotVerifiedError(
+                "Please verify your email address before signing in."
+            )
+
+    client.app.dependency_overrides[get_auth_service] = lambda: UnverifiedService()
+    response = client.post(
+        "/api/auth/signin",
+        json={"email": "user@example.com", "password": "password123"},
+    )
+    assert response.status_code == 403
+    assert "verify your email" in response.json()["detail"].lower()
+
+
+def test_signin_bad_credentials_returns_401(client):
+    class BadCreds(FakeAuthService):
+        def sign_in(self, **kwargs):
+            raise ValueError("Invalid email or password")
+
+    client.app.dependency_overrides[get_auth_service] = lambda: BadCreds()
+    response = client.post(
+        "/api/auth/signin",
+        json={"email": "user@example.com", "password": "wrong-password"},
+    )
+    assert response.status_code == 401
+
+
+# ── reset password ────────────────────────────────────────────────────────────
+
+def test_confirm_reset_password_success(client):
+    client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService()
+    response = client.post(
+        "/api/auth/reset-password/confirm",
+        json={"token": "valid-jwt-token", "new_password": "newpassword123"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password updated successfully"
+
+
+def test_confirm_reset_password_invalid_token_returns_400(client):
+    client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService()
+    response = client.post(
+        "/api/auth/reset-password/confirm",
+        json={"token": "invalid-token", "new_password": "newpassword123"},
+    )
+    assert response.status_code == 400
+    assert "invalid or has expired" in response.json()["detail"].lower()
+
+
+def test_confirm_reset_password_rejects_short_password(client):
+    client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService()
+    response = client.post(
+        "/api/auth/reset-password/confirm",
+        json={"token": "valid-jwt-token", "new_password": "short"},
+    )
     assert response.status_code == 422
 
 

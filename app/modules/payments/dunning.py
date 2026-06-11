@@ -38,7 +38,7 @@ def run_dunning_grace_check(supabase: DatabaseClient, settings: Settings) -> int
     if not rows:
         return 0
 
-    email_service = EmailService(settings) if settings.SENDGRID_API_KEY else None
+    email_service = EmailService(settings) if settings.BREVO_API_KEY else None
     downgraded = 0
 
     for row in rows:

@@ -23,8 +23,28 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRES_SECONDS: int = 3600
     JWT_REFRESH_TOKEN_EXPIRES_SECONDS: int = 1209600
 
+    # Cookie-based auth. When enabled, sign-in/refresh issue the JWT pair as
+    # httpOnly cookies (not readable by JavaScript) so the browser never stores
+    # tokens in localStorage — closing off token theft via XSS. The Bearer header
+    # is still accepted (for API clients and the test suite), so this is additive.
+    # AUTH_COOKIE_SECURE must be true in production (HTTPS); set false only for
+    # local http dev. SAMESITE "lax" is the safe default for a same-site SPA.
+    AUTH_COOKIE_ENABLED: bool = True
+    AUTH_COOKIE_SECURE: bool = True
+    AUTH_COOKIE_SAMESITE: str = "lax"  # "lax" | "strict" | "none"
+    AUTH_COOKIE_DOMAIN: str | None = None  # e.g. ".prodculator.com" to share across subdomains
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Durable background-job queue (RQ over Redis). Enabled by default so prod is
+    # safe-by-default: paid/b2b report generation is enqueued onto Redis and
+    # processed by a separate worker (`python -m app.worker`) — surviving
+    # web-process restarts. This requires a worker to be running. For quick local
+    # dev WITHOUT a worker, set this false to fall back to in-process FastAPI
+    # BackgroundTasks (the test suite forces it off in conftest).
+    REPORT_QUEUE_ENABLED: bool = True
+    REPORT_QUEUE_JOB_TIMEOUT: int = 1800  # 30 min — generous upper bound for a full report
 
     # Local object storage (dev fallback when AWS creds are not set)
     STORAGE_ROOT: str = "./storage"
@@ -82,9 +102,11 @@ class Settings(BaseSettings):
     SCRIPT_CHUNK_OVERLAP_TOKENS: int = 200
     SCRIPT_MAX_CHUNKS: int = 80
 
-    # SendGrid
-    SENDGRID_API_KEY: str = ""
-    SENDGRID_FROM_EMAIL: str = "noreply@prodculator.com"
+    # Brevo (transactional email)
+    BREVO_API_KEY: str = ""
+    BREVO_FROM_EMAIL: str = "noreply@prodculator.com"
+    BREVO_FROM_NAME: str = "Prodculator"
+    CONTACT_EMAIL: str = "support@prodculator.com"
 
     # Firebase / Google Auth
     FIREBASE_PROJECT_ID: str = ""
@@ -134,6 +156,17 @@ class Settings(BaseSettings):
     def validate_jwt_secret(cls, v: str) -> str:
         if len(v) < 32:
             raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
+        return v
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug(cls, v: object) -> object:
+        if isinstance(v, str):
+            value = v.strip().lower()
+            if value in {"release", "prod", "production"}:
+                return False
+            if value in {"dev", "development"}:
+                return True
         return v
 
     @classmethod

@@ -11,10 +11,10 @@ from app.modules.data_sources.test_connections import (
     test_anthropic,
     test_bls,
     test_database,
+    test_brevo,
     test_exchange_rate,
     test_not_implemented,
     test_redis,
-    test_sendgrid,
     test_stripe,
     test_tmdb,
 )
@@ -27,7 +27,7 @@ _SLUG_TO_SETTING: dict[str, str] = {
     "tmdb": "TMDB_API_KEY",
     "bls": "BLS_API_KEY",
     "stripe": "STRIPE_SECRET_KEY",
-    "sendgrid": "SENDGRID_API_KEY",
+    "brevo": "BREVO_API_KEY",
     "redis": "REDIS_URL",
     "google_maps": "GOOGLE_MAPS_API_KEY",
     "exchange_rate": "EXCHANGE_RATE_API_KEY",
@@ -127,8 +127,8 @@ class DataSourceService:
             success, message = test_bls(self.settings)
         elif slug == "stripe":
             success, message = test_stripe(self.settings)
-        elif slug == "sendgrid":
-            success, message = test_sendgrid(self.settings)
+        elif slug == "brevo":
+            success, message = test_brevo(self.settings)
         elif slug == "redis":
             success, message = test_redis(self.settings)
         elif slug == "exchange_rate":
