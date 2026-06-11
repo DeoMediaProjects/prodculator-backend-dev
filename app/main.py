@@ -112,6 +112,23 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
+# Public auth-bootstrap endpoints. These establish or refresh a session and carry
+# their own credentials/tokens in the request body, so they are not CSRF-relevant
+# (an attacker cannot forge the password or ID token). They must keep working even
+# when the browser still holds a stale auth cookie from a prior session — at which
+# point the user has no CSRF token yet, so enforcing the check here would wrongly
+# 403 a legitimate fresh sign-in.
+_CSRF_EXEMPT_PATHS = frozenset({
+    "/api/auth/signin",
+    "/api/auth/signup",
+    "/api/auth/google",
+    "/api/auth/refresh",
+    "/api/auth/verify-email",
+    "/api/auth/resend-verification",
+    "/api/auth/reset-password",
+    "/api/auth/reset-password/confirm",
+})
+
 
 # Defined before CORS so CORS remains the outermost middleware — a rejected
 # request still receives CORS headers and the browser can read the 403.
@@ -123,10 +140,14 @@ async def csrf_protect(request: Request, call_next):
     AND carries no Authorization header. Bearer/API clients are not vulnerable to
     CSRF (the browser never auto-attaches a Bearer token), so they are exempt —
     which is also why the existing header-authenticated test suite is unaffected.
+
+    Public auth-bootstrap endpoints (see ``_CSRF_EXEMPT_PATHS``) are also exempt so
+    a stale auth cookie from a prior session cannot block a fresh sign-in.
     """
     if (
         settings.AUTH_COOKIE_ENABLED
         and request.method not in _CSRF_SAFE_METHODS
+        and request.url.path not in _CSRF_EXEMPT_PATHS
         and request.cookies.get(ACCESS_COOKIE)
         and not request.headers.get("authorization")
     ):
