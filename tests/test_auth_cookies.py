@@ -82,3 +82,16 @@ def test_bearer_request_is_exempt_from_csrf(client):
     client.cookies.set(CSRF_COOKIE, "tok")
     response = client.post("/api/auth/signout", headers={"Authorization": "Bearer x"})
     assert response.status_code == 200
+
+
+def test_fresh_signin_is_exempt_from_csrf_despite_stale_cookie(client):
+    # Reproduces the reported bug: a leftover access cookie from a prior session
+    # must not block a fresh sign-in. The user has no valid CSRF token yet, so the
+    # auth-bootstrap endpoint is exempt rather than 403'd.
+    client.app.dependency_overrides[get_auth_service] = lambda: CookieAuthService()
+    client.cookies.set(ACCESS_COOKIE, "stale")  # no CSRF cookie/header
+    response = client.post(
+        "/api/auth/signin",
+        json={"email": "user@example.com", "password": "password123"},
+    )
+    assert response.status_code == 200
