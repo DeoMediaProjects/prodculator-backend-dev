@@ -1,8 +1,8 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
-from app.core.territories import Territory, resolve_territory
+from app.core.territories import resolve_territory
 
 
 # --- Input Schemas ---

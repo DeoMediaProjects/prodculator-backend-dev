@@ -1,13 +1,26 @@
+"""SQLAlchemy-backed database client with a Supabase-style fluent API.
+
+This project migrated off Supabase to SQLAlchemy/Postgres, but kept the Supabase
+client's chainable surface (``client.table("x").select(...).eq(...).execute()``)
+to avoid rewriting every call site. ``DatabaseClient`` is therefore a thin query
+builder over SQLAlchemy Core — there is no Supabase dependency.
+
+Note: variables and parameters named ``supabase`` throughout the codebase are a
+migration artifact and refer to a ``DatabaseClient`` instance. The canonical
+dependency is ``get_db_client`` (``get_supabase`` is a retained alias); prefer
+``get_db_client`` and a ``db`` name in new code. Renaming the existing usages is
+tracked as a separate mechanical refactor.
+"""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import MetaData, Table, and_, asc, create_engine, delete, desc, func, insert, select, update
+from sqlalchemy import MetaData, Table, and_, delete, func, insert, select, update
 from sqlalchemy.sql.schema import CallableColumnDefault, ColumnDefault
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import BinaryExpression
 
@@ -20,6 +33,8 @@ from app.core.security import (
     verify_password,
 )
 from app.core.storage import StorageClient
+
+logger = logging.getLogger(__name__)
 
 
 class EmailNotVerifiedError(ValueError):
@@ -401,6 +416,21 @@ class TableQuery:
             projected[col] = row.get(col)
         return projected
 
+    def _select_stmt(self):
+        """Build the SELECT, projecting to the requested columns at the SQL level.
+
+        Previously every read issued ``SELECT *`` and then dropped the unwanted
+        columns in Python — so ``.select("a,b")`` still transferred every column.
+        When specific columns are requested we now select only those. Unknown
+        column names fall through to the full-row select (``_project_row`` still
+        yields ``None`` for them), preserving the old lenient behaviour.
+        """
+        if self._select_columns:
+            cols = [self.table.c[c] for c in self._select_columns if c in self.table.c]
+            if cols:
+                return select(*cols)
+        return select(self.table)
+
     def _execute_select(self) -> QueryResult:
         count_value: int | None = None
         if self._count_requested:
@@ -409,9 +439,26 @@ class TableQuery:
             if self._count_head:
                 return QueryResult(data=None, count=count_value)
 
-        stmt = self._apply_filters(select(self.table))
+        stmt = self._apply_filters(self._select_stmt())
         stmt = self._apply_order_and_limits(stmt)
+
+        # Safety cap: bound any read that set no explicit limit/range/single so a
+        # runaway table can never load unboundedly into memory. Effectively never
+        # hit by normal reference-table reads; a hit is logged as a likely
+        # truncation that the caller should paginate.
+        capped = self._limit is None and self._offset is None and not self._single
+        if capped:
+            stmt = stmt.limit(self.client.settings.DB_MAX_ROWS)
+
         rows = [self._project_row(dict(r._mapping)) for r in self.client.session.execute(stmt).all()]
+
+        if capped and len(rows) >= self.client.settings.DB_MAX_ROWS:
+            logger.warning(
+                "Read on '%s' hit the DB_MAX_ROWS cap (%d) and may be truncated — "
+                "add pagination to this query.",
+                self.table_name,
+                self.client.settings.DB_MAX_ROWS,
+            )
 
         if self._single:
             return QueryResult(data=rows[0] if rows else None, count=count_value)

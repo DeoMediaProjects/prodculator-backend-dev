@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import redis as sync_redis
-import redis.asyncio as aioredis
 
 from app.core.database_client import DatabaseClient
 
@@ -110,7 +109,7 @@ class WebhookHandler:
             try:
                 self.supabase.session.rollback()
             except Exception:
-                pass
+                logger.debug("Session rollback after webhook write failure also failed", exc_info=True)
             logger.info("Event %s already recorded by a concurrent delivery: %s", event_id, exc)
 
     def _handle_checkout_completed(self, session: dict) -> None:
@@ -218,7 +217,7 @@ class WebhookHandler:
             try:
                 self.supabase.session.rollback()
             except Exception:
-                pass
+                logger.debug("Session rollback after webhook write failure also failed", exc_info=True)
             logger.warning("Billing geo capture skipped for user %s: %s", user_id, exc)
 
     def _handle_credit_purchase(self, user_id: str) -> None:

@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 import os
 from pathlib import Path
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +12,10 @@ from fastapi.testclient import TestClient
 TEST_DB = Path(
     os.environ.get(
         "PRODCULATOR_TEST_DB",
-        f"/private/tmp/prodculator_backend_tests_{os.getpid()}.db",
+        os.path.join(
+            tempfile.gettempdir(),
+            f"prodculator_backend_tests_{os.getpid()}.db",
+        ),
     )
 )
 TEST_DB.unlink(missing_ok=True)
@@ -26,6 +30,11 @@ _APP_IMPORT_ENV = {
     # Report generation runs in-process (BackgroundTasks) under tests — no RQ
     # worker or Redis required.
     "REPORT_QUEUE_ENABLED": "false",
+    # Disable rate limiting in tests (and pin in-memory storage as a belt-and-
+    # braces) so repeated auth calls across the suite can't trip a limit
+    # non-deterministically. The limiter itself is covered by dedicated tests.
+    "RATE_LIMIT_ENABLED": "false",
+    "RATE_LIMIT_STORAGE_URI": "memory://",
     "STRIPE_SECRET_KEY": "",
     "JWT_SECRET_KEY": "test-secret-key-with-at-least-32-chars",
 }

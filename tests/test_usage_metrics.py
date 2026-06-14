@@ -12,8 +12,6 @@ Coverage goals:
 - Period dates forwarded correctly
 - Service-level unit tests for get_usage() directly
 """
-import pytest
-from fastapi.testclient import TestClient
 
 from app.core.dependencies import get_current_user
 from app.modules.auth.schemas import AuthUser

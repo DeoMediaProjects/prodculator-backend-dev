@@ -1727,7 +1727,7 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                 temperature=0.2,
                 stage=self._STAGE_PRODUCTION_ANALYSIS,
             )
-        except Exception as api_err:
+        except Exception:
             logger.exception(
                 "Narrative fill API call failed: preview=%s elapsed_ms=%s",
                 is_preview,

@@ -31,7 +31,7 @@ build/
 
 # Local runtime data
 storage/
-prodculator.db
+*.db
 *.sqlite
 *.sqlite3
 

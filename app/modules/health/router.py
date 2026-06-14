@@ -1,16 +1,24 @@
-from fastapi import APIRouter, Depends
+import logging
 
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
+from app.core.cache import get_redis
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
 from app.core.territories import resolve_territory
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Health"])
 
 
 @router.get("/health")
 async def health_check(settings: Settings = Depends(get_settings)):
-    """Health check endpoint."""
+    """Liveness probe — confirms the process is up and which integrations are
+    configured. Cheap and dependency-free; use /health/ready for readiness."""
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
@@ -20,6 +28,36 @@ async def health_check(settings: Settings = Depends(get_settings)):
         "stripe_configured": bool(settings.STRIPE_SECRET_KEY),
         "brevo_configured": bool(settings.BREVO_API_KEY),
     }
+
+
+@router.get("/health/ready")
+async def readiness_check(db: DatabaseClient = Depends(get_supabase)):
+    """Readiness probe for orchestration/load balancers — actually exercises the
+    backing services rather than just reporting config presence.
+
+    The database is required: if it's unreachable we return 503 so the instance
+    is pulled from rotation. Redis is best-effort (the app degrades gracefully
+    without it), so a Redis failure is reported but does not fail readiness.
+    """
+    checks = {"database": False, "redis": False}
+
+    try:
+        db.session.execute(text("SELECT 1"))
+        checks["database"] = True
+    except Exception as e:  # noqa: BLE001 - report any failure, don't crash the probe
+        logger.warning("Readiness: database check failed: %s", e)
+
+    try:
+        await get_redis().ping()
+        checks["redis"] = True
+    except Exception as e:  # noqa: BLE001 - Redis is non-critical; report and continue
+        logger.warning("Readiness: redis check failed: %s", e)
+
+    ready = checks["database"]
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "not_ready", "checks": checks},
+    )
 
 
 @router.get("/territories")

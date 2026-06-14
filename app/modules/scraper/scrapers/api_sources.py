@@ -50,11 +50,8 @@ def _fetch_statcan(settings: Settings) -> list[dict[str, Any]]:
     Returns indicative wage figures for Canada. Not film-specific.
     """
     try:
-        url = f"https://www150.statcan.gc.ca/t1/tbl1/en/dtbl!download/{_STATCAN_TABLE}/downloadTable"
-        # StatCan requires a GET to retrieve latest data URL, then download CSV
-        # As a lightweight alternative, use the getSeriesData endpoint for a known vector
+        # StatCan: use the getSeriesData endpoint for a known vector.
         # Vector 2062809: average weekly earnings, all industries, Canada
-        vec_url = "https://www150.statcan.gc.ca/t1/tbl1/en/dtbl!download/v2062809/downloadTable"
         with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as client:
             resp = client.get(
                 "https://www150.statcan.gc.ca/t1/tbl1/en/liblookup/getSeriesData",

@@ -5,6 +5,17 @@ def test_health_check(client):
     assert payload["status"] == "healthy"
 
 
+def test_readiness_check_reports_database(client):
+    # The test DB (sqlite) is reachable, so readiness should pass with the
+    # database check green. Redis may or may not be present locally — it's
+    # best-effort and must not affect the overall ready status.
+    response = client.get("/api/health/ready")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["checks"]["database"] is True
+
+
 def test_openapi_includes_core_paths(client):
     response = client.get("/openapi.json")
     assert response.status_code == 200

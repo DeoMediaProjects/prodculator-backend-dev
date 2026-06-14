@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from app.core.database_client import DatabaseClient
+
+logger = logging.getLogger(__name__)
 
 
 class AdminService:
@@ -128,7 +131,7 @@ class AdminService:
                     "timestamp": str(r["created_at"]) if r.get("created_at") else None,
                 })
         except Exception:
-            pass
+            logger.warning("Recent-activity source query failed; skipping", exc_info=True)
 
         try:
             users = (
@@ -149,7 +152,7 @@ class AdminService:
                     "timestamp": str(u["created_at"]) if u.get("created_at") else None,
                 })
         except Exception:
-            pass
+            logger.warning("Recent-activity source query failed; skipping", exc_info=True)
 
         try:
             subs = (
@@ -171,7 +174,7 @@ class AdminService:
                     "timestamp": str(s["created_at"]) if s.get("created_at") else None,
                 })
         except Exception:
-            pass
+            logger.warning("Recent-activity source query failed; skipping", exc_info=True)
 
         events.sort(key=lambda e: e.get("timestamp") or "", reverse=True)
         return events[:limit]
@@ -211,7 +214,9 @@ class AdminService:
                 if not result or str(latest) < stale_threshold:
                     tasks.append({"task": task_label, "priority": priority, "due": due})
             except Exception:
-                pass
+                logger.warning(
+                    "Derived-task staleness check failed for %s; skipping", table, exc_info=True
+                )
 
         return tasks
 

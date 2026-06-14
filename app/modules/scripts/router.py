@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
-from app.core.database_client import DatabaseClient
 
 from app.core.config import Settings, get_settings
-from app.core.dependencies import get_supabase, get_current_user
+from app.core.dependencies import get_current_user
 from app.modules.auth.schemas import AuthUser
 from app.modules.scripts.schemas import (
     ScriptAnalysisResult,

@@ -1,4 +1,3 @@
-import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session

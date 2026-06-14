@@ -11,12 +11,29 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
+    # Emit logs as structured JSON (one object per line) so they're queryable in a
+    # log aggregator and carry the per-request X-Request-ID. Leave false for
+    # human-readable text in local dev; set true in production.
+    LOG_JSON: bool = False
+
+    # Error monitoring (Sentry). No-op when SENTRY_DSN is empty, so it's safe to
+    # leave unset in dev. SENTRY_TRACES_SAMPLE_RATE controls performance tracing
+    # (0.0 = errors only). SENTRY_ENVIRONMENT defaults to APP_ENV when unset.
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+    SENTRY_ENVIRONMENT: str | None = None
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
 
     # Database
     DB_URL: str = "sqlite:///./prodculator.db"
     AUTO_CREATE_DB_SCHEMA: bool = True
+    # Safety cap on rows returned by an unbounded query-builder read (one that sets
+    # no explicit limit/range/single). Stops a runaway table from loading
+    # unboundedly into memory. Generous enough that normal reference-table reads
+    # never approach it; hitting it is logged as a warning (possible truncation —
+    # the call site should paginate).
+    DB_MAX_ROWS: int = 10000
 
     # JWT/Auth
     JWT_SECRET_KEY: str = "dev-secret-change-me"  # must be overridden in production
@@ -36,6 +53,19 @@ class Settings(BaseSettings):
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Rate limiting (SlowAPI). Counters are stored in Redis so limits are shared
+    # across web workers and survive restarts — an in-memory store would make the
+    # limit effectively `workers × configured` and reset on every deploy. Leave
+    # RATE_LIMIT_STORAGE_URI empty to reuse REDIS_URL; set it to "memory://" for
+    # single-process local use or tests. RATE_LIMIT_ENABLED=false disables limits.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_STORAGE_URI: str = ""
+
+    @property
+    def rate_limit_storage_uri(self) -> str:
+        """Effective SlowAPI storage backend (defaults to the shared Redis)."""
+        return self.RATE_LIMIT_STORAGE_URI or self.REDIS_URL
 
     # Durable background-job queue (RQ over Redis). Enabled by default so prod is
     # safe-by-default: paid/b2b report generation is enqueued onto Redis and
@@ -83,7 +113,12 @@ class Settings(BaseSettings):
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
+    # Default to the current most-capable Opus model. The previous default
+    # (claude-3-5-sonnet-20241022) was retired by Anthropic in Oct 2025 and now
+    # 404s, so any environment that didn't override it would fail at report time.
+    # Override via the ANTHROPIC_MODEL env var (e.g. claude-sonnet-4-6 for a lower
+    # cost/latency profile).
+    ANTHROPIC_MODEL: str = "claude-opus-4-8"
     ANTHROPIC_MAX_TOKENS: int = 12000
     ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
     ANTHROPIC_MAX_TOKENS_SCRIPT_CHUNK: int | None = None

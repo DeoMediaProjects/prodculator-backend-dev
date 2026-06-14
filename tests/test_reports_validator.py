@@ -9,7 +9,6 @@ Covers:
 """
 from __future__ import annotations
 
-import json
 
 from app.modules.reports.validator import ReportValidator, _best_incentive
 

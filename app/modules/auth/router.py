@@ -115,7 +115,9 @@ async def signin(
 
 
 @router.post("/google", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def google_auth(
+    request: Request,
     response: Response,
     body: GoogleAuthRequest,
     settings: Settings = Depends(get_settings),
@@ -212,7 +214,9 @@ async def confirm_reset_password(
 
 
 @router.post("/resend-verification", response_model=SuccessResponse)
+@limiter.limit("5/minute")
 async def resend_verification(
+    request: Request,
     body: ResendVerificationRequest,
     settings: Settings = Depends(get_settings),
     auth_service: AuthService = Depends(get_auth_service),
@@ -226,7 +230,9 @@ async def resend_verification(
 
 
 @router.post("/verify-email", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def verify_email(
+    request: Request,
     response: Response,
     body: VerifyEmailRequest,
     settings: Settings = Depends(get_settings),
@@ -264,6 +270,7 @@ async def update_password(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("60/minute")
 async def refresh_token(
     request: Request,
     response: Response,

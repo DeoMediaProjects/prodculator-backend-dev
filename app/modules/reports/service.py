@@ -9,7 +9,6 @@ from sqlalchemy.exc import NoSuchTableError
 
 from app.core.database_client import DatabaseClient
 from app.core.territories import (
-    Territory,
     resolve_territory,
     territory_to_iso as _build_territory_to_iso,
     iso_to_territory as _build_iso_to_territory,
