@@ -7,9 +7,7 @@ weather risk, etc.  AI-narrative fields should be None.
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
 
-import pytest
 
 from app.modules.reports.builder import (
     ReportBuilder,

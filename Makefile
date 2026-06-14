@@ -42,7 +42,7 @@ env: ## Create .env from .env.example if missing
 	@test -f .env || cp .env.example .env
 
 run: ## Run API (production mode)
-	$(UVICORN) $(APP) --host $(HOST) --port $(PORT)
+	$(UVICORN) $(APP) --host $(HOST) --port $(PORT) --proxy-headers --forwarded-allow-ips "*"
 
 dev: ## Run API with auto-reload
 	$(UVICORN) $(APP) --reload --host $(HOST) --port $(PORT)

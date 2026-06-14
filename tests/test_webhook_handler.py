@@ -1,6 +1,5 @@
 """Tests for the Stripe webhook handler — subscription lifecycle."""
 
-from datetime import datetime, timezone
 
 from app.core.config import Settings
 from app.modules.payments.webhook_handler import WebhookHandler, PLAN_REPORT_LIMITS

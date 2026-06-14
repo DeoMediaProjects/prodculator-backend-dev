@@ -26,6 +26,11 @@ _APP_IMPORT_ENV = {
     # Report generation runs in-process (BackgroundTasks) under tests — no RQ
     # worker or Redis required.
     "REPORT_QUEUE_ENABLED": "false",
+    # Disable rate limiting in tests (and pin in-memory storage as a belt-and-
+    # braces) so repeated auth calls across the suite can't trip a limit
+    # non-deterministically. The limiter itself is covered by dedicated tests.
+    "RATE_LIMIT_ENABLED": "false",
+    "RATE_LIMIT_STORAGE_URI": "memory://",
     "STRIPE_SECRET_KEY": "",
     "JWT_SECRET_KEY": "test-secret-key-with-at-least-32-chars",
 }

@@ -753,17 +753,9 @@ def _build_preview_key_insights(
 def _apply_watermark(pdf_bytes: bytes) -> bytes:
     """Overlay a diagonal trial watermark on every page of the PDF."""
     import io
-    import math
 
     try:
         from pypdf import PdfReader, PdfWriter
-        from pypdf.generic import (
-            ArrayObject,
-            ContentStream,
-            DecodedStreamObject,
-            NameObject,
-            NumberObject,
-        )
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas as rl_canvas
 

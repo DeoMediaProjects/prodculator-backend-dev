@@ -3,7 +3,6 @@
 from app.core.config import get_settings
 from app.core.dependencies import get_current_user, get_supabase
 from app.modules.subscriptions.router import get_stripe_service
-from app.modules.subscriptions.service import SubscriptionService
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.core.database_client import DatabaseClient
-from app.core.storage import StorageClient, S3StorageBucket
+from app.core.storage import StorageClient
 
 TABLE = "reports"
 

@@ -11,15 +11,12 @@ Coverage goals:
 - Invoice fields mapped correctly (amount in pence → pence, unix timestamps)
 - StripeService.list_invoices unit test: draft/void filtering
 """
-import pytest
 from unittest.mock import MagicMock, patch
 
-from fastapi.testclient import TestClient
 
 from app.core.dependencies import get_current_user
 from app.modules.auth.schemas import AuthUser
 from app.modules.subscriptions.router import get_subscription_service, get_stripe_service
-from app.modules.subscriptions.service import SubscriptionService
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

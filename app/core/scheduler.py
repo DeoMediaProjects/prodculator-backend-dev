@@ -62,7 +62,7 @@ def _release_singleton_lock() -> None:
         try:
             _lock_conn.close()
         except Exception:
-            pass
+            logger.debug("Scheduler: lock connection close failed", exc_info=True)
         _lock_conn = None
 
 # Maps sync_settings.schedule values to timedelta days

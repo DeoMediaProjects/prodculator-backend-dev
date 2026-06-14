@@ -1,5 +1,6 @@
 import logging
 import secrets
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -15,6 +16,7 @@ from app.core.config import get_settings
 from app.core.database_client import create_client
 from app.core.db import init_db
 from app.core.limiter import limiter
+from app.core.logging_config import configure_logging, request_id_ctx
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.modules.payments.plan_catalog import find_missing_price_ids
 from app.modules.scraper.service import ScraperService
@@ -52,17 +54,29 @@ from app.modules.support.router import router as support_router
 
 settings = get_settings()
 
-
-def configure_logging() -> None:
-    requested_level = (settings.LOG_LEVEL or ("DEBUG" if settings.DEBUG else "INFO")).upper()
-    level = getattr(logging, requested_level, logging.INFO)
-
-    # Uvicorn provides handlers; we align logger levels so app logs are visible.
-    logging.getLogger().setLevel(level)
-    logging.getLogger("app").setLevel(level)
+configure_logging(settings)
 
 
-configure_logging()
+def _init_sentry() -> None:
+    """Initialise Sentry error monitoring. No-op when SENTRY_DSN is unset or the
+    SDK isn't installed, so local dev and the test suite are unaffected."""
+    if not settings.SENTRY_DSN:
+        return
+    try:
+        import sentry_sdk
+    except ImportError:
+        logger.warning("SENTRY_DSN is set but sentry-sdk is not installed; skipping init.")
+        return
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.SENTRY_ENVIRONMENT or settings.APP_ENV,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=False,
+    )
+    logger.info("Sentry error monitoring initialised (env=%s)", settings.SENTRY_ENVIRONMENT or settings.APP_ENV)
+
+
+_init_sentry()
 
 
 @asynccontextmanager
@@ -156,6 +170,59 @@ async def csrf_protect(request: Request, call_next):
         if not header_token or not cookie_token or not secrets.compare_digest(header_token, cookie_token):
             return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid"})
     return await call_next(request)
+
+
+# Correlate every log line emitted while handling a request with a request ID.
+# Honour an inbound X-Request-ID (e.g. from the reverse proxy) or mint one, and
+# echo it back so clients/proxies can stitch logs together.
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    token = request_id_ctx.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_ctx.reset(token)
+    response.headers.setdefault("X-Request-ID", rid)
+    return response
+
+
+# Security headers. Added before CORS so CORS stays the outermost middleware.
+# This is a JSON API: a strict CSP is safe in production (interactive Swagger is
+# only mounted when DEBUG, where we relax it). HSTS is emitted only outside DEBUG
+# so local http dev isn't pinned to HTTPS.
+_API_CSP_STRICT = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+
+
+# slowapi fail-open guard. When the rate-limit storage backend (Redis) is
+# unreachable, `swallow_errors=True` swallows the error inside the limiter, but
+# its endpoint wrapper still unconditionally reads `request.state.view_rate_limit`
+# to emit rate-limit headers — raising AttributeError (→ 500) because the limiter
+# never got far enough to set it. Pre-seeding it to None makes the limiter
+# genuinely fail OPEN on a Redis blip (header injection no-ops on None) instead of
+# 500ing; when Redis is healthy the limiter overwrites this with the real value.
+@app.middleware("http")
+async def rate_limit_failopen(request: Request, call_next):
+    request.state.view_rate_limit = None
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    if not settings.DEBUG:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=63072000; includeSubDomains; preload",
+        )
+        response.headers.setdefault("Content-Security-Policy", _API_CSP_STRICT)
+    return response
 
 
 # CORS

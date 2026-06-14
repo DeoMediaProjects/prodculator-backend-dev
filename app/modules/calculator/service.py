@@ -6,8 +6,6 @@ FX service, and crew-cost data — zero calculation duplication.
 from __future__ import annotations
 
 import logging
-from datetime import date
-from typing import Any
 
 from app.core.config import Settings
 from app.core.database_client import DatabaseClient
@@ -28,8 +26,6 @@ from app.modules.reports.helpers import (
     currency_symbol,
     budget_to_display,
     is_zero_rate,
-    is_domestic_corp_only,
-    DEFAULT_ATL_PCT,
 )
 from app.modules.reports.validator import ReportValidator
 
@@ -223,9 +219,6 @@ class CalculatorService:
         )
         if corrected is None:
             return None
-
-        # Display amounts in budget currency
-        budget_symbol = currency_symbol(request.budget_currency)
 
         def _display(gbp_amount: float) -> tuple[float, str]:
             d_amount, sym, _ = budget_to_display(

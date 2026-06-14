@@ -5,8 +5,6 @@ pre-built deterministic skeleton, and filling safe defaults when AI fails.
 """
 from __future__ import annotations
 
-import copy
-import pytest
 
 from app.modules.scripts.service import ScriptAnalysisService
 
