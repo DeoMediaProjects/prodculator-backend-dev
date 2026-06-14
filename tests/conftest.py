@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 import os
 from pathlib import Path
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +12,10 @@ from fastapi.testclient import TestClient
 TEST_DB = Path(
     os.environ.get(
         "PRODCULATOR_TEST_DB",
-        f"/private/tmp/prodculator_backend_tests_{os.getpid()}.db",
+        os.path.join(
+            tempfile.gettempdir(),
+            f"prodculator_backend_tests_{os.getpid()}.db",
+        ),
     )
 )
 TEST_DB.unlink(missing_ok=True)
