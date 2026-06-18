@@ -546,6 +546,11 @@ class TableQuery:
             self.client.session.execute(insert(self.table).values(**payload))
 
         self.client.session.commit()
+        # Reload by the conflict keys rather than the payload's ``id``. On the update
+        # branch the existing row keeps its original primary key, so the default
+        # id-based reload in _reload_after_write would look up the (never-inserted)
+        # id from the payload and return an empty result.
+        self._filters = conflict_filters
         return self._reload_after_write(payload)
 
     def _reload_bulk_insert(self, payloads: list[dict[str, Any]]) -> QueryResult:

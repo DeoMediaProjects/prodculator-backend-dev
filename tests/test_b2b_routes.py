@@ -382,3 +382,44 @@ def test_b2b_process_request_task_completes_on_a_fresh_session(monkeypatch, tmp_
 
     delivered = {to_email for to_email, template in sent if template == "b2b_intelligence_ready"}
     assert delivered == {"buyer@example.com", "finance@example.com"}
+
+
+def test_b2b_checkout_upsert_returns_persisted_row_on_redelivery(monkeypatch):
+    """A re-delivered checkout.session.completed must upsert onto the existing row
+    and return it with its ORIGINAL id — not a phantom row carrying the freshly
+    generated uuid that was never inserted (the _reload_after_write upsert bug)."""
+    _clear_tables()
+    monkeypatch.setattr(EmailService, "send", lambda *args, **kwargs: None)
+    db = _db()
+    try:
+        _seed_user(db)
+        service = B2BService(db, get_settings())
+        session = {
+            "id": "cs_b2b",
+            "customer": "cus_b2b",
+            "subscription": "sub_b2b",
+            "metadata": {
+                "userId": "user-1",
+                "productType": "camera_equipment",
+                "currency": "gbp",
+                "deliveryFrequency": "monthly",
+            },
+        }
+
+        first = service.create_or_update_subscription_from_checkout(session)
+        second = service.create_or_update_subscription_from_checkout(session)
+
+        assert second["id"] == first["id"]
+        assert second["stripe_subscription_id"] == "sub_b2b"
+
+        rows = (
+            db.table("b2b_subscriptions")
+            .select("*")
+            .eq("stripe_subscription_id", "sub_b2b")
+            .execute()
+            .data
+        )
+        assert len(rows) == 1
+        assert rows[0]["id"] == first["id"]
+    finally:
+        db.close()

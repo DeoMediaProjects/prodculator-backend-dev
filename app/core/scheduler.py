@@ -239,6 +239,9 @@ def start_scheduler() -> None:
             misfire_grace_time=900,
         )
 
+    # Always registered — B2B auto-delivery serves manual-contract subscriptions
+    # too, so it must run even when Stripe and the scraper are disabled. This means
+    # the scheduler always has at least one job (no "no jobs registered" early-out).
     _scheduler.add_job(
         _run_b2b_auto_delivery,
         trigger=CronTrigger(hour=4, minute=30),
@@ -246,11 +249,6 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
-
-    if not _scheduler.get_jobs():
-        logger.info("APScheduler: no jobs registered (no SCRAPER_ENABLED, no STRIPE_SECRET_KEY)")
-        _scheduler = None
-        return
 
     if not settings.SCHEDULER_ENABLED:
         logger.info("APScheduler: SCHEDULER_ENABLED is false — not starting on this process")
