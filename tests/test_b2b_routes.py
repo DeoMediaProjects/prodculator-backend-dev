@@ -10,7 +10,6 @@ from app.core.database_client import DatabaseClient
 from app.core.db import get_db_context
 from app.core.dependencies import get_current_admin, get_current_user
 from app.modules.admin.schemas import AdminUser
-from app.modules.auth.schemas import AuthUser
 from app.modules.b2b.router import get_stripe_service
 from app.modules.b2b.service import B2BService, process_request_task
 from app.modules.email.service import EmailService

@@ -6,10 +6,8 @@ to avoid rewriting every call site. ``DatabaseClient`` is therefore a thin query
 builder over SQLAlchemy Core — there is no Supabase dependency.
 
 Note: variables and parameters named ``supabase`` throughout the codebase are a
-migration artifact and refer to a ``DatabaseClient`` instance. The canonical
-dependency is ``get_db_client`` (``get_supabase`` is a retained alias); prefer
-``get_db_client`` and a ``db`` name in new code. Renaming the existing usages is
-tracked as a separate mechanical refactor.
+migration artifact and refer to a ``DatabaseClient`` instance. The dependency that
+provides one is ``get_supabase`` in ``app.core.dependencies``.
 """
 from __future__ import annotations
 
@@ -214,12 +212,6 @@ class AuthClient:
             raise ValueError("Invalid or expired token")
         user = dict(row._mapping)
         return AuthResponse(user=_AuthUser(id=user["id"], email=user["email"]), claims=claims)
-
-    def reset_password_email(self, _email: str, _options: dict[str, Any] | None = None) -> None:
-        return None
-
-    def resend(self, _payload: dict[str, Any]) -> None:
-        return None
 
     def refresh_session(self, refresh_token: str) -> AuthResponse:
         claims = decode_token(refresh_token, self.client.settings)

@@ -34,13 +34,6 @@ def get_supabase(
     return DatabaseClient(db, settings)
 
 
-def get_db_client(
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-) -> DatabaseClient:
-    return DatabaseClient(db, settings)
-
-
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
@@ -161,21 +154,6 @@ async def get_current_admin(
         name=result.data.get("name"),
         role=result.data.get("role", "master_admin"),
     )
-
-
-class RequireRole:
-    """Dependency class that enforces a specific role value on the user.
-
-    Usage: Depends(RequireRole("producer"))
-    """
-
-    def __init__(self, required_role: str) -> None:
-        self.required_role = required_role
-
-    async def __call__(self, user: AuthUser = Depends(get_current_user)) -> AuthUser:
-        if user.role != self.required_role:
-            raise HTTPException(status_code=403, detail=f"Role '{self.required_role}' required")
-        return user
 
 
 class RequirePlan:
