@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @page { margin: 24mm 18mm; }
+      body {
+        font-family: Arial, sans-serif;
+        color: #111;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 24px 0 8px;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 6px;
+      }
+      .meta {
+        color: #555;
+        margin-bottom: 20px;
+      }
+      .notice {
+        background: #f6f1df;
+        border: 1px solid #d7bf68;
+        padding: 10px 12px;
+        margin: 16px 0;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 8px;
+      }
+      th, td {
+        border-bottom: 1px solid #e5e5e5;
+        padding: 7px 6px;
+        text-align: left;
+      }
+      th {
+        background: #f7f7f7;
+        font-weight: 700;
+      }
+      .footer {
+        color: #777;
+        font-size: 10px;
+        margin-top: 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>{{ metrics.title }}</h1>
+    <div class="meta">
+      Period: {{ metrics.period_start }} to {{ metrics.period_end }}<br />
+      Generated: {{ metrics.generated_at }}<br />
+      Source signals: {{ metrics.source_signal_count }}
+    </div>
+
+    <div class="notice">
+      This report uses anonymised aggregate platform metadata. Customer-facing
+      output requires at least {{ metrics.thresholds.minimum_overall_records }}
+      total signals and {{ metrics.thresholds.minimum_segment_records }} signals
+      per displayed segment.
+    </div>
+
+    {% for section in metrics.sections %}
+      <h2>{{ section.title }}</h2>
+      <p>{{ section.summary }}</p>
+      {% if section.rows %}
+        <table>
+          <thead>
+            <tr>
+              <th>Segment</th>
+              <th>Count</th>
+              <th>Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in section.rows %}
+              <tr>
+                <td>{{ row.label }}</td>
+                <td>{{ row.count }}</td>
+                <td>{% if row.percentage is none %}N/A{% else %}{{ row.percentage }}%{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    {% endfor %}
+
+    <p class="footer">
+      Prodculator B2B Intelligence. Do not redistribute outside authorised recipients.
+    </p>
+  </body>
+</html>
+

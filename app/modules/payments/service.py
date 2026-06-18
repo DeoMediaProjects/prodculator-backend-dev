@@ -75,6 +75,43 @@ class StripeService:
         )
         return {"session_id": session.id, "url": session.url}
 
+    def create_b2b_subscription_checkout(
+        self,
+        price_id: str,
+        user_email: str,
+        user_id: str,
+        product_type: str,
+        currency: str,
+        delivery_frequency: str,
+        extra_recipient_email: str | None = None,
+    ) -> dict:
+        """Create a Stripe Checkout session for an independent B2B subscription."""
+        metadata = {
+            "userId": user_id,
+            "subscriptionKind": "b2b",
+            "productType": product_type,
+            "priceId": price_id,
+            "currency": currency,
+            "deliveryFrequency": delivery_frequency,
+        }
+        if extra_recipient_email:
+            metadata["extraRecipientEmail"] = extra_recipient_email
+
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{"price": price_id, "quantity": 1}],
+            mode="subscription",
+            customer_email=user_email,
+            success_url=(
+                f"{self.settings.FRONTEND_URL}/b2b"
+                f"?b2b_subscription=success&product={product_type}"
+            ),
+            cancel_url=f"{self.settings.FRONTEND_URL}/b2b?b2b_subscription=cancelled",
+            metadata=metadata,
+            subscription_data={"metadata": metadata},
+        )
+        return {"session_id": session.id, "url": session.url}
+
     def cancel_subscription(self, subscription_id: str) -> None:
         """Cancel a Stripe subscription at period end."""
         stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)

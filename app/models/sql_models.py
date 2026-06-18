@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, ClassVar
 from uuid import uuid4
 
@@ -66,6 +66,74 @@ class Subscription(SQLModel, table=True):
     past_due_since: datetime | None = None
     stripe_schedule_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ProductionSignal(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "production_signals"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    script_id: str | None = Field(default=None, index=True)
+    territory: str | None = Field(default=None, index=True)
+    state: str | None = None
+    submission_date: date | None = Field(default=None, index=True)
+    camera_equipment: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    crew_size: int | None = None
+    principal_cast: int | None = None
+    supporting_cast: int | None = None
+    background_extras: int | None = None
+    budget_range: str | None = None
+    format: str | None = None
+    genres: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class B2BSubscription(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "b2b_subscriptions"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    user_id: str = Field(index=True, nullable=False)
+    product_type: str = Field(index=True, nullable=False)
+    status: str = Field(default="active", index=True)
+    source: str = Field(default="stripe")  # stripe | manual_contract
+    stripe_customer_id: str | None = Field(default=None, index=True)
+    stripe_subscription_id: str | None = Field(default=None, index=True)
+    price_id: str | None = None
+    amount_cents: int | None = None
+    currency: str | None = None
+    delivery_frequency: str = Field(default="monthly")
+    extra_recipient_email: str | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
+    next_delivery_at: datetime | None = None
+    cancel_at_period_end: bool = Field(default=False)
+    cancelled_at: datetime | None = None
+    company_name: str | None = None
+    admin_notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class B2BIntelligenceRequest(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "b2b_intelligence_requests"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    user_id: str = Field(index=True, nullable=False)
+    b2b_subscription_id: str | None = Field(default=None, index=True)
+    product_type: str = Field(index=True, nullable=False)
+    status: str = Field(default="processing", index=True)
+    request_type: str = Field(default="on_demand")  # on_demand | auto | admin
+    period_start: date = Field(index=True)
+    period_end: date = Field(index=True)
+    recipient_email: str = Field(nullable=False)
+    extra_recipient_email: str | None = None
+    pdf_url: str | None = None
+    metrics: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    error_message: str | None = None
+    delivered_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Report(SQLModel, table=True):
