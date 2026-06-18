@@ -412,11 +412,6 @@ class Territory(enum.Enum):
         """Return all sub-territories belonging to a given country."""
         return [t for t in cls if t.parent == country]
 
-    @classmethod
-    def all_labels(cls) -> list[str]:
-        """Return all canonical territory labels."""
-        return [t.label for t in cls]
-
 
 # ── Lookup index (built once at import time) ────────────────────────────
 
@@ -454,17 +449,6 @@ def resolve_territory(name: str) -> Territory | None:
     return _LOOKUP.get(name.strip().lower())
 
 
-def resolve_territory_strict(name: str) -> Territory:
-    """Like :func:`resolve_territory` but raises ``ValueError`` on miss."""
-    t = resolve_territory(name)
-    if t is None:
-        raise ValueError(
-            f"Unknown territory: {name!r}. "
-            f"Valid values: {', '.join(sorted(_LOOKUP.keys()))}"
-        )
-    return t
-
-
 # ── Derived mappings (replace old hand-maintained dicts) ────────────────
 
 def territory_to_iso() -> dict[str, str]:
@@ -476,16 +460,3 @@ def territory_to_iso() -> dict[str, str]:
 def iso_to_territory() -> dict[str, str]:
     """Return {iso -> label} for top-level countries only."""
     return {t.iso: t.label for t in Territory if t.is_country}
-
-
-def country_labels() -> list[str]:
-    """Sorted list of top-level country display names."""
-    return sorted(t.label for t in Territory.countries())
-
-
-def frontend_country_choices() -> list[str]:
-    """Values accepted by ``CreateReportRequest.country``.
-
-    Returns canonical labels for all top-level countries.
-    """
-    return sorted(t.label for t in Territory.countries())

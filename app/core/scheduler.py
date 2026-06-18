@@ -191,6 +191,20 @@ def _run_subscription_reconciler() -> None:
         db.close()
 
 
+def _run_b2b_auto_delivery() -> None:
+    """Daily: generate due B2B monthly/quarterly intelligence deliveries."""
+    from app.core.config import get_settings
+    from app.modules.b2b.service import run_due_b2b_auto_deliveries
+
+    settings = get_settings()
+    try:
+        generated = run_due_b2b_auto_deliveries(settings)
+        if generated:
+            logger.info("Scheduler: generated %d due B2B intelligence report(s)", generated)
+    except Exception:
+        logger.exception("Scheduler: B2B auto delivery failed")
+
+
 def start_scheduler() -> None:
     global _scheduler
     from app.core.config import get_settings
@@ -225,10 +239,16 @@ def start_scheduler() -> None:
             misfire_grace_time=900,
         )
 
-    if not _scheduler.get_jobs():
-        logger.info("APScheduler: no jobs registered (no SCRAPER_ENABLED, no STRIPE_SECRET_KEY)")
-        _scheduler = None
-        return
+    # Always registered — B2B auto-delivery serves manual-contract subscriptions
+    # too, so it must run even when Stripe and the scraper are disabled. This means
+    # the scheduler always has at least one job (no "no jobs registered" early-out).
+    _scheduler.add_job(
+        _run_b2b_auto_delivery,
+        trigger=CronTrigger(hour=4, minute=30),
+        id="b2b_auto_delivery",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
 
     if not settings.SCHEDULER_ENABLED:
         logger.info("APScheduler: SCHEDULER_ENABLED is false — not starting on this process")

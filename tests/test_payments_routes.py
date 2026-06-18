@@ -9,7 +9,7 @@ class FakeStripeService:
         return {"session_id": "cs_test", "url": "https://checkout.stripe.test"}
 
     @staticmethod
-    def create_subscription_checkout(price_id: str, user_email: str, user_id: str):
+    def create_subscription_checkout(price_id: str, user_email: str, user_id: str, metadata=None):
         return {"session_id": "cs_sub", "url": "https://checkout.stripe.test/sub"}
 
     @staticmethod

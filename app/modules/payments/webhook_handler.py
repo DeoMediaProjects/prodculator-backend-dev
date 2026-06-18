@@ -102,7 +102,7 @@ class WebhookHandler:
         # same idempotent work, so the loser just moves on.
         try:
             self.supabase.table("processed_webhook_events").insert(
-                {"event_id": event_id, "processed_at": datetime.now(timezone.utc).isoformat()}
+                {"event_id": event_id, "processed_at": datetime.now(timezone.utc)}
             ).execute()
         except Exception as exc:
             # Clear the failed transaction so the request's session is reusable.
@@ -113,7 +113,8 @@ class WebhookHandler:
             logger.info("Event %s already recorded by a concurrent delivery: %s", event_id, exc)
 
     def _handle_checkout_completed(self, session: dict) -> None:
-        user_id = session.get("metadata", {}).get("userId")
+        metadata = session.get("metadata", {}) or {}
+        user_id = metadata.get("userId")
         if not user_id:
             logger.error(
                 "CRITICAL: checkout.session.completed missing metadata.userId. "
@@ -128,7 +129,11 @@ class WebhookHandler:
             self._handle_credit_purchase(user_id)
             return
 
-        raw_plan = session.get("metadata", {}).get("planType", "professional")
+        if metadata.get("subscriptionKind") == "b2b":
+            self._handle_b2b_checkout_completed(session)
+            return
+
+        raw_plan = metadata.get("planType", "professional")
         plan_type = normalize_plan(raw_plan)
         stripe_subscription_id = session.get("subscription")
         report_limit = PLAN_REPORT_LIMITS.get(plan_type, 3)
@@ -248,6 +253,9 @@ class WebhookHandler:
         subscription_id = subscription.get("id")
         if not subscription_id:
             logger.warning("subscription event missing id")
+            return
+
+        if self._handle_b2b_subscription_updated(subscription):
             return
 
         # Newer Stripe API versions moved period dates onto the subscription item.
@@ -385,6 +393,8 @@ class WebhookHandler:
         if not subscription_id:
             logger.warning("customer.subscription.deleted missing id")
             return
+        if self._handle_b2b_subscription_deleted(subscription_id):
+            return
         result = self.supabase.table("subscriptions").update(
             {
                 "status": "cancelled",
@@ -424,6 +434,38 @@ class WebhookHandler:
         ).eq("id", user_id).execute()
         self._bust_user_cache(user_id)
         self._send_email_to_user_id(user_id, "subscription_downgraded", {})
+
+    def _handle_b2b_checkout_completed(self, session: dict) -> None:
+        try:
+            from app.modules.b2b.service import B2BService
+
+            B2BService(self.supabase, self.settings).create_or_update_subscription_from_checkout(session)
+        except Exception:
+            logger.exception(
+                "CRITICAL: B2B checkout completed but local entitlement write failed. "
+                "Session ID: %s, Customer: %s",
+                session.get("id"),
+                session.get("customer"),
+            )
+            raise
+
+    def _handle_b2b_subscription_updated(self, subscription: dict) -> bool:
+        try:
+            from app.modules.b2b.service import B2BService
+
+            return B2BService(self.supabase, self.settings).update_from_stripe_subscription(subscription)
+        except Exception:
+            logger.exception("B2B subscription update handling failed for %s", subscription.get("id"))
+            raise
+
+    def _handle_b2b_subscription_deleted(self, subscription_id: str) -> bool:
+        try:
+            from app.modules.b2b.service import B2BService
+
+            return B2BService(self.supabase, self.settings).mark_stripe_subscription_deleted(subscription_id)
+        except Exception:
+            logger.exception("B2B subscription delete handling failed for %s", subscription_id)
+            raise
 
     def _handle_invoice_paid(self, invoice: dict) -> None:
         logger.info("Invoice paid: %s", invoice.get("id"))

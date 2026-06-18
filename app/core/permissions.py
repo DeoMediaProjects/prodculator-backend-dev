@@ -14,6 +14,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "canManageEmailGating",
         "canManagePDFReports",
         "canViewPlatformEconomics",
+        "canManageB2B",
     },
     "senior_admin": {
         "canViewBusinessMetrics",
@@ -24,6 +25,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "canManageEmailGating",
         "canManagePDFReports",
         "canViewPlatformEconomics",
+        "canManageB2B",
     },
     "data_admin": {
         "canEditIncentiveData",

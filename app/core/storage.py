@@ -129,10 +129,6 @@ class _LocalStorageBucket:
         return candidate
 
 
-# Union type for type hints across the codebase
-StorageBucket = S3StorageBucket | _LocalStorageBucket
-
-
 class StorageClient:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
