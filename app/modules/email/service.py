@@ -33,6 +33,8 @@ EMAIL_SUBJECTS: dict[str, str] = {
     "admin_invite": "You've been invited to Prodculator Admin",
     "support_inquiry": "New Prodculator support inquiry",
     "support_inquiry_confirmation": "We received your Prodculator inquiry",
+    "contact_message": "New Prodculator contact message",
+    "contact_message_confirmation": "We received your Prodculator message",
     "b2b_subscription_active": "Your B2B intelligence subscription is active",
     "b2b_subscription_updated": "Your B2B intelligence subscription was updated",
     "b2b_intelligence_ready": "Your B2B intelligence PDF is ready",

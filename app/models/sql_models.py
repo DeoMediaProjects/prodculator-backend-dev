@@ -214,6 +214,24 @@ class SupportInquiry(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ContactMessage(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "contact_messages"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    name: str
+    email: str = Field(index=True, nullable=False)
+    company: str | None = None
+    category: str = Field(default="general", index=True)
+    subject: str
+    message: str
+    page_url: str | None = None
+    internal_email_sent: bool = Field(default=False)
+    auto_reply_sent: bool = Field(default=False)
+    email_error: str | None = None
+    status: str = Field(default="open", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class DataSource(SQLModel, table=True):
     __tablename__: ClassVar[str] = "data_sources"  # type: ignore[assignment]
 

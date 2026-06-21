@@ -51,6 +51,7 @@ from app.modules.calculator.router import router as calculator_router
 from app.modules.territories.router import router as territories_router
 from app.modules.milestones.router import router as milestones_router
 from app.modules.support.router import router as support_router
+from app.modules.contact.router import router as contact_router
 from app.modules.b2b.router import router as b2b_router
 from app.modules.b2b.admin_router import router as b2b_admin_router
 
@@ -279,6 +280,7 @@ app.include_router(calculator_router)
 app.include_router(territories_router)
 app.include_router(milestones_router)
 app.include_router(support_router)
+app.include_router(contact_router)
 app.include_router(b2b_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
