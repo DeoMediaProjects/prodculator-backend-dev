@@ -37,8 +37,9 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Genre-based equipment implications",
             "Seasonal trend analysis",
         ],
-        "price_gbp_cents": 60_000,
-        "price_usd_cents": 75_000,
+        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
+        "price_gbp_cents": 160,
+        "price_usd_cents": 200,
         "self_service": True,
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_GBP",
@@ -59,8 +60,9 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Total headcount trend analysis",
             "Budget range breakdowns",
         ],
-        "price_gbp_cents": 75_000,
-        "price_usd_cents": 95_000,
+        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
+        "price_gbp_cents": 160,
+        "price_usd_cents": 200,
         "self_service": True,
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_PRODUCTION_SERVICES_GBP",
@@ -81,8 +83,9 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Submission timing clusters",
             "Budget tier breakdown by format",
         ],
-        "price_gbp_cents": 60_000,
-        "price_usd_cents": 75_000,
+        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
+        "price_gbp_cents": 160,
+        "price_usd_cents": 200,
         "self_service": True,
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_CREW_CASTING_GBP",
@@ -103,8 +106,9 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Monthly production planning volume",
             "Emerging territory demand signals",
         ],
-        "price_gbp_cents": 150_000,
-        "price_usd_cents": 190_000,
+        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
+        "price_gbp_cents": 160,
+        "price_usd_cents": 200,
         "self_service": True,
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_PRODUCTION_TREND_GBP",
