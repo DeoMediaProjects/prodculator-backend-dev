@@ -12,8 +12,8 @@ PLAN_DISPLAY_NAMES: dict[str, str] = {
 
 PLAN_PRICES: dict[str, float] = {
     "free": 0,
-    "single": 49,
-    "studio": 249,
+    "single": 1,
+    "studio": 1,
 }
 
 
