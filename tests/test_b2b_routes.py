@@ -206,14 +206,15 @@ def test_b2b_metrics_apply_overall_and_segment_privacy_thresholds():
     db = _db()
     try:
         service = B2BService(db, get_settings())
-        _seed_signals(db, 9, territory="United Kingdom")
+        _seed_signals(db, 4, territory="United Kingdom")
         insufficient = service.build_metrics(
             product_type="camera_equipment",
             period_start=date(2026, 1, 1),
             period_end=date(2026, 1, 31),
         )
         assert insufficient["insufficient_data"] is True
-        assert insufficient["source_signal_count"] == 9
+        assert insufficient["source_signal_count"] == 4
+        assert insufficient["thresholds"]["minimum_overall_records"] == 5
 
         _clear_tables()
         _seed_signals(db, 6, territory="United Kingdom")
