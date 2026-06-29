@@ -18,7 +18,7 @@ from app.modules.reports.pdf_service import PDFService
 
 logger = logging.getLogger(__name__)
 
-PRIVACY_MIN_OVERALL = 10
+PRIVACY_MIN_OVERALL = 5
 PRIVACY_MIN_SEGMENT = 5
 
 
