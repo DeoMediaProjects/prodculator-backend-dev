@@ -26,6 +26,14 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "lastVerifiedAt": "last_verified_at",
     "notableAlumni": "notable_alumni",
     "averageBudgetOfAcceptedFilms": "average_budget_of_accepted_films",
+    # v2 source-of-truth fields (continent needs no mapping)
+    "representationFocus": "representation_focus",
+    "eligibleFormats": "eligible_formats",
+    "minMonthsAfterCompletion": "min_months_after_completion",
+    "maxMonthsAfterCompletion": "max_months_after_completion",
+    "deadlinePattern": "deadline_pattern",
+    "oscarQualifying": "oscar_qualifying",
+    "baftaQualifying": "bafta_qualifying",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 
@@ -55,7 +63,14 @@ _COMPUTED_KEYS = {"currentStatus", "nextDeadline", "daysUntilNextDeadline"}
 
 
 def _compute_festival_status(deadlines: list[dict]) -> dict[str, Any]:
-    """Derive currentStatus, nextDeadline, daysUntilNextDeadline from deadlines array."""
+    """Derive currentStatus, nextDeadline, daysUntilNextDeadline from deadlines array.
+
+    Festivals with no dated deadlines at all (the v2 dataset describes deadline
+    cadence as prose patterns in deadline_pattern) are "unknown", not "closed" —
+    only a past dated deadline justifies "closed".
+    """
+    if not deadlines:
+        return {"currentStatus": "unknown", "nextDeadline": None, "daysUntilNextDeadline": None}
     today = date.today()
     future = []
     for d in deadlines or []:
