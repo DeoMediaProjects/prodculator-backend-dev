@@ -551,6 +551,9 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
     data.pop("territoryDeepDives", None)
     data.pop("comparables", None)
     data.pop("fundingOpportunities", None)
+    data.pop("festivalRecommendations", None)
+    data.pop("distributorRecommendations", None)
+    data.pop("scriptOriginCallout", None)
 
     # locationRankings: show the top territory details; show locked placeholders
     # for additional ranked territories without leaking their names or scores.

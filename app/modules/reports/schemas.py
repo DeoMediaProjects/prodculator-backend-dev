@@ -306,6 +306,61 @@ class ExecutiveSummary(BaseModel):
     keyFlags: list[str] | None = None  # max 3 top-level flags
 
 
+class NamedLocationShare(BaseModel):
+    name: str
+    scenes: int
+    pct: int | None = None
+
+
+class ScriptIntelligence(BaseModel):
+    """Deterministic parsed-script stats (counted, not narrated)."""
+
+    sceneCount: int | None = None
+    interiorPct: int | None = None
+    exteriorPct: int | None = None
+    dayScenes: int | None = None
+    nightScenes: int | None = None
+    otherScenes: int | None = None
+    estShootingDays: int | None = None
+    principalCast: str | None = None
+    supportingCast: str | None = None
+    crowdScenes: int | None = None
+    musicPerformanceScenes: int | None = None
+    languages: list[str] | None = None
+    namedLocations: list[NamedLocationShare] | None = None
+    productionChallenges: list[str] | None = None
+
+
+class FestivalRecommendation(BaseModel):
+    """Festival matched on declared production attributes only — never inferred."""
+
+    name: str
+    location: str | None = None
+    tier: str | None = None
+    oscarQualifying: bool = False
+    deadlinePattern: str | None = None
+    eligibleFormats: list[str] | None = None
+    matchedOn: list[str] = []
+    whyMatched: str | None = None
+    sourceUrl: str | None = None
+
+
+class DistributorRecommendation(BaseModel):
+    """Distributor ranked partly on scouting the recommended festivals."""
+
+    name: str
+    primaryMarket: str | None = None
+    territoryReach: list[str] | None = None
+    rightsType: str | None = None
+    budgetTierFit: str | None = None
+    submissionProcess: str | None = None
+    scoutsRecommendedFestivals: list[str] = []
+    matchedOn: list[str] = []
+    whyMatched: str | None = None
+    verified: bool = False
+    sourceUrl: str | None = None
+
+
 class FinancialScenario(BaseModel):
     territory: str
     # v3 6-step working fields
@@ -332,9 +387,24 @@ class CrewCostRow(BaseModel):
     territories: dict[str, str]  # territory_name -> salary range string
 
 
+class PaymentTimingEntry(BaseModel):
+    """Certification/payment receipt windows from territory_profiles bankability data."""
+
+    territory: str
+    certWeeksMin: float | None = None
+    certWeeksMax: float | None = None
+    paymentWeeksMin: float | None = None
+    paymentWeeksMax: float | None = None
+    totalWeeksMin: float | None = None
+    totalWeeksMax: float | None = None
+    sourceQuality: str | None = None
+    suspended: bool = False
+
+
 class FinancialAnalysis(BaseModel):
     budgetScenarios: list[FinancialScenario]
     crewCostComparison: list[CrewCostRow]
+    paymentTiming: list[PaymentTimingEntry] | None = None
 
 
 class TerritoryDeepDive(BaseModel):
@@ -372,6 +442,11 @@ class ScriptAnalysis(BaseModel):
     crewCostDisclaimer: str | None = None
     # v3 additions
     sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated
+    # PRO report redesign additions (all computed, None-safe)
+    scriptIntelligence: ScriptIntelligence | None = None
+    festivalRecommendations: list[FestivalRecommendation] | None = None
+    distributorRecommendations: list[DistributorRecommendation] | None = None
+    scriptOriginCallout: dict | None = None
 
 
 class ProductionIntelligence(BaseModel):

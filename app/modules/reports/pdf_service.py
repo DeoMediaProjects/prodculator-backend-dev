@@ -10,6 +10,27 @@ from app.core.database_client import DatabaseClient
 logger = logging.getLogger(__name__)
 
 
+def _money_compact(value: float | int | None) -> str:
+    """1_234_567 → '1.23M'; 850_000 → '850K'; small values keep separators."""
+    if value is None:
+        return ""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    negative = amount < 0
+    amount = abs(amount)
+    if amount >= 1_000_000_000:
+        text = f"{amount / 1_000_000_000:.2f}B"
+    elif amount >= 1_000_000:
+        text = f"{amount / 1_000_000:.2f}M"
+    elif amount >= 10_000:
+        text = f"{amount / 1_000:.0f}K"
+    else:
+        text = f"{amount:,.0f}"
+    return f"-{text}" if negative else text
+
+
 class PDFService:
     def __init__(self):
         templates_dir = Path(__file__).resolve().parents[2] / "templates" / "pdf"
@@ -17,6 +38,7 @@ class PDFService:
             loader=FileSystemLoader(str(templates_dir)),
             autoescape=select_autoescape(["html", "xml"]),
         )
+        self.env.filters["money_compact"] = _money_compact
 
     def render_report_html(
         self,

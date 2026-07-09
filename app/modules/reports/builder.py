@@ -182,11 +182,22 @@ class ReportBuilder:
             "comparables": self._build_comparables(),
             "weatherLogistics": self._build_weather_logistics(territories),
             "fundingOpportunities": self._build_funding_opportunities(),
+            "scriptIntelligence": self._build_script_intelligence(),
             "territoryDeepDives": self._build_territory_deep_dives(territories),
             "attributions": self._build_attributions(territories),
             # AI fills this
             "alternativeStrategy": None,
         }
+
+        # Festival + distributor recommendations (paid tiers only — preview
+        # shows these as locked section titles)
+        if not self.is_preview:
+            festival_recs = self._build_festival_recommendations(territories)
+            report["festivalRecommendations"] = festival_recs
+            report["distributorRecommendations"] = (
+                self._build_distributor_recommendations(festival_recs)
+            )
+            report["scriptOriginCallout"] = self._build_script_origin_callout(territories)
 
         # Inject section explainers and scoring methodology
         self._inject_section_explainers(report)
@@ -1060,6 +1071,15 @@ class ReportBuilder:
                 "netRebate": tf.get("net_rebate"),
                 "netBudget": tf.get("net_budget"),
                 "programme": tf.get("programme"),
+                # Raw numerics for chart geometry (display currency)
+                "currencySymbol": tf.get("currency_symbol"),
+                "totalBudgetValue": tf.get("total_budget_value"),
+                "qualifyingSpendValue": tf.get("qualifying_spend_value"),
+                "grossRebateValue": tf.get("gross_rebate_value"),
+                "netRebateValue": tf.get("net_rebate_value"),
+                "netBudgetValue": tf.get("net_budget_value"),
+                "rateGrossValue": tf.get("rate_gross_value"),
+                "rateNetValue": tf.get("rate_net_value"),
             }
 
             # ATL deduction
@@ -1089,7 +1109,46 @@ class ReportBuilder:
         return {
             "budgetScenarios": budget_scenarios,
             "crewCostComparison": crew_comparison,
+            "paymentTiming": self._build_payment_timing(territories),
         }
+
+    def _build_payment_timing(self, territories: list[str]) -> list[dict]:
+        """Certification / payment receipt windows per ranked territory.
+
+        Sourced from territory_profiles bankability columns (weeks). Entries
+        with no timing data are omitted — an empty window is not rendered as
+        a confident bar.
+        """
+        timing: list[dict] = []
+        for territory in territories:
+            profile = self._get_territory_profile(territory)
+            if not profile:
+                continue
+            cert_min = to_float(profile.get("cert_weeks_min"))
+            cert_max = to_float(profile.get("cert_weeks_max"))
+            pay_min = to_float(profile.get("payment_weeks_min"))
+            pay_max = to_float(profile.get("payment_weeks_max"))
+            if cert_max is None and pay_max is None:
+                continue
+            timing.append({
+                "territory": territory,
+                "certWeeksMin": cert_min,
+                "certWeeksMax": cert_max,
+                "paymentWeeksMin": pay_min,
+                "paymentWeeksMax": pay_max,
+                # total window from completion to cash, when both known
+                "totalWeeksMin": (
+                    (cert_min or 0) + (pay_min or 0)
+                    if (cert_min is not None or pay_min is not None) else None
+                ),
+                "totalWeeksMax": (
+                    (cert_max or 0) + (pay_max or 0)
+                    if (cert_max is not None or pay_max is not None) else None
+                ),
+                "sourceQuality": profile.get("bankability_source_quality"),
+                "suspended": bool(profile.get("bankability_suspended")),
+            })
+        return timing
 
     def _build_crew_cost_comparison(self, territories: list[str]) -> list[dict]:
         """Build crewCostComparison from pre-computed crew rates."""
@@ -1743,6 +1802,355 @@ class ReportBuilder:
             ]
 
         return opportunities
+
+    # ── Script Intelligence ────────────────────────────────────────────────
+
+    def _build_script_intelligence(self) -> dict | None:
+        """Deterministic parsed-script stats for the Script Intelligence page.
+
+        Everything here is counted from the script by the parser — the
+        narrative reading lives in the AI-filled genre/tone/scale/complexity
+        and executive summary fields. Absent parser fields stay None and the
+        template hides the corresponding row.
+        """
+        sa = self.script_analysis
+        if sa is None:
+            return None
+
+        def _get(obj: Any, attr: str) -> Any:
+            return getattr(obj, attr, None) if obj is not None else None
+
+        total = _get(sa, "total_scenes")
+        day = _get(sa, "day_scenes")
+        night = _get(sa, "night_scenes") or _get(sa, "nightSceneCount")
+        other = None
+        if total is not None and day is not None and night is not None:
+            other = max(0, total - day - night)
+
+        named_locations: list[dict] = []
+        raw_locations = _get(sa, "named_locations") or {}
+        if isinstance(raw_locations, dict) and raw_locations:
+            ranked = sorted(raw_locations.items(), key=lambda kv: -(kv[1] or 0))
+            for name, scenes in ranked[:5]:
+                pct = round(100 * scenes / total) if total else None
+                named_locations.append({"name": name, "scenes": scenes, "pct": pct})
+
+        production_scale = _get(sa, "productionScale")
+        challenges_obj = _get(sa, "challenges")
+
+        # Factual challenge lines derived from parsed counts/flags only
+        challenges: list[str] = []
+        if night and night > 0:
+            challenges.append(
+                f"{night} night scenes — turnaround management and lighting "
+                f"budget in short-daylight territories"
+            )
+        music_scenes = _get(sa, "music_performance_scenes")
+        if music_scenes and music_scenes > 0:
+            challenges.append(
+                f"{music_scenes} live music performance scenes — clearance and "
+                f"licensing counsel needed before pre-production"
+            )
+        crowd = _get(sa, "crowd_scenes")
+        if crowd and crowd > 0:
+            challenges.append(
+                f"{crowd} large-crowd scenes — extras logistics and security planning"
+            )
+        stunts = _get(sa, "stunt_sequences")
+        if stunts and stunts > 0:
+            challenges.append(f"{stunts} stunt sequences — stunt coordination and insurance")
+        if _get(challenges_obj, "waterWork"):
+            challenges.append("Water work — marine safety and specialist equipment")
+        if _get(challenges_obj, "specialPermits"):
+            challenges.append("Special permits required — long lead times in every candidate territory")
+        if _get(challenges_obj, "animalWrangling"):
+            challenges.append("Animal wrangling — welfare compliance and specialist handlers")
+
+        interior_pct = _get(sa, "interior_pct")
+        exterior_pct = _get(sa, "exterior_pct")
+
+        return {
+            "sceneCount": total,
+            "interiorPct": round(interior_pct) if interior_pct is not None else None,
+            "exteriorPct": round(exterior_pct) if exterior_pct is not None else None,
+            "dayScenes": day,
+            "nightScenes": night,
+            "otherScenes": other,
+            "estShootingDays": _get(production_scale, "estimatedShootingDays"),
+            "principalCast": _get(production_scale, "principalCast"),
+            "supportingCast": _get(production_scale, "supportingCast"),
+            "crowdScenes": crowd,
+            "musicPerformanceScenes": music_scenes,
+            "languages": _get(sa, "languages"),
+            "namedLocations": named_locations,
+            "productionChallenges": challenges,
+        }
+
+    # ── Festival & Distributor Recommendations ─────────────────────────────
+
+    # Production format → festival/distributor eligible_formats vocabulary
+    _FORMAT_TO_ELIGIBLE = {
+        "Feature Film": "feature",
+        "Documentary": "documentary",
+        "Docuseries": "documentary",
+        "Short Film": "short",
+        "TV Pilot": "tv_series",
+        "TV Series": "tv_series",
+        "Limited Series": "tv_series",
+        "Mini-Series": "tv_series",
+        "Animation Series": "animation",
+    }
+
+    def _production_genres(self) -> set[str]:
+        raw = self.request_metadata.get("genre") or []
+        if isinstance(raw, str):
+            raw = [raw]
+        return {g.strip().lower() for g in raw if g}
+
+    def _script_countries(self) -> set[str]:
+        """Countries the script itself is set in (from parsed locations)."""
+        countries: set[str] = set()
+        locations = getattr(self.script_analysis, "locations", None) or []
+        for loc in locations:
+            for attr in ("territory", "country"):
+                val = getattr(loc, attr, None)
+                if val:
+                    t = resolve_territory(val)
+                    countries.add(t.label if t else val)
+        return countries
+
+    def _build_festival_recommendations(self, territories: list[str]) -> list[dict]:
+        """Rank festivals on format, genre, territory relevance and tier.
+
+        Matching is strictly factual: every reason in ``matchedOn`` comes from
+        a dataset field compared against declared production attributes.
+        Festivals with a specific representation focus are excluded because
+        representation is opt-in data this production has not declared —
+        never inferred (data rule 6).
+        """
+        festivals = self.datasets.get("festivals", [])
+        prod_genres = self._production_genres()
+        eligible_format = (
+            self._FORMAT_TO_ELIGIBLE.get(self._production_format)
+            if self._production_format else None
+        )
+        relevant_territories = {t.lower() for t in territories}
+        script_countries = {c.lower() for c in self._script_countries()}
+
+        scored: list[tuple[float, dict]] = []
+        for fest in festivals:
+            if not isinstance(fest, dict):
+                continue
+            name = (fest.get("name") or "").strip()
+            if not name:
+                continue
+
+            rep_focus = fest.get("representation_focus") or []
+            if rep_focus and "general" not in rep_focus:
+                continue  # opt-in representation data not declared — never inferred
+
+            formats = fest.get("eligible_formats") or []
+            if eligible_format and formats and eligible_format not in formats:
+                continue
+
+            genre_tags = [str(g).lower() for g in (fest.get("genres") or [])]
+            all_genres = "all" in genre_tags
+            genre_overlap = sorted(prod_genres & set(genre_tags))
+
+            # Restricting categories (horror, documentary, …) must be shared
+            if not all_genres and genre_tags:
+                restricting = set(genre_tags) & _RESTRICTING_FEST_GENRES
+                if restricting and not (restricting & prod_genres):
+                    continue
+
+            if prod_genres and not all_genres and not genre_overlap:
+                continue
+
+            location = (fest.get("location") or "").strip()
+            loc_lower = location.lower()
+            in_ranked = loc_lower in relevant_territories
+            in_script = loc_lower in script_countries
+
+            tier = (fest.get("tier") or "").strip()
+            score = 0.0
+            score += len(genre_overlap) if not all_genres else 1
+            score += 3 if in_ranked else 0
+            score += 3 if in_script else 0
+            score += {"A-List": 2, "Mid-tier": 1}.get(tier, 0)
+            score += 1 if fest.get("oscar_qualifying") else 0
+
+            matched_on: list[str] = []
+            if eligible_format and (not formats or eligible_format in formats):
+                matched_on.append("format")
+            if genre_overlap:
+                matched_on.append(
+                    "genre (" + ", ".join(g.title() for g in genre_overlap) + ")"
+                )
+            elif all_genres:
+                matched_on.append("open genre policy")
+            if in_ranked:
+                matched_on.append(f"located in {location} — a ranked territory")
+            if in_script:
+                matched_on.append(f"your script is set in {location}")
+
+            why = "Matched on " + ", ".join(matched_on) + "." if matched_on else ""
+
+            scored.append((score, {
+                "name": name,
+                "location": location,
+                "tier": tier or None,
+                "oscarQualifying": bool(fest.get("oscar_qualifying")),
+                "deadlinePattern": fest.get("deadline_pattern")
+                or fest.get("submission_deadline"),
+                "eligibleFormats": formats,
+                "matchedOn": matched_on,
+                "whyMatched": why,
+                "sourceUrl": fest.get("website_url"),
+            }))
+
+        scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+        return [entry for _, entry in scored[:5]]
+
+    def _build_distributor_recommendations(
+        self, festival_recs: list[dict]
+    ) -> list[dict]:
+        """Rank distributors on festival-scouting linkage, genre and reach.
+
+        Distributors are ranked partly on whether they actively scout the
+        recommended festivals — a distributor who attends the premiere is
+        worth more than one who matches on paper. Only confirmed-active
+        distributors reach this method (gated at dataset load). Specific
+        representation specialties are never used for matching (opt-in data,
+        data rule 6).
+        """
+        distributors = self.datasets.get("distributors", [])
+        prod_genres = self._production_genres()
+        recommended_names = {f["name"] for f in festival_recs}
+        relevant_territories = {t.lower() for t in self._territory_names}
+
+        scored: list[tuple[float, dict]] = []
+        for dist in distributors:
+            if not isinstance(dist, dict):
+                continue
+            name = (dist.get("name") or "").strip()
+            if not name:
+                continue
+
+            rep = dist.get("specialty_representation") or []
+            if rep and "general" not in rep:
+                continue  # representation specialty without declared match
+
+            scouted = sorted(
+                set(dist.get("scouts_festivals") or []) & recommended_names
+            )
+            genres = [str(g).lower() for g in (dist.get("specialty_genres") or [])]
+            genre_overlap = sorted(prod_genres & set(genres))
+
+            reach = [str(r) for r in (dist.get("territory_reach") or [])]
+            reach_lower = {r.lower() for r in reach}
+            global_reach = "global" in reach_lower
+            territory_hit = bool(reach_lower & relevant_territories)
+
+            if not scouted and not genre_overlap and not territory_hit and not global_reach:
+                continue
+
+            score = 3.0 * len(scouted) + 2.0 * len(genre_overlap)
+            score += 2 if territory_hit else 0
+            score += 1 if global_reach else 0
+
+            matched_on: list[str] = []
+            if scouted:
+                matched_on.append("scouts " + ", ".join(scouted))
+            if genre_overlap:
+                matched_on.append(
+                    "genre (" + ", ".join(g.title() for g in genre_overlap) + ")"
+                )
+            if territory_hit:
+                matched_on.append("distributes in your ranked territories")
+            elif global_reach:
+                matched_on.append("global reach")
+
+            why = "Matched on " + "; ".join(matched_on) + "." if matched_on else ""
+
+            scored.append((score, {
+                "name": name,
+                "primaryMarket": dist.get("primary_market"),
+                "territoryReach": reach,
+                "rightsType": dist.get("rights_type"),
+                "budgetTierFit": dist.get("budget_tier_fit"),
+                "submissionProcess": dist.get("submission_process"),
+                "scoutsRecommendedFestivals": scouted,
+                "matchedOn": matched_on,
+                "whyMatched": why,
+                "verified": bool(dist.get("verified_at")),
+                "sourceUrl": dist.get("source_url"),
+            }))
+
+        scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+        return [entry for _, entry in scored[:4]]
+
+    def _build_script_origin_callout(self, territories: list[str]) -> dict | None:
+        """Callout for the script's primary setting when it isn't ranked.
+
+        A script set in Lagos while Nigeria has no rankable incentive must be
+        addressed honestly — outside the ranking, with its non-financial case
+        (currency advantage, crew tier, authenticity) stated from data.
+        """
+        sa = self.script_analysis
+        if sa is None:
+            return None
+        primary = getattr(sa, "primary_location", None)
+        locations = getattr(sa, "locations", None) or []
+
+        # Resolve the primary setting to a canonical territory
+        origin_label: str | None = None
+        for candidate in [primary] + [
+            getattr(loc, "territory", None) or getattr(loc, "country", None)
+            for loc in locations
+            if getattr(loc, "isMainLocation", False)
+        ]:
+            if not candidate:
+                continue
+            t = resolve_territory(str(candidate))
+            if t:
+                origin_label = t.label
+                break
+        if not origin_label:
+            return None
+
+        ranked = {t.lower() for t in territories}
+        if origin_label.lower() in ranked:
+            return None  # origin is ranked normally — no callout needed
+
+        # Scene share of the origin territory, when parsed counts exist
+        total = getattr(sa, "total_scenes", None)
+        origin_scenes = 0
+        for loc in locations:
+            loc_terr = getattr(loc, "territory", None) or getattr(loc, "country", None)
+            t = resolve_territory(str(loc_terr)) if loc_terr else None
+            if t and t.label == origin_label:
+                origin_scenes += getattr(loc, "frequency", 0) or 0
+        scenes_pct = round(100 * origin_scenes / total) if total and origin_scenes else None
+
+        # Incentive reality for the origin
+        rows = self._territory_incentives.get(origin_label, [])
+        best = best_incentive(rows, self._production_format) if rows else {}
+        has_programme = bool(rows) and (best.get("status") or "").lower() == "active" \
+            and not is_zero_rate(best.get("rate_gross"), best.get("rate_net"))
+
+        profile = self._get_territory_profile(origin_label)
+
+        return {
+            "territory": origin_label,
+            "scenesPct": scenes_pct,
+            "hasIncentiveProgramme": has_programme,
+            "programmeNote": (
+                (best.get("program_name") or best.get("program"))
+                if has_programme else "No formal production incentive programme"
+            ),
+            "currencyAdvantage": self._get_currency_score(origin_label),
+            "crewDepthTier": self._profile_tier_label(profile, "crew_depth_tier"),
+        }
 
     # ── Territory Deep Dives ───────────────────────────────────────────────
 

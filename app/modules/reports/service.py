@@ -817,12 +817,16 @@ class ReportService:
         # that the AI should use verbatim instead of computing its own.
         self._pre_compute_territory_financials(datasets)
 
-        # Load territory profiles for deterministic crew depth and infrastructure scores
+        # Load territory profiles for deterministic crew depth / infrastructure
+        # scores plus bankability payment-timing intelligence
         territory_profile_rows = self._safe_query(
             'territory_profiles',
             lambda q: q.select(
-                'territory,crew_depth_tier,crew_depth_score,'
-                'infrastructure_tier,infrastructure_score,hemisphere'
+                'territory,crew_depth_tier,crew_depth_score,crew_depth_notes,'
+                'infrastructure_tier,infrastructure_score,infrastructure_notes,'
+                'hemisphere,cert_weeks_min,cert_weeks_max,'
+                'payment_weeks_min,payment_weeks_max,'
+                'bankability_source_quality,bankability_suspended'
             )
         )
         datasets['_territory_profiles'] = {
@@ -997,6 +1001,15 @@ class ReportService:
                 "rebate_cap_note": corrected.get("rebate_cap_note"),
                 "qualifying_spend_note": corrected.get("qualifying_spend_note"),
                 "fx_note": fx_note,
+                # Raw numerics (display currency) — used by the PDF waterfall
+                # charts; the formatted strings above stay authoritative for text
+                "total_budget_value": d_total,
+                "qualifying_spend_value": d_qs,
+                "gross_rebate_value": d_gross_rebate,
+                "net_rebate_value": d_net_rebate,
+                "net_budget_value": d_net_budget,
+                "rate_gross_value": corrected["rate_gross"],
+                "rate_net_value": corrected.get("rate_net"),
                 "crew_rates": crew_rates,
                 # Budget-currency equivalents for context in prompt
                 "budget_currency": budget_currency,
@@ -1178,6 +1191,12 @@ class ReportService:
         all_festivals = self._safe_query("film_festivals", lambda q: q.select("*"))
         festivals = [f for f in all_festivals if self._is_open_or_upcoming_festival(f)]
         festivals.sort(key=self._festival_sort_key)
+        # Distributors — confirmed-active only; verify_* statuses are never
+        # presented as recommendations
+        distributors = [
+            d for d in self._safe_query("distributors", lambda q: q.select("*"))
+            if (d.get("active_status") or "") == "confirmed_active"
+        ]
         # Territory weather data (for shoot-date-aware risk scoring)
         weather_data = self._safe_query("territory_weather", lambda q: q.select("*"))
 
@@ -1208,6 +1227,7 @@ class ReportService:
             "comparables": comparables,
             "grants": grants,
             "festivals": festivals,
+            "distributors": distributors,
             "weather": weather_data,
             "stacking_map": stacking_map,
         }
