@@ -25,6 +25,9 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "createdAt": "created_at",
     "updatedAt": "updated_at",
     "lastVerifiedAt": "last_verified_at",
+    # v2 source-of-truth fields
+    "productionStage": "production_stage",
+    "emergingFilmmaker": "emerging_filmmaker",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 

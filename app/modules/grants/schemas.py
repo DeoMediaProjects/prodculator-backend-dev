@@ -26,6 +26,10 @@ class GrantOpportunity(BaseModel):
     updatedAt: str | None = None
     lastVerifiedAt: str | None = None
 
+    # v2 source-of-truth fields
+    productionStage: str | None = None       # 'development' | 'production' | 'short' | 'multi'
+    emergingFilmmaker: bool | None = None    # sourced flag — never inferred
+
     @field_validator("territory", mode="before")
     @classmethod
     def normalise_territory(cls, v: str | None) -> str | None:
