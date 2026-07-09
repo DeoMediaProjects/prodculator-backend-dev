@@ -543,6 +543,7 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
 
     data.pop("alternativeStrategy", None)
     data.pop("scriptIntelligence", None)
+    data.pop("scriptStats", None)
     data.pop("dimensionVerdicts", None)
     data["nextSteps"] = []
 

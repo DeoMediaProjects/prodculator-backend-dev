@@ -182,7 +182,9 @@ class ReportBuilder:
             "comparables": self._build_comparables(),
             "weatherLogistics": self._build_weather_logistics(territories),
             "fundingOpportunities": self._build_funding_opportunities(),
-            "scriptIntelligence": self._build_script_intelligence(),
+            # Parsed-script stats. Named scriptStats — scriptIntelligence is
+            # already the AI-narrative key (creativeRecognition, complexityDrivers)
+            "scriptStats": self._build_script_intelligence(),
             "territoryDeepDives": self._build_territory_deep_dives(territories),
             "attributions": self._build_attributions(territories),
             # AI fills this

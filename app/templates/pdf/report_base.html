@@ -302,7 +302,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% set grants_only = (report.fundingOpportunities or []) | selectattr('type', 'equalto', 'Fund') | list %}
 {% set secs = [] %}
 {% set _ = secs.append({'id': 'exec', 'title': 'Executive Summary', 'locked': false}) %}
-{% if report.scriptIntelligence or report.genre %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': false}) %}{% endif %}
+{% if report.scriptStats or report.genre %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': false}) %}{% endif %}
 {% set _ = secs.append({'id': 'strategy', 'title': 'Production Location Strategy', 'locked': is_preview}) %}
 {% if report.territoryDeepDives %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': true}) %}{% endif %}
 {% if scenarios and not is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': true}) %}{% endif %}
@@ -438,7 +438,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 </div>
 
 <!-- ═══════════════ SCRIPT INTELLIGENCE ═══════════════ -->
-{% set si = report.scriptIntelligence %}
+{% set si = report.scriptStats %}
 {% if 'script' in num_map %}
 <div class="page" id="sec-script">
   {{ runhead(rh) }}

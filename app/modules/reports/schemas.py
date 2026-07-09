@@ -443,7 +443,7 @@ class ScriptAnalysis(BaseModel):
     # v3 additions
     sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated
     # PRO report redesign additions (all computed, None-safe)
-    scriptIntelligence: ScriptIntelligence | None = None
+    scriptStats: ScriptIntelligence | None = None  # parsed stats (scriptIntelligence is the AI-narrative key)
     festivalRecommendations: list[FestivalRecommendation] | None = None
     distributorRecommendations: list[DistributorRecommendation] | None = None
     scriptOriginCallout: dict | None = None
