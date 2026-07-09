@@ -47,6 +47,23 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "coProductionEligible": "co_production_eligible",
     "coProductionTreaties": "co_production_treaties",
     "spvEligible": "spv_eligible",
+    # v4 source-of-truth fields (notes/authority/confidence/region are
+    # single-word and need no mapping)
+    "rateGrossDisplay": "rate_gross_display",
+    "rateNetDisplay": "rate_net_display",
+    "rebateCapDisplay": "rebate_cap_display",
+    "perPersonCapDisplay": "per_person_cap_display",
+    "paymentTimeline": "payment_timeline",
+    "aiRule": "ai_rule",
+    "budgetEligibilityCeiling": "budget_eligibility_ceiling",
+    "annualProgrammeCap": "annual_programme_cap",
+    "mechanismPattern": "mechanism_pattern",
+    "qsBasis": "qs_basis",
+    "verificationStatus": "verification_status",
+    "calcFormula": "calc_formula",
+    "regionalFundsNote": "regional_funds_note",
+    "capType": "cap_type",
+    "bankPts": "bank_pts",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 
