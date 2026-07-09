@@ -28,6 +28,7 @@ from app.modules.territories.schemas import (
     TerritoryListResponse,
     IncentiveInfo,
     CrewCostInfo,
+    TerritoryProfileInfo,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,11 @@ class TerritoryService:
         # Fetch raw data
         incentives = self._fetch_table("incentive_programs")
         crew_costs_raw = self._fetch_table("crew_costs")
+        profiles_by_territory = {
+            row["territory"]: row
+            for row in self._fetch_table("territory_profiles")
+            if row.get("territory")
+        }
 
         territory_incentives = index_incentives_by_territory(incentives)
 
@@ -89,6 +95,7 @@ class TerritoryService:
                 continue
             item = self._build_compare_item(
                 t_obj, territory_incentives, crew_by_territory, display_currency,
+                profiles_by_territory,
             )
             items.append(item)
 
@@ -103,6 +110,7 @@ class TerritoryService:
         territory_incentives: dict[str, list[dict]],
         crew_by_territory: dict[str, list[dict]],
         display_currency: str,
+        profiles_by_territory: dict[str, dict] | None = None,
     ) -> TerritoryCompareItem:
         label = t_obj.label
         iso = t_obj.iso
@@ -116,6 +124,10 @@ class TerritoryService:
         # Crew cost info
         crew_info = self._build_crew_info(label, crew_by_territory, territory_ccy)
 
+        # Maintained profile (crew depth / infrastructure / bankability),
+        # falling back to the parent territory's profile for sub-territories
+        profile_info = self._build_profile_info(t_obj, profiles_by_territory or {})
+
         # Derive highlights and restrictions from incentive data
         highlights, restrictions, labor_req = self._derive_highlights_restrictions(
             label, territory_incentives,
@@ -128,10 +140,39 @@ class TerritoryService:
             parent=parent,
             incentive=incentive_info,
             crew_costs=crew_info,
+            profile=profile_info,
             labor_requirement=labor_req,
             highlights=highlights,
             restrictions=restrictions,
             currency=territory_ccy,
+        )
+
+    @staticmethod
+    def _build_profile_info(
+        t_obj: Territory,
+        profiles_by_territory: dict[str, dict],
+    ) -> TerritoryProfileInfo | None:
+        row = profiles_by_territory.get(t_obj.label)
+        if row is None and t_obj.parent:
+            row = profiles_by_territory.get(t_obj.parent.label)
+        if row is None:
+            return None
+        return TerritoryProfileInfo(
+            crew_depth_tier=row.get("crew_depth_tier"),
+            crew_depth_score=_safe_int(row.get("crew_depth_score")),
+            crew_depth_notes=row.get("crew_depth_notes"),
+            infrastructure_tier=row.get("infrastructure_tier"),
+            infrastructure_score=_safe_int(row.get("infrastructure_score")),
+            infrastructure_notes=row.get("infrastructure_notes"),
+            cert_weeks_min=_safe_int(row.get("cert_weeks_min")),
+            cert_weeks_max=_safe_int(row.get("cert_weeks_max")),
+            payment_weeks_min=_safe_int(row.get("payment_weeks_min")),
+            payment_weeks_max=_safe_int(row.get("payment_weeks_max")),
+            bankability_source_quality=row.get("bankability_source_quality"),
+            bankability_source_note=row.get("bankability_source_note"),
+            bankability_real_world_confirms=row.get("bankability_real_world_confirms"),
+            bankability_suspended=row.get("bankability_suspended"),
+            bankability_source_url=row.get("bankability_source_url"),
         )
 
     def _build_incentive_info(
@@ -351,6 +392,13 @@ class TerritoryService:
             return result.data or []
         except Exception:
             logger.warning("TerritoryService: failed to fetch %s", table_name, exc_info=True)
+            # A failed SELECT aborts the Postgres transaction; roll back so
+            # subsequent fetches on this session don't fail with
+            # InFailedSqlTransaction.
+            try:
+                self.supabase.session.rollback()
+            except Exception:
+                pass
             return []
 
     def _fx_enrich_crew_costs(self, crew_costs: list[dict]) -> list[dict]:

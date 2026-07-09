@@ -282,11 +282,13 @@ class TerritoryProfile(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     territory: str = Field(index=True, unique=True, nullable=False)
     iso_code: str | None = None
-    crew_depth_tier: str = Field(default="emerging")
-    crew_depth_score: int = Field(default=30)
+    # NULL tier/score means "not yet assessed" (consumers fall back to
+    # computed scores) — distinct from a low assessed score.
+    crew_depth_tier: str | None = Field(default="emerging")
+    crew_depth_score: int | None = Field(default=30)
     crew_depth_notes: str | None = None
-    infrastructure_tier: str = Field(default="emerging")
-    infrastructure_score: int = Field(default=30)
+    infrastructure_tier: str | None = Field(default="emerging")
+    infrastructure_score: int | None = Field(default=30)
     infrastructure_notes: str | None = None
     hemisphere: str = Field(default="northern")
     intl_productions_3yr: int | None = None
@@ -294,5 +296,18 @@ class TerritoryProfile(SQLModel, table=True):
     last_reviewed_at: datetime | None = None
     reviewed_by: str | None = None
     review_notes: str | None = None
+    # Bankability / payment-timing intelligence (crewdepth_bankability v3).
+    # real_world_confirms stays NULL when unconfirmed — not the same as False.
+    region: str | None = None
+    cert_weeks_min: int | None = None
+    cert_weeks_max: int | None = None
+    payment_weeks_min: int | None = None
+    payment_weeks_max: int | None = None
+    bankability_source_quality: str | None = None
+    bankability_source_note: str | None = None
+    bankability_real_world_confirms: bool | None = None
+    bankability_suspended: bool | None = None
+    bankability_source_url: str | None = None
+    bankability_ai_rule: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
