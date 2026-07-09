@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 from app.modules.admin.router import router as admin_router
 from app.modules.admin.auth_router import router as admin_auth_router
 from app.modules.admin.admin_users_router import router as admin_users_router
+from app.modules.distributors.admin_router import router as distributors_admin_router
 from app.modules.festivals.admin_router import router as festivals_admin_router
 from app.modules.incentives.admin_router import router as incentives_admin_router
 from app.modules.crew_costs.admin_router import router as crew_costs_admin_router
@@ -43,6 +44,7 @@ from app.modules.payments.router import (
 )
 from app.modules.grants.router import router as grants_router
 from app.modules.festivals.router import router as festivals_router
+from app.modules.distributors.router import router as distributors_router
 from app.modules.reports.router import router as reports_router
 from app.modules.scripts.router import router as scripts_router
 from app.modules.subscriptions.router import router as subscriptions_router
@@ -273,6 +275,7 @@ app.include_router(payments_router)
 app.include_router(payments_webhook_router)
 app.include_router(grants_router)
 app.include_router(festivals_router)
+app.include_router(distributors_router)
 app.include_router(watchlist_router)
 app.include_router(subscriptions_router)
 app.include_router(calculator_router)
@@ -284,6 +287,7 @@ app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)
 app.include_router(festivals_admin_router)
+app.include_router(distributors_admin_router)
 app.include_router(incentives_admin_router)
 app.include_router(crew_costs_admin_router)
 app.include_router(grants_admin_router)
