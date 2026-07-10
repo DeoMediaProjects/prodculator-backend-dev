@@ -840,9 +840,12 @@ class TestBuildComparables:
 
 class TestBuildFundingOpportunities:
     def test_grant_label_prefix(self):
+        from datetime import date as _date
         grants = [
             {"title": "BFI Development Fund", "territory": "United Kingdom",
-             "amount_description": "£50,000 per project"},
+             "amount_description": "£50,000 per project",
+             "deadline": "rolling", "recurrence": "rolling",
+             "verified_at": _date.today().isoformat()},
         ]
         inc = _make_incentive()
         ds = _make_datasets(incentives=[inc], grants=grants)
@@ -853,10 +856,16 @@ class TestBuildFundingOpportunities:
         assert opps[0]["notes"].startswith("Up to £50,000")
 
     def test_feature_only_grants_filtered_for_tv(self):
+        """Format is a HARD GATE (grants matcher G1): a feature-only fund is
+        excluded for a TV production — the old-report defect the handoff
+        called out (BFI Film Fund/Film4 recommended for a TV pilot)."""
+        from datetime import date as _date
         grants = [
             {"title": "BFI Distribution Fund", "territory": "United Kingdom",
              "amount_description": "£100K",
-             "eligibility": json.dumps(["feature film for theatrical release"])},
+             "eligible_formats": ["feature"],
+             "deadline": "rolling", "recurrence": "rolling",
+             "verified_at": _date.today().isoformat()},
         ]
         inc = _make_incentive()
         ds = _make_datasets(

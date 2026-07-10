@@ -21,6 +21,7 @@ from typing import Any
 from app.core.territories import resolve_territory
 from app.modules.reports.helpers import (
     STALE_DAYS,
+    STATIC_FX_TO_GBP,
     TERMINAL_LABELS,
     prog_name,
     index_incentives,
@@ -39,6 +40,7 @@ from app.modules.reports.matching import (
     estimate_completion_date,
     match_distributors,
     match_festivals,
+    match_grants,
 )
 from app.modules.reports.scoring import (
     _compute_bankability_label,
@@ -1459,90 +1461,69 @@ class ReportBuilder:
     # ── Funding Opportunities ──────────────────────────────────────────────
 
     def _build_funding_opportunities(self) -> list[dict]:
-        """Build fundingOpportunities from grants + festivals datasets.
+        """Build fundingOpportunities from the deterministic grants matcher
+        plus territory-matched festivals.
 
-        Only includes entries whose territory matches one of the selected
-        territories (self._territory_names).
-
-        Grants whose eligibility text indicates they require a domestic
-        delegate producer (e.g. CNC Aide Sélective) are excluded when the
-        production's base country differs from the grant territory — a US
-        production using a French PSC for the TRIP rebate is NOT the French
-        delegate producer and cannot access such programmes.
+        Grants go through reports/matching.match_grants (handoff
+        grants_matcher.py, PRO spec Section 07): format / deadline /
+        staleness / nationality-with-no-route / budget-bounds hard gates,
+        additive location/genre/format/budget signals, plain-English
+        why-matched strings and prominence badges.
         """
         grants = self.datasets.get("grants", [])
         festivals = self.datasets.get("festivals", [])
         selected = {t.lower() for t in self._territory_names}
-        base_country = (
-            self.request_metadata.get("country")
-            or self.request_metadata.get("base_country")
-            or ""
-        ).strip()
 
-        # Keywords (lowercase) that signal a grant requires a domestic delegate
-        # producer.  Matched case-insensitively against eligibility text.
-        _DOMESTIC_PRODUCER_MARKERS = (
-            "delegate producer",
-            "délégué",
-            "delegue",
-            "not accessible to foreign",
-            "french majority production",
-            "avance sur recettes",
-        )
+        # Script-origin territory (parser's dominant location country)
+        script_origin = None
+        primary = getattr(self.script_analysis, "primary_location", None)
+        if primary:
+            t = resolve_territory(str(primary))
+            script_origin = t.label if t else str(primary)
+
+        # Budget in USD for the fund bounds gate (approximate FX is fine here —
+        # bounds are coarse eligibility windows)
+        budget_usd = None
+        if self._budget_gbp:
+            budget_usd = self._budget_gbp * STATIC_FX_TO_GBP.get("USD", 1.27)
+
+        production = {
+            "format": self._production_format or "",
+            "genres": sorted(self._production_genres()),
+            "budget_usd": budget_usd,
+            "home_country": self.request_metadata.get("country") or "",
+            "ranked_territories": list(self._territory_names),
+            "script_origin": script_origin,
+        }
+        grant_matches, grant_flags = match_grants(grants, production)
+        for flag in grant_flags:
+            logger.info(
+                "grants matcher admin flag: %s — %s [%s]",
+                flag.get("fund_name"), flag.get("detail"), flag.get("flag"),
+            )
 
         opportunities: list[dict] = []
-
-        for grant in grants:
-            if not isinstance(grant, dict):
-                continue
-            grant_territory = (grant.get("territory") or "").strip()
-            if grant_territory.lower() not in selected:
-                continue
-            grant_name = (grant.get("title") or grant.get("name") or "").strip()
-            if not grant_name:
-                continue
-
-            # Check if grant requires a domestic delegate producer and the
-            # production is foreign-initiated (base country ≠ grant territory).
-            if base_country and base_country.lower() != grant_territory.lower():
-                eligibility_raw = grant.get("eligibility") or ""
-                if isinstance(eligibility_raw, str):
-                    try:
-                        elig_list = _json.loads(eligibility_raw)
-                        eligibility_text = " ".join(str(e) for e in elig_list)
-                    except (ValueError, TypeError):
-                        eligibility_text = eligibility_raw
-                elif isinstance(eligibility_raw, list):
-                    eligibility_text = " ".join(str(e) for e in eligibility_raw)
-                else:
-                    eligibility_text = str(eligibility_raw)
-
-                eligibility_lower = eligibility_text.lower()
-                if any(marker in eligibility_lower for marker in _DOMESTIC_PRODUCER_MARKERS):
-                    continue  # Skip — not accessible to this production
-            opp: dict = {
-                "name": grant_name,
+        for m in grant_matches[:10]:
+            g = m["grant"]
+            notes = (
+                g.get("max_amount")
+                or g.get("amount_description")
+                or ""
+            )
+            if notes and not notes.lower().startswith("up to") and _re.search(r'[£$€]\s*\d', notes):
+                notes = f"Up to {notes}"
+            opportunities.append({
+                "name": g.get("title") or g.get("fund_name") or "",
                 "type": "Fund",
-                "territory": grant.get("territory") or "",
+                "territory": g.get("territory") or "",
                 "deadline": (
-                    grant.get("application_deadline")
-                    or grant.get("next_deadline")
-                    or ""
+                    g.get("application_deadline") or g.get("deadline") or ""
                 ),
-                "notes": (
-                    grant.get("max_amount")
-                    or grant.get("amount_description")
-                    or ""
-                ),
-            }
-
-            # Grant label — ensure "Up to" prefix
-            notes = opp.get("notes") or ""
-            if notes and not notes.lower().startswith("up to"):
-                if _re.search(r'[£$€]\s*\d', notes):
-                    opp["notes"] = f"Up to {notes}"
-
-            opportunities.append(opp)
+                "notes": notes,
+                "badges": m["badges"],
+                "whyMatched": "; ".join(m["signals"]),
+                "matchScore": m["score"],
+            })
 
         # Production genres for festival relevance filtering
         prod_genres_raw = self.request_metadata.get("genre") or []
@@ -1618,49 +1599,6 @@ class ReportBuilder:
                 "deadline": fest_deadline,
                 "notes": festival.get("description") or festival.get("notes") or "",
             })
-
-        # Format filtering — build eligibility index once for all checks
-        title_to_elig: dict[str, list[str]] = {}
-        for row in grants:
-            title = (row.get("title") or "").strip()
-            elig = row.get("eligibility") or []
-            if isinstance(elig, str):
-                try:
-                    elig = _json.loads(elig)
-                except (ValueError, TypeError):
-                    elig = [elig]
-            if title:
-                title_to_elig[title.lower()] = [str(e) for e in elig]
-
-        to_remove: set[str] = set()
-
-        # Remove feature-film-only grants for non-feature formats
-        if self._production_format in _NON_FEATURE_FORMATS:
-            for opp in opportunities:
-                name = (opp.get("name") or "").strip()
-                db_elig = title_to_elig.get(name.lower(), [])
-                combined = " ".join(db_elig).lower()
-                if any(phrase in combined for phrase in _FEATURE_ONLY_PHRASES):
-                    to_remove.add(name)
-
-        # Remove short-film-only grants for non-short formats
-        if self._production_format != "Short Film":
-            for opp in opportunities:
-                if opp.get("type") != "Fund":
-                    continue
-                name = (opp.get("name") or "").strip()
-                # Check grant name and eligibility for short-film indicators
-                name_lower = name.lower()
-                db_elig = title_to_elig.get(name_lower, [])
-                combined = (name_lower + " " + " ".join(db_elig)).lower()
-                if any(phrase in combined for phrase in _SHORT_FILM_PHRASES):
-                    to_remove.add(name)
-
-        if to_remove:
-            opportunities = [
-                o for o in opportunities
-                if (o.get("name") or "") not in to_remove
-            ]
 
         return opportunities
 

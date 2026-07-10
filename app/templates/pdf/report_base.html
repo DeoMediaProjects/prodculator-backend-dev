@@ -794,11 +794,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <tr><th style="width:36%">Fund</th><th>Territory</th><th>Amount</th><th>Deadline</th></tr>
     {% for opp in grants_only[:10] %}
     <tr>
-      <td style="font-weight:600">{{ opp.name }}</td>
+      <td style="font-weight:600">{{ opp.name }}
+        {% for badge in opp.badges or [] %}<br><span class="chip {{ 'notbank' if badge == 'LEGISLATIVE RISK' else ('verify' if badge != 'CLOSING SOON' else 'gold') }}" style="margin-top:4px">{{ badge }}</span>{% endfor %}
+      </td>
       <td>{{ opp.territory }}</td>
       <td>{{ opp.notes | truncate(46) }}</td>
       <td>{{ opp.deadline or 'Rolling' }}</td>
     </tr>
+    {% if opp.whyMatched %}
+    <tr><td colspan="4" style="font-family:var(--serif);font-size:11px;color:#26241F;font-style:italic">{{ opp.whyMatched }}</td></tr>
+    {% endif %}
     {% endfor %}
   </table>
   <p class="disclaimer">Eligibility criteria are summarised — confirm current guidelines with each fund before applying.</p>

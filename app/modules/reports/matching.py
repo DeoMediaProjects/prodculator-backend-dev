@@ -330,3 +330,180 @@ def match_distributors(
 
     matches.sort(key=lambda m: m.score, reverse=True)
     return matches
+
+
+# ---------------------------------------------------------------------------
+# Grants matching (handoff code/grants_matcher.py - PRO spec Section 07)
+# ---------------------------------------------------------------------------
+# Hard gates exclude; additive signals score; nothing is inferred.
+#   G1 format, G2 deadline (passed never renders), G3 staleness (flag 4mo /
+#   exclude 6mo, unverified excluded), G4 nationality-with-no-route,
+#   budget outside stated bounds. Badges: NATIONALITY RESTRICTION /
+#   CO-PRODUCTION REQUIRED / CLOSING SOON / LEGISLATIVE RISK.
+
+GRANT_FORMAT_MAP = {
+    "feature film": "feature",
+    "feature": "feature",
+    "short": "short",
+    "short film": "short",
+    "tv series": "tv_series",
+    "tv pilot": "tv_series",
+    "limited series": "tv_series",
+    "mini-series": "tv_series",
+    "documentary": "documentary",
+    "docuseries": "documentary",
+    "animated feature": "animation",
+    "animation series": "animation",
+}
+
+STALE_EXCLUDE_MONTHS = 6
+STALE_FLAG_MONTHS = 4
+CLOSING_SOON_DAYS = 56
+
+
+def _parse_date(s):
+    if not s:
+        return None
+    s = str(s).strip()[:10]
+    try:
+        parts = s.split("-")
+        if len(parts) == 3:
+            return date(int(parts[0]), int(parts[1]), int(parts[2]))
+    except (ValueError, TypeError):
+        return None
+    return None
+
+
+def _months_between(d1: date, d2: date) -> float:
+    return (d2.year - d1.year) * 12 + (d2.month - d1.month) + (d2.day - d1.day) / 30.0
+
+
+def match_grants(grants: list[dict], production: dict, today: date | None = None):
+    """production: format, genres[], budget_usd, home_country,
+    ranked_territories[], script_origin. Returns (matches, admin_flags)."""
+    today = today or date.today()
+    fmt = GRANT_FORMAT_MAP.get((production.get("format") or "").lower())
+    genres = {g.lower() for g in production.get("genres", [])}
+    ranked = {t.lower() for t in production.get("ranked_territories", [])}
+    origin = (production.get("script_origin") or "").lower() or None
+    home = (production.get("home_country") or "").lower()
+    budget = production.get("budget_usd")
+    loc_continents: set[str] = set()
+
+    matches, flags = [], []
+
+    for g in grants:
+        if not g:
+            continue
+        name = g.get("fund_name") or g.get("title") or ""
+        terr = (g.get("territory") or "").lower()
+        cont = g.get("continent") or ""
+
+        # ---- G1 format ----
+        elig = [str(f).lower() for f in (g.get("eligible_formats") or [])]
+        if fmt and elig and fmt not in elig and "all" not in elig:
+            continue
+
+        # ---- G2 deadline ----
+        deadline_raw = g.get("deadline") or g.get("application_deadline")
+        dl_raw = str(deadline_raw or "").lower()
+        dl = _parse_date(deadline_raw)
+        closing_soon = False
+        if dl:
+            if dl < today:
+                flags.append({"fund_name": name, "flag": "dead_deadline",
+                              "detail": f"deadline {deadline_raw} has passed"
+                              + (" - annual recurrence, re-date next cycle"
+                                 if g.get("recurrence") == "annual" else "")})
+                continue
+            closing_soon = (dl - today) <= timedelta(days=CLOSING_SOON_DAYS)
+        elif dl_raw not in ("rolling", "") and g.get("recurrence") != "rolling":
+            flags.append({"fund_name": name, "flag": "deadline_unparseable",
+                          "detail": f"deadline field '{deadline_raw}' is not a date or 'rolling'"})
+
+        # ---- G3 staleness ----
+        vd = _parse_date(g.get("verified_at") or g.get("last_verified_at"))
+        if vd:
+            age = _months_between(vd, today)
+            if age > STALE_EXCLUDE_MONTHS:
+                flags.append({"fund_name": name, "flag": "stale_excluded",
+                              "detail": f"verified_at > {STALE_EXCLUDE_MONTHS} months - excluded from paid reports"})
+                continue
+            if age > STALE_FLAG_MONTHS:
+                flags.append({"fund_name": name, "flag": "stale_flag",
+                              "detail": f"verified_at > {STALE_FLAG_MONTHS} months - re-verify"})
+        else:
+            flags.append({"fund_name": name, "flag": "stale_excluded",
+                          "detail": "no verified_at - excluded from paid reports until verified"})
+            continue
+
+        # ---- G4 nationality ----
+        score = 0.0
+        signals, badges = [], []
+        terr_matches_ranked = terr in ranked
+        terr_matches_origin = bool(origin and terr == origin)
+        terr_matches_home = bool(home and terr == home)
+        if g.get("nationality_required"):
+            badges.append("NATIONALITY RESTRICTION")
+            if terr_matches_home:
+                score += 2
+                signals.append(f"nationality requirement met - you are based in {g.get('territory')}")
+            elif terr_matches_ranked or terr_matches_origin:
+                score -= 1
+                signals.append(
+                    f"restricted to {g.get('territory')} entities - a local co-production structure would be required"
+                )
+            else:
+                continue  # no route to eligibility: excluded rather than misleadingly listed
+
+        # ---- location signals ----
+        if terr_matches_ranked:
+            score += 3
+            signals.append(f"{g.get('territory')} is a ranked production territory for this project")
+        if terr_matches_origin:
+            score += 3
+            signals.append(f"{g.get('territory')} is where your script is predominantly set")
+        if not (terr_matches_ranked or terr_matches_origin):
+            if terr == "global":
+                score += 0.5
+                signals.append("open to productions worldwide")
+            elif cont and cont.lower() in loc_continents:
+                score += 1
+                signals.append(f"open across {cont}, which includes your production territories")
+
+        # ---- genre (weak, capped) ----
+        gtags = {str(t).lower() for t in (g.get("genre_tags") or [])}
+        if genres and (genres & gtags or "all" in gtags):
+            score += 2
+            hit = sorted(genres & gtags)
+            signals.append("accepts " + (", ".join(hit) if hit else "all genres"))
+
+        # ---- format specificity ----
+        if fmt and elig and fmt in elig and len(elig) <= 2:
+            score += 1
+            signals.append(f"specifically funds {fmt.replace('_', ' ')} projects")
+
+        # ---- budget window ----
+        lo, hi = g.get("budget_min_usd"), g.get("budget_max_usd")
+        if budget and hi is not None and budget > hi:
+            continue  # over the fund's stated ceiling: ineligible
+        if budget and lo is not None and budget < lo:
+            continue
+        if budget and lo is not None and hi is not None and lo <= budget <= hi:
+            score += 2
+            signals.append("your budget sits inside this fund's stated range")
+
+        # ---- badges ----
+        if g.get("co_production_required"):
+            badges.append("CO-PRODUCTION REQUIRED")
+        if closing_soon:
+            badges.append("CLOSING SOON")
+        if g.get("legislative_risk"):
+            badges.append("LEGISLATIVE RISK")
+
+        if score > 0:
+            matches.append({"grant": g, "score": round(score, 1),
+                            "signals": signals, "badges": badges})
+
+    matches.sort(key=lambda m: (-m["score"], m["grant"].get("fund_name") or m["grant"].get("title") or ""))
+    return matches, flags
