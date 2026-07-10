@@ -60,7 +60,17 @@ class CreateReportRequest(BaseModel):
     crew_size: int | None = None
     principal_cast: int | None = None
     supporting_cast: int | None = None
-    target_audience: str | None = None
+    # Declared audience (handoff §4): target_audience = checked age quadrants
+    # (kids_family / under_25 / adults_25_plus); audience_segments = declared
+    # segments such as lgbtq_audience; audience_skew = stored for B2B, never
+    # scored. All declared-only — never inferred from genre.
+    target_audience: str | list[str] | None = None
+    audience_segments: list[str] | None = None
+    audience_skew: Literal["female_leaning", "male_leaning", "balanced"] | None = None
+    # Representation — strict opt-in; drives representation-focused festival /
+    # distributor matching only when the user filled these in.
+    representation_gender: str | None = None
+    representation_minority: list[str] | None = None
     language: str | None = None
 
     # Producer eligibility (for nationality / co-production checks)
@@ -185,33 +195,6 @@ class IncentiveEstimate(BaseModel):
     stalenessWarning: str | None = None       # set by validator if data_freshness_days > 365
     # v3 bankability
     bankabilityLabel: Literal["BANKABLE", "VERIFY FIRST", "NOT BANKABLE"] | None = None
-
-
-class CrewInsight(BaseModel):
-    territory: str
-    availability: Literal["High", "Medium", "Low"]
-    costVsUSD: str
-    qualityRating: int  # 1-5
-    specialties: list[str]  # up to 5 roles
-    tradeoff: str
-    # Enriched FX fields (populated by ReportValidator)
-    currency: str | None = None    # source currency of underlying data
-    fxRate: float | None = None    # rate used for GBP conversion
-    fxDate: str | None = None      # date of FX rate used
-    dataSource: str | None = None  # source attribution for crew rates
-
-
-class CastInsight(BaseModel):
-    territory: str
-    roleCategory: str  # CAST-Lead, CAST-Supporting, CAST-DayPlayer, etc.
-    estimatedRange: str  # e.g. "$700-$1,800/day"
-    rateCurrency: str | None = None
-    ratePeriod: str | None = None  # day, week, session
-    fringeNote: str | None = None
-    sourceNote: str | None = None
-    # Enriched FX fields (populated by ReportValidator)
-    fxRate: float | None = None
-    fxDate: str | None = None
 
 
 class Attribution(BaseModel):
@@ -382,11 +365,6 @@ class FinancialScenario(BaseModel):
     rebateRate: str | None = None
 
 
-class CrewCostRow(BaseModel):
-    role: str
-    territories: dict[str, str]  # territory_name -> salary range string
-
-
 class PaymentTimingEntry(BaseModel):
     """Certification/payment receipt windows from territory_profiles bankability data."""
 
@@ -403,7 +381,6 @@ class PaymentTimingEntry(BaseModel):
 
 class FinancialAnalysis(BaseModel):
     budgetScenarios: list[FinancialScenario]
-    crewCostComparison: list[CrewCostRow]
     paymentTiming: list[PaymentTimingEntry] | None = None
 
 
@@ -428,8 +405,6 @@ class ScriptAnalysis(BaseModel):
     complexity: Literal["Low", "Medium", "High", "Very High"]
     locationRankings: list[LocationRanking]
     incentiveEstimates: list[IncentiveEstimate]
-    crewInsights: list[CrewInsight]
-    castInsights: list[CastInsight] | None = None
     comparables: list[ComparableProductionEntry]
     weatherLogistics: list[WeatherLogistic]
     fundingOpportunities: list[FundingOpportunity]
@@ -439,7 +414,6 @@ class ScriptAnalysis(BaseModel):
     alternativeStrategy: str | None = None
     scoringMethodology: ScoringMethodology | None = None
     attributions: list[Attribution] | None = None
-    crewCostDisclaimer: str | None = None
     # v3 additions
     sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated
     # PRO report redesign additions (all computed, None-safe)

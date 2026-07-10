@@ -293,19 +293,19 @@ def test_labour_type_reduces_qualifying_spend_to_labour_pct():
     assert "labour" in result["qualifying_spend_note"].lower()
 
 
-def test_labour_type_default_35pct_when_no_labour_pct_set():
-    """qualifying_spend_type='labour' with no qualifying_spend_labour_pct defaults to 35%."""
+def test_labour_type_without_sourced_pct_computes_no_number():
+    """qualifying_spend_type='labour' with no SOURCED labour share must not
+    fabricate a ratio (handoff §6: the old hardcoded 35% is removed) — the
+    working returns None so the programme is presented without a confident
+    wrong number."""
     row = _make_rebate_row(
         rate_gross=16.0,
         rate_type="tax_credit",
         qualifying_spend_type="labour",
         qualifying_spend_labour_pct=None,
     )
-    budget_gbp = 15_040_000.0
-    result = ReportValidator._compute_corrected_rebate(row, budget_gbp, {})
-    assert result is not None
-    expected_qs = budget_gbp * 0.35
-    assert abs(result["qualifying_spend_before_atl"] - expected_qs) < 1.0
+    result = ReportValidator._compute_corrected_rebate(row, 15_040_000.0, {})
+    assert result is None
 
 
 def test_pstc_rebate_significantly_lower_than_full_budget():

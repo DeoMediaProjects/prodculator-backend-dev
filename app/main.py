@@ -28,7 +28,6 @@ from app.modules.admin.admin_users_router import router as admin_users_router
 from app.modules.distributors.admin_router import router as distributors_admin_router
 from app.modules.festivals.admin_router import router as festivals_admin_router
 from app.modules.incentives.admin_router import router as incentives_admin_router
-from app.modules.crew_costs.admin_router import router as crew_costs_admin_router
 from app.modules.grants.admin_router import router as grants_admin_router
 from app.modules.subscribers.admin_router import router as subscribers_admin_router
 from app.modules.data_sources.admin_router import router as data_sources_admin_router
@@ -289,7 +288,6 @@ app.include_router(admin_users_router)
 app.include_router(festivals_admin_router)
 app.include_router(distributors_admin_router)
 app.include_router(incentives_admin_router)
-app.include_router(crew_costs_admin_router)
 app.include_router(grants_admin_router)
 app.include_router(admin_email_router)
 app.include_router(transactional_email_router)

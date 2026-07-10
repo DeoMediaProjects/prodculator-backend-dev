@@ -718,22 +718,16 @@ class TestBuildFinancialAnalysis:
         assert s["atlDeduction"] == "-£1,500,000"
         assert s["atlDeductionPct"] == "15%"
 
-    def test_crew_cost_comparison(self):
+    def test_no_crew_day_rate_sections(self):
+        """Crew COST (day rates) is out of report scope — handoff §1.
+        Crew DEPTH remains a ranking dimension on locationRankings."""
         inc = _make_incentive()
-        tf = {
-            "United Kingdom": {
-                "crew_rates": {"DP": "£800/day", "Gaffer": "£400/day"},
-                "gross_rebate": "£2,312,000",
-            },
-        }
-        ds = _make_datasets(incentives=[inc], territory_financials=tf)
+        ds = _make_datasets(incentives=[inc])
         report = _build(ds)
 
-        crew_comp = report["financialAnalysis"]["crewCostComparison"]
-        assert len(crew_comp) == 2
-        roles = {c["role"] for c in crew_comp}
-        assert "DP" in roles
-        assert "Gaffer" in roles
+        assert "crewCostComparison" not in report["financialAnalysis"]
+        assert "crewInsights" not in report
+        assert "castInsights" not in report
 
 
 # ── Executive Summary tests ────────────────────────────────────────────────
@@ -1062,7 +1056,7 @@ class TestFullBuild:
         expected_keys = {
             "genre", "tone", "scale", "complexity",
             "locationRankings", "incentiveEstimates", "financialAnalysis",
-            "executiveSummary", "crewInsights", "castInsights",
+            "executiveSummary",
             "comparables", "weatherLogistics", "fundingOpportunities",
             "territoryDeepDives", "attributions", "alternativeStrategy",
             "sectionExplainers", "scriptAnalysis",

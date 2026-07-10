@@ -39,6 +39,18 @@ class PDFService:
             autoescape=select_autoescape(["html", "xml"]),
         )
         self.env.filters["money_compact"] = _money_compact
+        # Original Prodculator logo (JPEG data despite historic .png naming —
+        # see DATA_REPAIR_NOTE: declare image/jpeg where MIME is explicit)
+        logo_path = templates_dir / "assets" / "prodculator_logo.jpg"
+        try:
+            import base64
+
+            self._logo_data_uri = (
+                "data:image/jpeg;base64,"
+                + base64.b64encode(logo_path.read_bytes()).decode("ascii")
+            )
+        except OSError:
+            self._logo_data_uri = None
 
     def render_report_html(
         self,
@@ -59,6 +71,7 @@ class PDFService:
             created_at=created_at,
             request_config=request_config,
             is_preview=is_preview,
+            logo_data_uri=self._logo_data_uri,
         )
         logger.debug(
             "Rendered report HTML: keys=%s html_chars=%s elapsed_ms=%s",

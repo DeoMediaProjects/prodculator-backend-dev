@@ -212,7 +212,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {# ══════════ macros ══════════ #}
 {% macro runhead(rh_right) -%}
 <div class="runhead">
-  <span class="wordmark">PRODCULATOR<span>&nbsp;·</span></span>
+  {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Prodculator" style="height:20px">{% else %}<span class="wordmark">PRODCULATOR<span>&nbsp;·</span></span>{% endif %}
   <span class="rh-right">{{ rh_right }}</span>
 </div>
 {%- endmacro %}
@@ -320,7 +320,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 <!-- ═══════════════ COVER ═══════════════ -->
 <div class="page first cover">
   <div style="flex:1"></div>
-  <div class="band"><span class="wordmark">PRODCULAT<span>O</span>R</span></div>
+  <div class="band">{% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Prodculator" style="height:56px">{% else %}<span class="wordmark">PRODCULAT<span>O</span>R</span>{% endif %}</div>
   <div style="padding:56px 0 0">
     <div class="cover-kicker">Production Analysis Report{% if not is_preview %} · Pro{% endif %}</div>
     <div class="cover-title">{{ script_title }}</div>
@@ -740,20 +740,6 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endif %}
   </div>
 
-  {% if report.financialAnalysis.crewCostComparison %}
-  <div style="margin-top:26px">
-    <div class="h5label">Crew day-rate comparison</div>
-    <table class="rowtable">
-      <tr><th>Role</th>{% for sc in scenarios[:3] %}<th>{{ sc.territory }}</th>{% endfor %}</tr>
-      {% for row in report.financialAnalysis.crewCostComparison[:8] %}
-      <tr>
-        <td style="font-weight:600">{{ row.role }}</td>
-        {% for sc in scenarios[:3] %}<td>{{ row.territories.get(sc.territory, '—') }}</td>{% endfor %}
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-  {% endif %}
 </div>
 {% endif %}
 
