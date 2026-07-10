@@ -121,6 +121,9 @@ def _festival_from_db(row: dict[str, Any]) -> dict[str, Any]:
     """Convert snake_case DB row to camelCase and append computed status fields."""
     result: dict[str, Any] = {}
     for k, v in row.items():
+        # Postgres returns datetime objects; the API schema declares ISO strings
+        if isinstance(v, datetime):
+            v = v.isoformat()
         camel_key = _SNAKE_TO_CAMEL.get(k, k)
         result[camel_key] = v
     result.update(_compute_festival_status(result.get("deadlines") or []))

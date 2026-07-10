@@ -63,7 +63,13 @@ def _grant_to_db(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _grant_from_db(row: dict[str, Any]) -> dict[str, Any]:
-    return {_SNAKE_TO_CAMEL.get(k, k): v for k, v in row.items()}
+    result: dict[str, Any] = {}
+    for k, v in row.items():
+        # Postgres returns datetime objects; the API schema declares ISO strings
+        if isinstance(v, datetime):
+            v = v.isoformat()
+        result[_SNAKE_TO_CAMEL.get(k, k)] = v
+    return result
 
 
 def _pending_change_from_db(row: dict[str, Any]) -> dict[str, Any]:
