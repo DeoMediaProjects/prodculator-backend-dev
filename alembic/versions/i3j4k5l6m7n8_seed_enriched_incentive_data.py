@@ -195,7 +195,10 @@ _SEED_DATA = [
         "rate": "0% — No formal national film production rebate",
         "rate_gross": 0.0,
         "rate_net": 0.0,
-        "rate_type": "none",
+        # NULL, not 'none': l4m5n6o7p8q9's CHECK constraint permits NULL for
+        # no-programme rows; the literal 'none' fails its pre-flight on a
+        # clean-replay database.
+        "rate_type": None,
         "rate_tier_json": None,
         "cap": "N/A",
         "cap_amount": None,

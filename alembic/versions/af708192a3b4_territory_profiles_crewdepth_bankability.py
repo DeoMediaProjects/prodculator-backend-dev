@@ -186,6 +186,16 @@ def upgrade() -> None:
         if col_nullable.get(col) is False:
             op.alter_column("territory_profiles", col, nullable=True)
 
+    # z8b9c0d1e2f3-created tables carry lowercase-tier CHECK constraints
+    # ('established'/'growing'/'emerging'); the v3 source uses the richer
+    # display vocabulary ('Extremely Established', ...). Drop the tier CHECKs
+    # so the sourced values load — scores/hemisphere CHECKs stay.
+    for ck in ("territory_profiles_crew_depth_tier_check",
+               "territory_profiles_infrastructure_tier_check"):
+        conn.execute(sa.text(
+            f"ALTER TABLE territory_profiles DROP CONSTRAINT IF EXISTS {ck}"
+        ))
+
     table = sa.Table("territory_profiles", sa.MetaData(), autoload_with=conn)
     now = datetime.now(timezone.utc).isoformat()
 

@@ -321,50 +321,61 @@ def upgrade() -> None:
     )
 
     # ── 8. UK VFX Expenditure Credit: INSERT missing row ─────────────────────
-    vfx_id = str(uuid4())
-    conn.execute(
+    # Guarded: on a clean-replay database the enriched seed (i3j4k5l6m7n8) has
+    # already inserted this row; only insert when genuinely missing (the state
+    # this migration was written against).
+    _vfx_exists = conn.execute(
         sa.text(
-            """INSERT INTO incentive_programs (
-                id, territory, program, rate, rate_gross, rate_net, rate_type,
-                rate_tier_json, cap_amount, cap_currency, qualifying_spend_cap_pct,
-                qualifying_spend_currency, payment_timeline_days_min,
-                payment_timeline_days_max, payment_timeline_notes,
-                eligibility_rules_json, eligibility_notes, warnings_json,
-                source_name, source_url, currency, scope, status,
-                payment_reliability, last_verified_at, created_at, updated_at
-            ) VALUES (
-                :id, 'United Kingdom', 'VFX Expenditure Credit (Uplift)',
-                '39% of qualifying UK VFX expenditure',
-                39.0, 29.25, 'tax_credit', NULL,
-                NULL, 'GBP', 80.0, 'GBP', 42, 56,
-                '6-8 weeks from HMRC claim. BFI certification required first.',
-                :rules, :elig_notes, :warnings,
-                'HMRC / BFI',
-                'https://www.gov.uk/guidance/corporation-tax-the-film-tax-relief',
-                'GBP', 'national', 'active', 0.92,
-                '2026-03-21', NOW(), NOW()
-            )"""
-        ),
-        {
-            "id": vfx_id,
-            "rules": (
-                '[{"rule":"Applies only to qualifying UK core VFX expenditure","required":true},'
-                '{"rule":"Cannot combine with IFTC — mutually exclusive","required":true},'
-                '{"rule":"Must pass BFI cultural test","required":true}]'
+            "SELECT COUNT(*) FROM incentive_programs "
+            "WHERE territory = 'United Kingdom' "
+            "  AND program = 'VFX Expenditure Credit (Uplift)'"
+        )
+    ).scalar()
+    if not _vfx_exists:
+        vfx_id = str(uuid4())
+        conn.execute(
+            sa.text(
+                """INSERT INTO incentive_programs (
+                    id, territory, program, rate, rate_gross, rate_net, rate_type,
+                    rate_tier_json, cap_amount, cap_currency, qualifying_spend_cap_pct,
+                    qualifying_spend_currency, payment_timeline_days_min,
+                    payment_timeline_days_max, payment_timeline_notes,
+                    eligibility_rules_json, eligibility_notes, warnings_json,
+                    source_name, source_url, currency, scope, status,
+                    payment_reliability, last_verified_at, created_at, updated_at
+                ) VALUES (
+                    :id, 'United Kingdom', 'VFX Expenditure Credit (Uplift)',
+                    '39% of qualifying UK VFX expenditure',
+                    39.0, 29.25, 'tax_credit', NULL,
+                    NULL, 'GBP', 80.0, 'GBP', 42, 56,
+                    '6-8 weeks from HMRC claim. BFI certification required first.',
+                    :rules, :elig_notes, :warnings,
+                    'HMRC / BFI',
+                    'https://www.gov.uk/guidance/corporation-tax-the-film-tax-relief',
+                    'GBP', 'national', 'active', 0.92,
+                    '2026-03-21', NOW(), NOW()
+                )"""
             ),
-            "elig_notes": (
-                "39% credit on qualifying UK VFX expenditure (effective net 29.25% after 25% "
-                "corporation tax). Mutually exclusive with IFTC — cannot claim both on the same "
-                "production. Can be combined with AVEC. Must pass BFI cultural test. "
-                "Applies to VFX work physically performed in the UK."
-            ),
-            "warnings": (
-                '["Mutually exclusive with IFTC — cannot claim both on same production",'
-                '"Can stack with AVEC on the same production",'
-                '"Applies to qualifying UK VFX expenditure only — overseas VFX does not qualify"]'
-            ),
-        },
-    )
+            {
+                "id": vfx_id,
+                "rules": (
+                    '[{"rule":"Applies only to qualifying UK core VFX expenditure","required":true},'
+                    '{"rule":"Cannot combine with IFTC — mutually exclusive","required":true},'
+                    '{"rule":"Must pass BFI cultural test","required":true}]'
+                ),
+                "elig_notes": (
+                    "39% credit on qualifying UK VFX expenditure (effective net 29.25% after 25% "
+                    "corporation tax). Mutually exclusive with IFTC — cannot claim both on the same "
+                    "production. Can be combined with AVEC. Must pass BFI cultural test. "
+                    "Applies to VFX work physically performed in the UK."
+                ),
+                "warnings": (
+                    '["Mutually exclusive with IFTC — cannot claim both on same production",'
+                    '"Can stack with AVEC on the same production",'
+                    '"Applies to qualifying UK VFX expenditure only — overseas VFX does not qualify"]'
+                ),
+            },
+        )
 
     # ── 9. Hungary: add vfx_uplift_pct, updated rate, eligibility_notes ───────
     conn.execute(
