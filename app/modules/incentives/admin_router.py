@@ -56,6 +56,31 @@ async def create_incentive_admin(
         raise HTTPException(status_code=400, detail="Failed to create incentive")
 
 
+# ── Qualifying Spend Calculator ──────────────────────────────────────────────
+
+
+@router.post("/calculate", response_model=dict)
+async def calculate_qualifying_spend(
+    body: dict,
+    _: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
+    service: IncentivesService = Depends(get_incentives_service),
+):
+    """Read-only calculator. The maths is ReportValidator._compute_corrected_rebate
+    — the same function the report pipeline uses (single source of truth)."""
+    try:
+        return service.calculate_qualifying_spend(
+            budget_amount=float(body.get("budgetAmount") or 0),
+            budget_currency=str(body.get("budgetCurrency") or "GBP"),
+            territory=str(body.get("territory") or ""),
+            program=str(body.get("program") or ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Qualifying spend calculation failed")
+        raise HTTPException(status_code=500, detail="Calculation failed")
+
+
 # ── Sync Status ──────────────────────────────────────────────────────────────
 
 
