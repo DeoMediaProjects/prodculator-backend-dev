@@ -718,22 +718,16 @@ class TestBuildFinancialAnalysis:
         assert s["atlDeduction"] == "-£1,500,000"
         assert s["atlDeductionPct"] == "15%"
 
-    def test_crew_cost_comparison(self):
+    def test_no_crew_day_rate_sections(self):
+        """Crew COST (day rates) is out of report scope — handoff §1.
+        Crew DEPTH remains a ranking dimension on locationRankings."""
         inc = _make_incentive()
-        tf = {
-            "United Kingdom": {
-                "crew_rates": {"DP": "£800/day", "Gaffer": "£400/day"},
-                "gross_rebate": "£2,312,000",
-            },
-        }
-        ds = _make_datasets(incentives=[inc], territory_financials=tf)
+        ds = _make_datasets(incentives=[inc])
         report = _build(ds)
 
-        crew_comp = report["financialAnalysis"]["crewCostComparison"]
-        assert len(crew_comp) == 2
-        roles = {c["role"] for c in crew_comp}
-        assert "DP" in roles
-        assert "Gaffer" in roles
+        assert "crewCostComparison" not in report["financialAnalysis"]
+        assert "crewInsights" not in report
+        assert "castInsights" not in report
 
 
 # ── Executive Summary tests ────────────────────────────────────────────────
@@ -846,9 +840,12 @@ class TestBuildComparables:
 
 class TestBuildFundingOpportunities:
     def test_grant_label_prefix(self):
+        from datetime import date as _date
         grants = [
             {"title": "BFI Development Fund", "territory": "United Kingdom",
-             "amount_description": "£50,000 per project"},
+             "amount_description": "£50,000 per project",
+             "deadline": "rolling", "recurrence": "rolling",
+             "verified_at": _date.today().isoformat()},
         ]
         inc = _make_incentive()
         ds = _make_datasets(incentives=[inc], grants=grants)
@@ -859,10 +856,16 @@ class TestBuildFundingOpportunities:
         assert opps[0]["notes"].startswith("Up to £50,000")
 
     def test_feature_only_grants_filtered_for_tv(self):
+        """Format is a HARD GATE (grants matcher G1): a feature-only fund is
+        excluded for a TV production — the old-report defect the handoff
+        called out (BFI Film Fund/Film4 recommended for a TV pilot)."""
+        from datetime import date as _date
         grants = [
             {"title": "BFI Distribution Fund", "territory": "United Kingdom",
              "amount_description": "£100K",
-             "eligibility": json.dumps(["feature film for theatrical release"])},
+             "eligible_formats": ["feature"],
+             "deadline": "rolling", "recurrence": "rolling",
+             "verified_at": _date.today().isoformat()},
         ]
         inc = _make_incentive()
         ds = _make_datasets(
@@ -1062,7 +1065,7 @@ class TestFullBuild:
         expected_keys = {
             "genre", "tone", "scale", "complexity",
             "locationRankings", "incentiveEstimates", "financialAnalysis",
-            "executiveSummary", "crewInsights", "castInsights",
+            "executiveSummary",
             "comparables", "weatherLogistics", "fundingOpportunities",
             "territoryDeepDives", "attributions", "alternativeStrategy",
             "sectionExplainers", "scriptAnalysis",

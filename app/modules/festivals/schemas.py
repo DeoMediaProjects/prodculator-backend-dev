@@ -30,3 +30,13 @@ class FilmFestival(BaseModel):
     notableAlumni: list[str] | None = None
     averageBudgetOfAcceptedFilms: str | None = None
     notes: str | None = None
+
+    # v2 source-of-truth fields
+    continent: str | None = None
+    representationFocus: list[str] | None = None   # sourced/opt-in — never inferred
+    eligibleFormats: list[str] | None = None
+    minMonthsAfterCompletion: int | None = None
+    maxMonthsAfterCompletion: int | None = None
+    deadlinePattern: str | None = None
+    oscarQualifying: bool | None = None
+    baftaQualifying: bool | None = None

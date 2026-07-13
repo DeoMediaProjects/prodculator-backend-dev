@@ -46,7 +46,10 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      # Host 5433 — a host-installed PostgreSQL 18 shadows 5432 on this
+      # machine, which repeatedly sent migrations/seeds to the wrong server.
+      # From the host, the CONTAINER database is always localhost:5433.
+      - "5433:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}

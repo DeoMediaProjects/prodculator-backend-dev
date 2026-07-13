@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prodculator — Film Grants Database v2</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#000;color:#fff;font-family:'DM Sans',Arial,sans-serif;font-size:14px;line-height:1.5}
+.pc{max-width:1440px;margin:0 auto;padding:24px}
+.pc-hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #D4AF37;padding-bottom:18px;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.pc-hdr-left{display:flex;align-items:center;gap:20px}
+.pc-logo{height:44px;object-fit:contain}
+.pc-hdr-meta{border-left:1px solid #333;padding-left:20px}
+.pc-hdr-meta h1{font-size:18px;font-weight:700;color:#D4AF37;letter-spacing:.5px}
+.pc-hdr-meta p{font-size:11px;color:#888;margin-top:2px}
+.badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;letter-spacing:.5px;text-transform:uppercase}
+.b-open{background:#1a3a1a;color:#4caf50;border:1px solid #4caf50}
+.b-closing{background:#3a2a00;color:#FFD700;border:1px solid #FFD700}
+.b-closed{background:#2a0000;color:#e53935;border:1px solid #e53935}
+.b-rolling{background:#0d2340;color:#42a5f5;border:1px solid #42a5f5}
+.b-tbc{background:#2a2a2a;color:#aaa;border:1px solid #555}
+.b-verified{background:#0d2a0d;color:#66bb6a;border:1px solid #66bb6a;font-size:9px}
+.b-unverified{background:#3a1a00;color:#ffa726;border:1px solid #ffa726}
+.b-global{background:#1a0d2e;color:#ce93d8;border:1px solid #ce93d8}
+.b-emerging{background:#0d1a2e;color:#90caf9;border:1px solid #90caf9}
+.b-stage{background:#1a1a00;color:#fff59d;border:1px solid #fff59d}
+.pc-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px}
+.stat-card{background:#111;border:1px solid #222;border-radius:6px;padding:12px;text-align:center}
+.stat-card .n{font-size:26px;font-weight:700;color:#D4AF37}
+.stat-card .l{font-size:10px;color:#888;margin-top:3px}
+.pc-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.pc-controls select,.pc-controls input{background:#111;border:1px solid #333;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px;min-width:140px}
+.pc-controls select:focus,.pc-controls input:focus{outline:none;border-color:#D4AF37}
+.btn-reset{background:transparent;border:1px solid #444;color:#888;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px}
+.btn-reset:hover{border-color:#D4AF37;color:#D4AF37}
+.results-count{font-size:11px;color:#666;margin-left:auto;white-space:nowrap}
+.info-panel{background:#0d0d0d;border:1px solid #1a1a1a;border-radius:6px;padding:14px;margin-bottom:18px;font-size:11px;color:#888;line-height:1.6}
+.info-panel strong{color:#D4AF37}.info-panel .warn{color:#ffa726;font-weight:700}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:#0d0d0d;color:#D4AF37;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;padding:9px 10px;text-align:left;border-bottom:1px solid #D4AF37;white-space:nowrap}
+tbody tr{border-bottom:1px solid #111;transition:background .12s}
+tbody tr:hover{background:#080808}
+td{padding:9px 10px;vertical-align:top}
+.td-name .fund-name{color:#fff;font-weight:700;font-size:12px;line-height:1.3}
+.td-name .org{color:#777;font-size:10px;margin-top:2px}
+.td-name .badge-row{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.td-amt{color:#D4AF37;font-weight:700;font-size:12px;white-space:nowrap}
+.td-amt .local{font-size:10px;color:#555;margin-top:2px}
+.td-terr{color:#ccc;font-size:11px;white-space:nowrap}
+.td-dates{font-size:11px}
+.open-lbl{color:#4caf50}.close-lbl{color:#FFD700}.tbc-lbl{color:#777;font-style:italic}.closed-lbl{color:#e53935}
+.td-elig{font-size:10px;color:#999;max-width:220px;line-height:1.4}
+.td-nat{text-align:center;font-size:16px}
+.src-link{color:#42a5f5;font-size:10px;text-decoration:none;white-space:nowrap}
+.src-link:hover{text-decoration:underline}
+.continent-hdr{background:#080808;border-top:2px solid #D4AF37}
+.continent-hdr td{padding:7px 10px;color:#D4AF37;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.tag-wrap{display:flex;flex-wrap:wrap;gap:3px}
+.gtag{background:#1a1500;color:#D4AF37;border:1px solid #2a2200;border-radius:2px;font-size:8px;padding:1px 4px;font-weight:700;text-transform:uppercase}
+.ftag{background:#001520;color:#80cbc4;border:1px solid #002535;border-radius:2px;font-size:8px;padding:1px 4px;font-weight:700;text-transform:uppercase}
+.stag{background:#1a1a00;color:#fff59d;border:1px solid #2a2a00;border-radius:2px;font-size:8px;padding:1px 4px;font-weight:700;text-transform:uppercase}
+.schema-box{background:#060606;border:1px solid #1a1a1a;border-radius:6px;padding:14px;margin-bottom:18px}
+.schema-box h3{color:#D4AF37;font-size:11px;font-weight:700;margin-bottom:10px;letter-spacing:.5px;text-transform:uppercase}
+.schema-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px}
+.schema-field{background:#0d0d0d;border:1px solid #1a1a1a;border-radius:3px;padding:7px 9px}
+.schema-field .fname{color:#80cbc4;font-size:10px;font-weight:700;font-family:monospace}
+.schema-field .fdesc{color:#555;font-size:9px;margin-top:2px}
+.fnew{color:#4caf50;font-size:8px;font-weight:700;margin-left:4px}
+</style>
+</head>
+<body>
+<div class="pc">
+
+<div class="pc-hdr">
+  <div class="pc-hdr-left">
+    <div class="pc-hdr-meta">
+      <h1>FILM GRANTS DATABASE — v2</h1>
+      <p>DEO MEDIA Limited · Company No. 15426752 · July 2026 · Admin Reference · Confidential · 114 Grants · 41 Territories · 5 Continents</p>
+    </div>
+  </div>
+  <button id="adminToggle" onclick="toggleAdmin()" style="background:transparent;border:1px solid #D4AF37;color:#D4AF37;padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.05em">+ Add Grant (Admin)</button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <span class="badge b-verified" style="font-size:11px;padding:4px 10px">All Sources: Official Public Portals Only</span>
+    <span class="badge b-global" style="font-size:11px;padding:4px 10px">41 Territories · Commercially Safe</span>
+  </div>
+</div>
+
+<div class="info-panel">
+  <strong>Data Source Policy — Legally Safe for Commercial Use:</strong> All grant data sourced exclusively from official government portals, national film commissions, publicly funded broadcaster arms (BBC Film, ARTE, RAI Cinema, NHK, ZDF), and publicly documented independent foundation programmes (Sundance Institute, IDA, IDFA, IFFR, Berlinale, Tribeca, Hot Docs). Factual data — amounts, deadlines, eligibility criteria — is not copyrightable under UK and international law. All eligibility descriptions are written in Prodculator's own words. Every entry cites the administering body's official portal URL.
+  <br><br>
+  <span class="warn">⚠ CRITICAL LEGAL EXPOSURE — Consumer Rights Act 2015 s.49:</span> Grant deadlines and opening dates must be re-verified before every report generation cycle. A paid report surfacing a grant with a passed deadline is a service not performed with reasonable care and skill. Any entry with <code>verified_at</code> older than 6 months must be flagged for re-verification before remaining in active production reports. State-level US grants (Georgia, Louisiana, Illinois, New Mexico) are subject to annual legislative budget approval and can be suspended without notice — verify status each cycle. <strong>Nationality restrictions must be surfaced prominently</strong> in any user-facing recommendation — failure to do so creates misrepresentation exposure under Misrepresentation Act 1967 s.2.
+</div>
+
+<div class="schema-box">
+  <h3>Schema — All Fields in This Database</h3>
+  <div class="schema-grid">
+    <div class="schema-field"><span class="fname">fund_name</span><div class="fdesc">Official programme name</div></div>
+    <div class="schema-field"><span class="fname">source_name</span><div class="fdesc">Administering organisation</div></div>
+    <div class="schema-field"><span class="fname">territory</span><div class="fdesc">Platform canonical territory key (matches incentive DB exactly)</div></div>
+    <div class="schema-field"><span class="fname">continent</span><div class="fdesc">Europe / Americas / Africa / Asia-Pacific / Global</div></div>
+    <div class="schema-field"><span class="fname">amount</span><div class="fdesc">Grant value in local currency</div></div>
+    <div class="schema-field"><span class="fname">amount_usd_approx</span><div class="fdesc">USD equivalent for cross-territory normalisation</div></div>
+    <div class="schema-field"><span class="fname">currency</span><div class="fdesc">ISO currency code</div></div>
+    <div class="schema-field"><span class="fname">open_date</span><div class="fdesc">Application window opens</div></div>
+    <div class="schema-field"><span class="fname">deadline</span><div class="fdesc">Application closes — verify before every report cycle</div></div>
+    <div class="schema-field"><span class="fname">recurrence</span><div class="fdesc">annual / rolling / bi-annual / one-off</div></div>
+    <div class="schema-field"><span class="fname">stage<span class="fnew">NEW v2</span></span><div class="fdesc">development / production / post / short / series / multi</div></div>
+    <div class="schema-field"><span class="fname">emerging_filmmaker<span class="fnew">NEW v2</span></span><div class="fdesc">Boolean — dedicated emerging/debut filmmaker strand</div></div>
+    <div class="schema-field"><span class="fname">genre_tags</span><div class="fdesc">Platform taxonomy (20 values from DATA-2) — drives script matching</div></div>
+    <div class="schema-field"><span class="fname">eligible_formats</span><div class="fdesc">feature / tv_series / short / documentary / animation</div></div>
+    <div class="schema-field"><span class="fname">budget_min_usd</span><div class="fdesc">Minimum production budget eligible (null = no floor)</div></div>
+    <div class="schema-field"><span class="fname">budget_max_usd</span><div class="fdesc">Maximum production budget eligible (null = uncapped)</div></div>
+    <div class="schema-field"><span class="fname">grant_type</span><div class="fdesc">public_fund / broadcaster / foundation / co_production</div></div>
+    <div class="schema-field"><span class="fname">nationality_required</span><div class="fdesc">Boolean — applicant nationality restriction exists</div></div>
+    <div class="schema-field"><span class="fname">co_production_required</span><div class="fdesc">Boolean — international co-producer required</div></div>
+    <div class="schema-field"><span class="fname">eligibility</span><div class="fdesc">Plain-language eligibility summary in Prodculator's own words</div></div>
+    <div class="schema-field"><span class="fname">verified_at</span><div class="fdesc">Date last verified against primary source — drives staleness alert</div></div>
+    <div class="schema-field"><span class="fname">source_url</span><div class="fdesc">Direct link to official administering body portal</div></div>
+  </div>
+</div>
+
+
+<div id="adminPanel" style="display:none;background:#0d0d0d;border:1px solid #D4AF37;border-radius:8px;padding:18px;margin-bottom:20px">
+  <div style="font-size:13px;font-weight:700;color:#D4AF37;letter-spacing:.05em;margin-bottom:4px">ADD GRANT &mdash; ADMIN</div>
+  <div style="font-size:10.5px;color:#888;line-height:1.6;margin-bottom:14px">Entries go to Pending Review, not straight into the live dataset &mdash; a second admin should confirm the official source before promotion. Same discipline as the Festivals, Crew Depth and Bankability tools. New records are tagged <b>added_by_admin</b> and remain <b>UNVERIFIED</b> until confirmed.</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+    <input id="a_name" placeholder="Fund name *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_territory" placeholder="Territory *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <select id="a_continent" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+      <option value="">Continent *</option><option>Europe</option><option>Americas</option><option>Africa</option><option>Asia-Pacific</option><option>Global</option>
+    </select>
+    <input id="a_type" placeholder="Grant type (e.g. Production Fund) *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_amount" placeholder="Amount (as stated by fund) *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_deadline" placeholder="Deadline (YYYY-MM-DD or Rolling) *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_genres" placeholder="Genre tags, comma-separated" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_formats" placeholder="Eligible formats, comma-separated" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_srcname" placeholder="Source name *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+    <input id="a_srcurl" placeholder="Official source URL *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px">
+  </div>
+  <textarea id="a_elig" placeholder="Eligibility summary *" style="background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:4px;font-size:12px;width:100%;margin-top:10px;min-height:52px;font-family:inherit"></textarea>
+  <div style="display:flex;gap:16px;align-items:center;margin-top:10px;font-size:11.5px;color:#ccc;flex-wrap:wrap">
+    <label><input type="checkbox" id="a_nat"> Nationality required</label>
+    <label><input type="checkbox" id="a_coprod"> Co-production required</label>
+    <button onclick="addGrant()" style="margin-left:auto;background:#D4AF37;border:none;color:#000;padding:9px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700">Add to Pending Review</button>
+    <button onclick="downloadJSON()" style="background:transparent;border:1px solid #444;color:#ccc;padding:9px 14px;border-radius:5px;cursor:pointer;font-size:12px">Download updated JSON</button>
+  </div>
+  <div id="pendingList" style="margin-top:14px"></div>
+</div>
+<div class="pc-stats" id="statsBar">
+  <div class="stat-card"><div class="n" id="st-total">0</div><div class="l">Total Grants</div></div>
+  <div class="stat-card"><div class="n" id="st-open">0</div><div class="l">Open Now</div></div>
+  <div class="stat-card"><div class="n" id="st-rolling">0</div><div class="l">Rolling</div></div>
+  <div class="stat-card"><div class="n" id="st-closing">0</div><div class="l">Closing &lt;90 Days</div></div>
+  <div class="stat-card"><div class="n" id="st-tbc">0</div><div class="l">Deadline TBC</div></div>
+  <div class="stat-card"><div class="n" id="st-emerging">0</div><div class="l">Emerging Filmmaker</div></div>
+  <div class="stat-card"><div class="n" id="st-nat">0</div><div class="l">Nationality Restricted</div></div>
+  <div class="stat-card"><div class="n" id="st-europe">0</div><div class="l">Europe</div></div>
+  <div class="stat-card"><div class="n" id="st-americas">0</div><div class="l">Americas</div></div>
+  <div class="stat-card"><div class="n" id="st-africa">0</div><div class="l">Africa</div></div>
+  <div class="stat-card"><div class="n" id="st-asia">0</div><div class="l">Asia-Pacific</div></div>
+  <div class="stat-card"><div class="n" id="st-global">0</div><div class="l">Global</div></div>
+</div>
+
+<div class="pc-controls">
+  <select id="fContinent" onchange="render()"><option value="">All Continents</option><option>Europe</option><option>Americas</option><option>Africa</option><option>Asia-Pacific</option><option>Global</option></select>
+  <select id="fTerritory" onchange="render()"><option value="">All Territories</option></select>
+  <select id="fGenre" onchange="render()"><option value="">All Genres</option></select>
+  <select id="fFormat" onchange="render()"><option value="">All Formats</option><option value="feature">Feature</option><option value="tv_series">TV Series</option><option value="short">Short</option><option value="documentary">Documentary</option><option value="animation">Animation</option></select>
+  <select id="fStage" onchange="render()"><option value="">All Stages</option><option value="development">Development</option><option value="production">Production</option><option value="post">Post-Production</option><option value="short">Short Film</option><option value="series">Series</option><option value="multi">Multi-Stage</option></select>
+  <select id="fStatus" onchange="render()"><option value="">All Statuses</option><option value="open">Open Now</option><option value="rolling">Rolling</option><option value="closing">Closing Soon</option><option value="tbc">TBC</option></select>
+  <select id="fNat" onchange="render()"><option value="">All (incl. restricted)</option><option value="open">No Nationality Restriction</option><option value="restricted">Nationality Restricted</option></select>
+  <select id="fEmerging" onchange="render()"><option value="">All Levels</option><option value="yes">Emerging Filmmaker Only</option></select>
+  <select id="fType" onchange="render()"><option value="">All Types</option><option value="public_fund">Public Fund</option><option value="broadcaster">Broadcaster</option><option value="foundation">Foundation</option><option value="co_production">Co-Production</option></select>
+  <input id="fSearch" type="text" placeholder="Search fund, territory, eligibility..." oninput="render()">
+  <button class="btn-reset" onclick="resetFilters()">Reset All</button>
+  <span class="results-count" id="resCount"></span>
+</div>
+
+<div class="tbl-wrap">
+<table id="mainTbl">
+<thead>
+<tr>
+  <th style="min-width:200px">Fund Name / Administering Body</th>
+  <th>Territory</th>
+  <th>Amount</th>
+  <th>Stage</th>
+  <th>Open Date</th>
+  <th>Deadline</th>
+  <th>Recurrence</th>
+  <th style="min-width:120px">Genres</th>
+  <th>Formats</th>
+  <th style="white-space:nowrap">Budget Range (USD)</th>
+  <th>Type</th>
+  <th>Nat. Req?</th>
+  <th>Co-Pro?</th>
+  <th style="min-width:200px">Eligibility Summary</th>
+  <th>Verified</th>
+  <th>Source</th>
+</tr>
+</thead>
+<tbody id="tBody"></tbody>
+</table>
+</div>
+
+</div>
+
+<script>
+const G=[
+// ═══════════════════════════════════════════════════════════════
+// EUROPE
+// ═══════════════════════════════════════════════════════════════
+
+// ── UNITED KINGDOM ──────────────────────────────────────────
+{fund_name:"BFI Film Fund — Development",source_name:"British Film Institute",territory:"United Kingdom",continent:"Europe",amount:"Up to £250,000",amount_usd_approx:320000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Action","Adventure","Sci-Fi","War","Family","Animation","Musical","Western","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"UK-based filmmakers. Projects must have cultural relevance to the UK. Development or production funding for feature-length fiction, documentary, and animation. Projects assessed on creative ambition, distinctiveness, and audience reach. Apply via BFI Film Fund portal.",verified_at:"2026-07-01",source_url:"https://www.bfi.org.uk/get-funding-support/film"},
+
+{fund_name:"BFI Film Fund — Production",source_name:"British Film Institute",territory:"United Kingdom",continent:"Europe",amount:"Up to £1,500,000",amount_usd_approx:1900000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Action","Adventure","Sci-Fi","War","Family","Animation","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:5000000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"UK-based production companies. Projects must pass BFI cultural test or be UK co-productions. Production financing for feature-length projects. Assessed on creative merit, distribution potential, and cultural significance.",verified_at:"2026-07-01",source_url:"https://www.bfi.org.uk/get-funding-support/film"},
+
+{fund_name:"BFI NETWORK — Short Film Fund",source_name:"British Film Institute",territory:"United Kingdom",continent:"Europe",amount:"Up to £20,000",amount_usd_approx:25000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Romance","Animation","Family"],eligible_formats:["short","animation"],budget_min_usd:null,budget_max_usd:25000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Emerging UK filmmakers (directors, writers, producers). Short films up to 30 minutes. Available through BFI NETWORK talent development strand. Apply through regional BFI NETWORK partners across England, Scotland, Wales, and Northern Ireland.",verified_at:"2026-07-01",source_url:"https://network.bfi.org.uk/funding"},
+
+{fund_name:"Film4 Development Fund",source_name:"Film4 / Channel 4",territory:"United Kingdom",continent:"Europe",amount:"Up to £200,000 (development)",amount_usd_approx:255000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Biopic","Period","Crime","Mystery","Romance","Fantasy","Sci-Fi","War"],eligible_formats:["feature"],budget_min_usd:null,budget_max_usd:null,grant_type:"broadcaster",nationality_required:false,co_production_required:false,eligibility:"Open to projects regardless of filmmaker nationality if film targets UK audiences or UK distribution. Film4 takes a co-production position. Development slate assessed on creative ambition and commercial viability. Unsolicited scripts accepted via producers with track record.",verified_at:"2026-07-01",source_url:"https://www.filmfour.com/about/film4-productions"},
+
+{fund_name:"Scottish Film Talent Network",source_name:"Screen Scotland",territory:"United Kingdom",continent:"Europe",amount:"Up to £15,000 (short)",amount_usd_approx:19000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Documentary","Animation","Family","Romance"],eligible_formats:["short","documentary","animation"],budget_min_usd:null,budget_max_usd:20000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Scotland-based emerging filmmakers. Short film and documentary development. Must demonstrate Scotland connection (resident, subject, or location). Administered by Screen Scotland.",verified_at:"2026-07-01",source_url:"https://www.screen.scot/funding-and-support/"},
+
+// ── IRELAND ─────────────────────────────────────────────────
+{fund_name:"Screen Ireland — Development Funding",source_name:"Screen Ireland (Fís Éireann)",territory:"Ireland",continent:"Europe",amount:"Up to €200,000",amount_usd_approx:220000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Musical","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Irish-based production companies or Irish nationality filmmakers. Project must have significant Irish creative or cultural element. Development, production, and distribution funding available across all strands. Apply via Screen Ireland online portal.",verified_at:"2026-07-01",source_url:"https://www.screenireland.ie/funding"},
+
+{fund_name:"Screen Ireland — Scéal Uplift (Feature Fiction)",source_name:"Screen Ireland (Fís Éireann)",territory:"Ireland",continent:"Europe",amount:"Up to €750,000",amount_usd_approx:825000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Biopic","Period","Crime","Fantasy","Mystery","Romance","Sci-Fi","War","Action","Adventure","Musical","Western","Sports","Family"],eligible_formats:["feature"],budget_min_usd:null,budget_max_usd:3000000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Irish-directed feature fiction only. Director must be Irish national or resident. Budget ceiling applies. Strand specifically for ambitious lower-budget Irish-directed features. 2027 window dates not yet announced — verify with Screen Ireland before use in reports.",verified_at:"2026-07-01",source_url:"https://www.screenireland.ie/funding/production"},
+
+// ── FRANCE ──────────────────────────────────────────────────
+{fund_name:"CNC Avance sur Recettes (Advance on Receipts)",source_name:"Centre National du Cinéma et de l'Image Animée (CNC)",territory:"France",continent:"Europe",amount:"Up to €1,200,000",amount_usd_approx:1320000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Biopic","Period","Crime","Fantasy","Mystery","Romance","Sci-Fi","War","Action","Adventure","Musical","Western","Sports","Family","Documentary","Animation"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"French production companies or EU co-productions with French majority. Two strands: before production (selective) and after first film (emerging directors). Cultural test required. Applications assessed by CNC reading committee. Repayable from box office receipts if film reaches revenue threshold.",verified_at:"2026-07-01",source_url:"https://www.cnc.fr/professionnels/aides-et-financements"},
+
+{fund_name:"ARTE France Cinéma — Co-production Fund",source_name:"ARTE France Cinéma",territory:"France",continent:"Europe",amount:"€200,000–€800,000",amount_usd_approx:550000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Sci-Fi","War","Animation"],eligible_formats:["feature","documentary","animation"],budget_min_usd:500000,budget_max_usd:null,grant_type:"broadcaster",nationality_required:false,co_production_required:true,eligibility:"International co-productions with French or European partner required. ARTE takes broadcaster rights as co-producer. Arthouse and author-driven projects. European cultural focus preferred. Project submitted via French producer with ARTE relationship.",verified_at:"2026-07-01",source_url:"https://www.arte.tv/sites/corporate/en/arte-france-cinema/"},
+
+// ── GERMANY ─────────────────────────────────────────────────
+{fund_name:"German Federal Film Fund (DFFF) — DFFF I",source_name:"Federal Government Commissioner for Culture and the Media (BKM)",territory:"Germany",continent:"Europe",amount:"Up to 20% of German spend (no cap)",amount_usd_approx:null,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Biopic","Period","Crime","Fantasy","Mystery","Romance","Sci-Fi","War","Action","Adventure","Animation","Family","Musical","Documentary"],eligible_formats:["feature","animation","documentary"],budget_min_usd:2500000,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"International productions with minimum German spend of €2M (features) or €1M (mid-budget). Cultural test (Kulturguttest) required. Minimum 20% of total budget must be spent in Germany. Applications open year-round with no per-project cap. German co-producer or service company required.",verified_at:"2026-07-01",source_url:"https://www.ffa.de/dfff.html"},
+
+{fund_name:"German Federal Film Fund (DFFF) — DFFF II (Large Budget)",source_name:"Federal Government Commissioner for Culture and the Media (BKM)",territory:"Germany",continent:"Europe",amount:"Up to 25% of German spend (max €25M)",amount_usd_approx:null,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Action","Adventure","Sci-Fi","Fantasy","Crime","Horror","Comedy","Biopic","Period","War","Animation","Family"],eligible_formats:["feature","animation"],budget_min_usd:20000000,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Large-budget international features with total budget ≥€20M and German spend ≥€4M. Cultural test required. 25% rebate on German qualifying spend up to €25M per project. No nationality restriction — designed for international studio productions shooting in Germany.",verified_at:"2026-07-01",source_url:"https://www.ffa.de/dfff.html"},
+
+{fund_name:"Medienboard Berlin-Brandenburg",source_name:"Medienboard Berlin-Brandenburg GmbH",territory:"Germany",continent:"Europe",amount:"Up to €1,500,000",amount_usd_approx:1650000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Animation","Family"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Projects with a Berlin or Brandenburg connection (location, creative talent, or production company). International co-productions eligible. Both development and production funding. Spend-in-region condition applies — portion of grant must be spent in Berlin-Brandenburg.",verified_at:"2026-07-01",source_url:"https://www.medienboard.de/foerderung/"},
+
+// ── SPAIN ────────────────────────────────────────────────────
+{fund_name:"ICAA — Subsidios a la Producción de Largometrajes",source_name:"Instituto de la Cinematografía y de las Artes Audiovisuales (ICAA)",territory:"Spain",continent:"Europe",amount:"Up to €1,000,000",amount_usd_approx:1100000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Musical","Action","Adventure","Sci-Fi","War","Western","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Spanish production companies (SL or SA) producing feature films. Must demonstrate Spanish cultural content. Two tracks: selective (jury assessment) and automatic (triggered by box office of previous film). Annual call — 2027 dates TBC. European co-productions with Spanish majority also eligible.",verified_at:"2026-07-01",source_url:"https://www.culturaydeporte.gob.es/cultura/industriasculturales/cine/ayudas.html"},
+
+// ── ITALY ────────────────────────────────────────────────────
+{fund_name:"MiC — Contributi Selettivi alla Produzione",source_name:"Ministero della Cultura — Direzione Generale Cinema e Audiovisivo",territory:"Italy",continent:"Europe",amount:"Up to €800,000",amount_usd_approx:880000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Musical","Action","Sci-Fi","War","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Italian production companies. Italian cultural test (Nazionalità italiana). Selective funding assessed by MiC commission on cultural and artistic merit. Annual call — 2027 window dates not yet published. Italian majority required; European co-productions with Italian majority eligible.",verified_at:"2026-07-01",source_url:"https://cinema.cultura.gov.it/contributi-selettivi/"},
+
+// ── NETHERLANDS ─────────────────────────────────────────────
+{fund_name:"Netherlands Film Fund — Feature Film Production",source_name:"Netherlands Film Fund (Stimuleringsfonds voor de Nederlandse Filmproductie)",territory:"Netherlands",continent:"Europe",amount:"Up to €750,000",amount_usd_approx:825000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Dutch production companies with Dutch director or writer attached. Project must have significant Dutch cultural connection. Rolling applications assessed quarterly. European co-productions with Dutch majority or significant Dutch creative contribution eligible.",verified_at:"2026-07-01",source_url:"https://www.filmfonds.nl/subsidies"},
+
+// ── BELGIUM ──────────────────────────────────────────────────
+{fund_name:"Screen Flanders — Production Incentive + Grant",source_name:"Screen Flanders",territory:"Belgium",continent:"Europe",amount:"Up to €500,000 (grant component)",amount_usd_approx:550000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Animation","Family","Sci-Fi","Action"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"International productions with Flanders spend. Combines a cash incentive with selective production grant. Grant component assessed on cultural/artistic merit. International productions welcome — no nationality restriction on grant. Minimum Flanders spend applies to incentive component. Note: Belgium also has a separate Tax Shelter mechanism (investor financing).",verified_at:"2026-07-01",source_url:"https://www.screenflanders.be/en/funding/"},
+
+// ── CZECH REPUBLIC ──────────────────────────────────────────
+{fund_name:"Czech Film Fund — Production Support",source_name:"Czech Film Fund (Státní fond kinematografie)",territory:"Czech Republic",continent:"Europe",amount:"Up to CZK 30,000,000 (~€1.2M)",amount_usd_approx:1300000,currency:"CZK",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Czech production companies or international co-productions with Czech majority. Czech cultural content required. Annual call — 2027 dates TBC. The Czech Film Fund also administers the cash rebate incentive separately — this is the selective grant strand, distinct from the incentive.",verified_at:"2026-07-01",source_url:"https://www.fondkinematografie.cz/"},
+
+// ── HUNGARY ─────────────────────────────────────────────────
+{fund_name:"National Film Institute Hungary — Production Support",source_name:"National Film Institute Hungary (NFI)",territory:"Hungary",continent:"Europe",amount:"Up to HUF 500,000,000 (~€1.3M)",amount_usd_approx:1400000,currency:"HUF",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Hungarian production companies or international co-productions with Hungarian majority. Must pass Hungarian cultural test. Annual call. Note: Hungary also operates a separate 30% cash rebate incentive — this is the selective development/production grant, distinct from the incentive.",verified_at:"2026-07-01",source_url:"https://nfi.hu/en/funding"},
+
+// ── ROMANIA ─────────────────────────────────────────────────
+{fund_name:"CNC Romania — Selective Production Funding",source_name:"Centrul Național al Cinematografiei (CNC Romania)",territory:"Romania",continent:"Europe",amount:"Up to RON 3,000,000 (~€600,000)",amount_usd_approx:660000,currency:"RON",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Romanian production companies. Romanian cultural content required. Selective jury assessment. Annual call — 2027 dates TBC. International co-productions with Romanian majority eligible. Romania's film fund is relatively small but the cash rebate incentive (35-45%) makes Romania attractive for location shoots independent of this grant.",verified_at:"2026-07-01",source_url:"https://www.cnc.ro/"},
+
+// ── PORTUGAL ────────────────────────────────────────────────
+{fund_name:"ICA — Apoio à Produção de Longas-metragens",source_name:"Instituto do Cinema e do Audiovisual (ICA Portugal)",territory:"Portugal",continent:"Europe",amount:"Up to €500,000",amount_usd_approx:550000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Portuguese production companies or EU co-productions with Portuguese majority. Note: Portugal replaced its entire incentive programme with SCRI.PT/RIPAC in June 2026 — this grant strand may also be under revision. Verify current status directly with ICA before use in any report.",verified_at:"2026-07-01",source_url:"https://www.ica-ip.pt/en/financings/"},
+
+// ── ICELAND ──────────────────────────────────────────────────
+{fund_name:"Icelandic Film Centre — Production Grant",source_name:"Icelandic Film Centre (Kvikmyndamiðstöð Íslands)",territory:"Iceland",continent:"Europe",amount:"Up to ISK 90,000,000 (~€600,000)",amount_usd_approx:660000,currency:"ISK",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","Adventure","War","Action"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Icelandic production companies or international co-productions with Icelandic majority. Icelandic cultural content required. Annual call — autumn window. Complements Iceland's 25% cash rebate incentive. Two separate strands: development and production.",verified_at:"2026-07-01",source_url:"https://www.icelandicfilmcentre.is/funding/"},
+
+// ── MALTA ─────────────────────────────────────────────────
+{fund_name:"Malta Film Fund — Production Grant",source_name:"Malta Film Commission",territory:"Malta",continent:"Europe",amount:"Up to €500,000",amount_usd_approx:550000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","Action","Adventure","War"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"International productions spending in Malta. Selective grant available on top of Malta's 40% cash rebate. Assessed on cultural value, Malta portrayal, and spend level. No nationality restriction — open to all international productions with Malta spend. Administered by Malta Film Commission.",verified_at:"2026-07-01",source_url:"https://www.mfc.com.mt/funding/"},
+
+// ── SERBIA ───────────────────────────────────────────────────
+{fund_name:"Film Centre Serbia — Production Support",source_name:"Film Centre Serbia (Filmski centar Srbije)",territory:"Serbia",continent:"Europe",amount:"Up to RSD 40,000,000 (~€340,000)",amount_usd_approx:375000,currency:"RSD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Serbian production companies or international co-productions with Serbian creative contribution. Serbian cultural content required. Annual call — dates TBC. Serbia's cash rebate incentive (25%) is available separately to international productions independent of this grant.",verified_at:"2026-07-01",source_url:"https://www.filmcentar.rs/en/funding"},
+
+// ── CANARY ISLANDS (Spain sub-territory) ────────────────────
+{fund_name:"Canarias Crea — Ayudas a la Producción Audiovisual",source_name:"Gobierno de Canarias — Consejería de Turismo, Industria y Comercio",territory:"Canary Islands",continent:"Europe",amount:"Up to €300,000",amount_usd_approx:330000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Action","Adventure","Sci-Fi"],eligible_formats:["feature","documentary","animation","short","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Canary Islands-based production companies or productions with significant Canarian creative involvement. Separate from Spain's national ICAA funding. The Canary Islands also operates a separate 54%/45% tiered cash rebate for international productions — this is a distinct grant strand.",verified_at:"2026-07-01",source_url:"https://www.gobiernodecanarias.org/cultura/"},
+
+// ═══════════════════════════════════════════════════════════════
+// EUROPE — GLOBAL EUROPEAN FUNDS
+// ═══════════════════════════════════════════════════════════════
+
+{fund_name:"Creative Europe MEDIA — Development Single Project",source_name:"European Commission — Creative Europe Programme",territory:"United Kingdom",continent:"Europe",amount:"Up to €60,000",amount_usd_approx:66000,currency:"EUR",open_date:"2026-09-01",deadline:"2026-10-15",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","Action","Adventure","War","Musical","Western","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Production companies registered in a Creative Europe eligible country (includes most European countries + some associated states). Single project development funding for feature films, documentaries, and animation targeting international audiences. UK is currently in Creative Europe via negotiated participation. 2026 deadline approximate — verify on official portal.",verified_at:"2026-07-01",source_url:"https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/programmes/crea"},
+
+{fund_name:"Creative Europe MEDIA — Slate Development",source_name:"European Commission — Creative Europe Programme",territory:"United Kingdom",continent:"Europe",amount:"Up to €200,000",amount_usd_approx:220000,currency:"EUR",open_date:"2026-11-01",deadline:"2027-01-15",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","Action","Adventure","War","Musical","Western","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"European production companies developing a slate of 3+ projects for international distribution. Track record of at least one previous film with international distribution required. 2027 window dates approximate.",verified_at:"2026-07-01",source_url:"https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/programmes/crea"},
+
+{fund_name:"Eurimages — Co-Production Fund",source_name:"Council of Europe — Eurimages",territory:"France",continent:"Europe",amount:"Up to €1,500,000",amount_usd_approx:1650000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical","Western","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:500000,budget_max_usd:null,grant_type:"co_production",nationality_required:true,co_production_required:true,eligibility:"European co-productions with at least two production companies from different Eurimages member countries. Minimum budget €500K. Majority of the budget must come from European sources. Assessed on artistic merit and genuine creative collaboration between nationalities. Three annual deadlines.",verified_at:"2026-07-01",source_url:"https://www.coe.int/en/web/eurimages/grants"},
+
+// ═══════════════════════════════════════════════════════════════
+// AMERICAS
+// ═══════════════════════════════════════════════════════════════
+
+// ── CANADA ───────────────────────────────────────────────────
+{fund_name:"Canada Media Fund — Development — English Market",source_name:"Canada Media Fund (CMF)",territory:"Ontario",continent:"Americas",amount:"Up to CAD $350,000",amount_usd_approx:258000,currency:"CAD",open_date:"2026-09-15",deadline:"2026-10-31",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Biopic","Period","War","Documentary","Musical","Sports"],eligible_formats:["feature","tv_series","animation","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Canadian production companies with Canadian creative control (director, writer, producer). Must be a Canadian certified content project under CRTC rules. Annual call — 2026/27 dates approximate. Broadcaster attachment required for most TV strands.",verified_at:"2026-07-01",source_url:"https://cmf-fmc.ca/funding-programs/"},
+
+{fund_name:"Telefilm Canada — Development — Low Budget Independent",source_name:"Telefilm Canada",territory:"Ontario",continent:"Americas",amount:"Up to CAD $125,000",amount_usd_approx:92000,currency:"CAD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Biopic","Period","War","Documentary"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:1500000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Canadian filmmakers and production companies. Low-budget feature film development (total project budget under CAD $2M). Canadian content requirements apply. Rolling applications. Telefilm also administers production funding at higher budget levels.",verified_at:"2026-07-01",source_url:"https://telefilm.ca/en/funding"},
+
+{fund_name:"Ontario Creates — Film Fund",source_name:"Ontario Creates",territory:"Ontario",continent:"Americas",amount:"Up to CAD $500,000",amount_usd_approx:370000,currency:"CAD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Biopic","Period","Documentary","Musical"],eligible_formats:["feature","animation","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Ontario-based production companies. Must demonstrate Ontario cultural content and economic benefit. Annual call — 2027 dates TBC. Separate from the OPSTC 21.5% tax credit incentive.",verified_at:"2026-07-01",source_url:"https://ontariocreates.ca/our-work/film"},
+
+{fund_name:"BC Arts Council — Creative BC Film Fund",source_name:"Creative BC",territory:"British Columbia",continent:"Americas",amount:"Up to CAD $300,000",amount_usd_approx:221000,currency:"CAD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Biopic","Period","Documentary"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"BC-based production companies with BC director or creative lead. BC cultural content required. Annual call — dates TBC. Creative BC also administers the BC Film Incentive PSTC separately.",verified_at:"2026-07-01",source_url:"https://www.creativebc.com/programs/"},
+
+// ── USA ──────────────────────────────────────────────────────
+{fund_name:"Sundance Institute — Feature Film Program",source_name:"Sundance Institute",territory:"New York",continent:"Americas",amount:"Up to $30,000 (lab fellowship)",amount_usd_approx:30000,currency:"USD",open_date:"2026-08-01",deadline:"2026-09-30",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Biopic","Period","War","Documentary","Animation","Family","Musical","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:1500000,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Independent filmmakers worldwide (no nationality restriction). Sundance labs support development-stage projects. Separate tracks for documentary and fiction. Grant accompanies lab residency. Assessed on creative ambition, distinctiveness, and potential for independent distribution. Highly competitive.",verified_at:"2026-07-01",source_url:"https://www.sundance.org/programs/feature-film-program"},
+
+{fund_name:"IDA Enterprise Documentary Fund",source_name:"International Documentary Association (IDA)",territory:"California",continent:"Americas",amount:"Up to $25,000",amount_usd_approx:25000,currency:"USD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Documentary filmmakers at any career stage, worldwide. No nationality restriction. Projects at development, production, or post-production stage. Social, cultural, or political significance required. Rolling applications via IDA website.",verified_at:"2026-07-01",source_url:"https://www.documentary.org/enterprise-fund"},
+
+{fund_name:"Sundance Institute — Documentary Film Program",source_name:"Sundance Institute",territory:"California",continent:"Americas",amount:"Up to $50,000",amount_usd_approx:50000,currency:"USD",open_date:"2026-10-01",deadline:"2026-11-30",recurrence:"annual",genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"International documentary filmmakers, no nationality restriction. Projects with social or political significance preferred. Sundance Documentary Fund provides both development and production grants. Separate from the feature fiction lab. Annual call.",verified_at:"2026-07-01",source_url:"https://www.sundance.org/programs/documentary-film-program"},
+
+{fund_name:"SFFILM — Rainin Grant",source_name:"SFFILM / Kenneth Rainin Foundation",territory:"California",continent:"Americas",amount:"Up to $30,000",amount_usd_approx:30000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Documentary","Biopic","Crime","Mystery","Thriller"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Feature narrative and documentary filmmakers. No nationality restriction but projects must address social justice themes. Annual call — 2027 dates TBC. Administered by SFFILM in partnership with Kenneth Rainin Foundation.",verified_at:"2026-07-01",source_url:"https://sffilm.org/filmmaker-services/funding/"},
+
+// ── BRAZIL ───────────────────────────────────────────────────
+{fund_name:"ANCINE — FSA Produção Independente",source_name:"Agência Nacional do Cinema (ANCINE) — Fundo Setorial do Audiovisual",territory:"Brazil",continent:"Americas",amount:"Up to BRL 3,000,000 (~USD 600,000)",amount_usd_approx:600000,currency:"BRL",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical","Sports"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Brazilian production companies registered with ANCINE. Brazilian cultural content required. Annual call via FSA (Fundo Setorial do Audiovisual). 2027 dates TBC — ANCINE programme schedules fluctuate with government budget cycles. Verify directly with ANCINE before use.",verified_at:"2026-07-01",source_url:"https://ancine.gov.br/pt-br/fsa"},
+
+// ── MEXICO ───────────────────────────────────────────────────
+{fund_name:"IMCINE — FOPROCINE",source_name:"Instituto Mexicano de Cinematografía (IMCINE)",territory:"Mexico",continent:"Americas",amount:"Up to MXN 10,000,000 (~USD 580,000)",amount_usd_approx:580000,currency:"MXN",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Mexican production companies. Feature film production fund for Mexican stories and filmmakers. Annual call via IMCINE — FOPROCINE is the fiction/production strand. Separate EFICINE strand provides tax incentive for private investors. 2027 dates TBC.",verified_at:"2026-07-01",source_url:"https://www.imcine.gob.mx/convocatorias"},
+
+// ═══════════════════════════════════════════════════════════════
+// AFRICA
+// ═══════════════════════════════════════════════════════════════
+
+{fund_name:"National Film and Video Foundation — Production Funding",source_name:"National Film and Video Foundation (NFVF) South Africa",territory:"Western Cape",continent:"Africa",amount:"Up to ZAR 3,000,000 (~USD 165,000)",amount_usd_approx:165000,currency:"ZAR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical","Sports"],eligible_formats:["feature","documentary","animation","short","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"South African citizens or permanent residents. Production companies registered in South Africa. South African stories and subjects preferred. Annual call — 2027 dates TBC. Covers all three South African sub-territories: Western Cape, Gauteng, KwaZulu-Natal.",verified_at:"2026-07-01",source_url:"https://www.nfvf.co.za/funding"},
+
+{fund_name:"National Film and Video Foundation — Co-Production Fund",source_name:"National Film and Video Foundation (NFVF) South Africa",territory:"Gauteng",continent:"Africa",amount:"Up to ZAR 2,000,000 (~USD 110,000)",amount_usd_approx:110000,currency:"ZAR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Documentary","Biopic","Period","Crime","Mystery","Romance","Animation","Family","Action","Adventure","War"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"co_production",nationality_required:true,co_production_required:true,eligibility:"South African production companies entering into formal international co-productions. South African creative lead required. International partner must be from a country with a bilateral co-production treaty with South Africa. Annual call.",verified_at:"2026-07-01",source_url:"https://www.nfvf.co.za/funding/co-production"},
+
+{fund_name:"Durban FilmMart — Development Finance Forum",source_name:"Durban FilmMart Institute",territory:"KwaZulu-Natal",continent:"Africa",amount:"Project-based (market platform, not a direct grant)",amount_usd_approx:null,currency:"ZAR",open_date:"2027-01-01",deadline:"2027-02-28",recurrence:"annual",genre_tags:["Drama","Thriller","Documentary","Biopic","Crime","Mystery","Romance","Family","Action","Adventure","War","Comedy","Sci-Fi"],eligible_formats:["feature","documentary","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"African filmmakers and international co-productions with African partners. Durban FilmMart is primarily a co-production market and finance forum — not a direct grant. Projects pitch to international co-producers and financiers. Accreditation and project submission required. July annual market.",verified_at:"2026-07-01",source_url:"https://www.durbanfilmmart.co.za/"},
+
+{fund_name:"Africa International Film Festival (AFRIFF) — Short Film Fund",source_name:"Africa International Film Festival",territory:"Nigeria",continent:"Africa",amount:"Up to USD 10,000",amount_usd_approx:10000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period"],eligible_formats:["short","documentary"],budget_min_usd:null,budget_max_usd:15000,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"African filmmakers (all nationalities on African continent). Short film development and production. Administered by AFRIFF. Annual call linked to AFRIFF festival cycle (November). 2027 dates TBC — verify with AFRIFF directly before use in reports.",verified_at:"2026-07-01",source_url:"https://afriff.com/"},
+
+{fund_name:"Centre Cinématographique Marocain — Fonds d'Aide",source_name:"Centre Cinématographique Marocain (CCM)",territory:"Morocco",continent:"Africa",amount:"Up to MAD 5,000,000 (~USD 500,000)",amount_usd_approx:500000,currency:"MAD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Moroccan production companies or international co-productions with Moroccan majority. Moroccan cultural content required. Annual call — 2027 dates TBC. Morocco also operates a production rebate incentive separately.",verified_at:"2026-07-01",source_url:"https://www.ccm.ma/"},
+
+// ═══════════════════════════════════════════════════════════════
+// ASIA-PACIFIC
+// ═══════════════════════════════════════════════════════════════
+
+{fund_name:"Screen Australia — Story Development",source_name:"Screen Australia",territory:"Australia",continent:"Asia-Pacific",amount:"Up to AUD $50,000",amount_usd_approx:33000,currency:"AUD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Animation","Family","Biopic","Period","War","Musical","Sports"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Australian production companies with Australian key creatives attached. Story development for feature film, television, and documentary. Rolling applications. Screen Australia also administers production investment as a co-investor.",verified_at:"2026-07-01",source_url:"https://www.screenaustralia.gov.au/funding-and-support"},
+
+{fund_name:"NZ Film Commission — Development Funding",source_name:"New Zealand Film Commission (NZFC)",territory:"New Zealand",continent:"Asia-Pacific",amount:"Up to NZD $50,000",amount_usd_approx:30000,currency:"NZD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Animation","Family","Biopic","Period","War","Musical","Sports"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"New Zealand production companies or NZ filmmakers with NZ cultural connection. Rolling applications. NZFC also provides production investment for larger NZ features. Separate from the NZ Screen Production Grant (cash incentive).",verified_at:"2026-07-01",source_url:"https://www.nzfilm.co.nz/funding"},
+
+{fund_name:"Japan — Agency for Cultural Affairs — Creative Industries Fund",source_name:"Japan Agency for Cultural Affairs (Bunkacho)",territory:"Japan",continent:"Asia-Pacific",amount:"Up to JPY 50,000,000 (~USD 340,000)",amount_usd_approx:340000,currency:"JPY",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","Musical","Action","Adventure"],eligible_formats:["feature","animation","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Japanese production companies or productions with significant Japanese creative contribution. Japanese cultural content required. Annual call — 2027 dates TBC. Japan also operates specific international co-production support via bilateral treaty frameworks.",verified_at:"2026-07-01",source_url:"https://www.bunka.go.jp/english/"},
+
+{fund_name:"Korean Film Council (KOFIC) — International Co-Production Fund",source_name:"Korean Film Council (KOFIC)",territory:"South Korea",continent:"Asia-Pacific",amount:"Up to KRW 500,000,000 (~USD 370,000)",amount_usd_approx:370000,currency:"KRW",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Documentary","Biopic","Period","War"],eligible_formats:["feature","animation","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"co_production",nationality_required:true,co_production_required:true,eligibility:"Korean production companies co-producing with international partners. Korean creative lead required. KOFIC's international co-production fund supports formal bilateral co-productions. Annual call — 2027 dates TBC. Korea also has a separate domestic production fund.",verified_at:"2026-07-01",source_url:"https://www.kofic.or.kr/kofic/business/intl/selectIntlCoProduction.do"},
+
+{fund_name:"IMDA — Singapore Media Fund",source_name:"Info-communications Media Development Authority (IMDA)",territory:"Singapore",continent:"Asia-Pacific",amount:"Up to SGD $500,000 (~USD 375,000)",amount_usd_approx:375000,currency:"SGD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Documentary","Biopic","Period","Musical"],eligible_formats:["feature","tv_series","animation","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Production companies registered in Singapore. Projects that can demonstrate Singapore connection (story, talent, or market). IMDA's media fund covers development, production, and capability-building. Note: IMDA's structure for international co-productions is discretionary — verify current terms directly with IMDA before use in reports.",verified_at:"2026-07-01",source_url:"https://www.imda.gov.sg/how-we-can-help/singapore-media-fund"},
+
+{fund_name:"NFDC — Film Bazaar Co-Production Market",source_name:"National Film Development Corporation of India (NFDC)",territory:"India",continent:"Asia-Pacific",amount:"Market platform — not a direct grant",amount_usd_approx:null,currency:"INR",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Documentary","Biopic","Period","Musical","War","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Indian and international filmmakers. NFDC Film Bazaar is South Asia's premier co-production market (held alongside IFFI Goa in November). Project selection for co-production market — not a direct production grant. Separate NFDC direct funding available to Indian producers. Accreditation and project submission required.",verified_at:"2026-07-01",source_url:"https://www.nfdcindia.com/filmbazaar/"},
+
+// ═══════════════════════════════════════════════════════════════
+// GLOBAL (No Territory Restriction)
+// ═══════════════════════════════════════════════════════════════
+
+{fund_name:"Ibermedia — Co-Production and Development Fund",source_name:"Ibermedia Programme (CAACI)",territory:"Global",continent:"Global",amount:"Up to USD $400,000 (co-production)",amount_usd_approx:400000,currency:"USD",open_date:"2026-09-01",deadline:"2026-11-30",recurrence:"annual",genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Documentary","Biopic","Period","Musical","War","Western","Sports"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"co_production",nationality_required:true,co_production_required:true,eligibility:"Ibero-American co-productions (Spain, Portugal, and 21 Latin American countries). Formal bilateral co-production structure required. Assessed on artistic merit and Ibero-American cultural content. Development (up to USD $30K) and co-production (up to USD $400K) strands. Annual call.",verified_at:"2026-07-01",source_url:"https://www.programaibermedia.com/convocatorias/"},
+
+{fund_name:"Catapult Film Fund — Development",source_name:"Catapult Film Fund",territory:"Global",continent:"Global",amount:"Up to $25,000",amount_usd_approx:25000,currency:"USD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Documentary filmmakers worldwide. No nationality restriction. Early-stage development funding for feature-length documentaries. Projects assessed on storytelling strength, access to subject, and distribution potential. Rolling applications.",verified_at:"2026-07-01",source_url:"https://catapultfilm.org/"},
+
+{fund_name:"Sundance Institute — Women at Sundance — Adobe Fellows",source_name:"Sundance Institute / Adobe",territory:"Global",continent:"Global",amount:"Up to $10,000 + lab residency",amount_usd_approx:10000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Documentary","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Biopic","Period","Musical","War","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Women-identifying filmmakers worldwide. No nationality restriction. Annual fellowship programme — 2027 dates TBC. Genre-agnostic. Assessed on creative potential and narrative ambition.",verified_at:"2026-07-01",source_url:"https://www.sundance.org/programs/women-at-sundance"},
+
+{fund_name:"Tribeca — Chanel Through Her Lens",source_name:"Tribeca Festival / Chanel",territory:"Global",continent:"Global",amount:"Up to $75,000",amount_usd_approx:75000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Drama","Documentary","Thriller","Comedy","Biopic","Crime","Mystery","Romance","Family","Period","Musical","Sci-Fi","Horror","Fantasy","War","Action","Sports"],eligible_formats:["feature","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Women and non-binary filmmakers worldwide. No nationality restriction. Short film and feature development. Assessed at Tribeca Festival. Annual — 2027 dates TBC.",verified_at:"2026-07-01",source_url:"https://tribecafilm.com/stories/through-her-lens"},
+
+{fund_name:"IDFA Bertha Fund",source_name:"International Documentary Film Festival Amsterdam (IDFA)",territory:"Global",continent:"Global",amount:"Up to €50,000",amount_usd_approx:55000,currency:"EUR",open_date:"2026-08-01",deadline:"2026-09-30",recurrence:"annual",genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Documentary filmmakers from Africa, Asia, Latin America, Middle East, and Eastern Europe (priority regions). No nationality restriction within priority regions. Projects with social or political significance. Annual call linked to IDFA festival (November).",verified_at:"2026-07-01",source_url:"https://www.idfa.nl/en/info/idfa-bertha-fund"},
+
+{fund_name:"DOC/NYC — Fund for Inclusion",source_name:"DOC/NYC Festival",territory:"Global",continent:"Global",amount:"Up to $25,000",amount_usd_approx:25000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Documentary filmmakers from underrepresented communities worldwide. No nationality restriction. Social justice and equity-focused documentaries. Annual — 2027 dates TBC.",verified_at:"2026-07-01",source_url:"https://docnyc.net/"},
+
+// ═══════════════════════════════════════════════════════════════
+// UNITED KINGDOM — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"BBC Film — Development and Co-Production",source_name:"BBC Film",territory:"United Kingdom",continent:"Europe",amount:"Up to £1,500,000 (co-production)",amount_usd_approx:1900000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Biopic","Period","Crime","Mystery","Romance","Fantasy","Sci-Fi","War","Action","Adventure","Musical","Family"],eligible_formats:["feature"],budget_min_usd:500000,budget_max_usd:null,grant_type:"broadcaster",nationality_required:false,co_production_required:true,eligibility:"BBC Film enters as co-producer — not a grant in the traditional sense but a co-production investment. Projects must have UK distribution potential and BBC broadcasting rights. No nationality restriction on director but UK co-producer required. Assessed on script quality, commercial viability, and cultural resonance with UK audiences.",verified_at:"2026-07-04",source_url:"https://www.bbc.co.uk/commissioning/film"},
+
+{fund_name:"Screen Wales — Production Funding",source_name:"Creative Wales / Screen Wales",territory:"United Kingdom",continent:"Europe",amount:"Up to £1,000,000",amount_usd_approx:1270000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Wales-based production companies or productions with significant Welsh creative contribution or Wales filming location. Welsh language projects eligible for additional uplift. Spend-in-Wales condition applies. Both development and production strands available.",verified_at:"2026-07-04",source_url:"https://screenwales.wales/funding/"},
+
+{fund_name:"Northern Ireland Screen — Development and Production",source_name:"Northern Ireland Screen",territory:"United Kingdom",continent:"Europe",amount:"Up to £500,000",amount_usd_approx:635000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"multi",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation","tv_series","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Northern Ireland-based production companies or productions with significant NI creative contribution. Spend-in-NI condition. Development, production, and short film strands. NI Screen also manages the Ulster-Scots and Irish Language broadcast funds.",verified_at:"2026-07-04",source_url:"https://www.northernirelandscreen.co.uk/funding/"},
+
+{fund_name:"Creative England — iFeatures",source_name:"Creative England / BBC Films / BFI",territory:"United Kingdom",continent:"Europe",amount:"Up to £250,000 (production)",amount_usd_approx:318000,currency:"GBP",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Crime","Mystery","Romance","Fantasy","Sci-Fi","Period","Biopic","War","Action","Adventure","Family"],eligible_formats:["feature"],budget_min_usd:null,budget_max_usd:500000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Emerging UK filmmakers (debut or second feature). Projects must be set outside London and reflect regional English stories. Micro-budget features up to £250K. Annual call — 2027 dates TBC. Partnership between Creative England, BBC Films, and BFI.",verified_at:"2026-07-04",source_url:"https://www.creativeengland.co.uk/film-and-tv/ifeatures"},
+
+{fund_name:"BFI Doc Society Fund — Short Documentary",source_name:"BFI / Doc Society",territory:"United Kingdom",continent:"Europe",amount:"Up to £15,000",amount_usd_approx:19000,currency:"GBP",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"short",emerging_filmmaker:true,genre_tags:["Documentary"],eligible_formats:["short","documentary"],budget_min_usd:null,budget_max_usd:20000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"UK-based emerging documentary filmmakers. Short documentary up to 30 minutes. Administered jointly by BFI and Doc Society. Rolling applications via Doc Society website. Focus on underrepresented voices and social impact subject matter.",verified_at:"2026-07-04",source_url:"https://docsociety.org/funds/"},
+
+{fund_name:"BAFTA — Rocliffe New Writing Competition",source_name:"BAFTA / Rocliffe",territory:"United Kingdom",continent:"Europe",amount:"Script development support + industry showcase",amount_usd_approx:5000,currency:"GBP",open_date:"2026-09-01",deadline:"2026-11-30",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Crime","Mystery","Romance","Fantasy","Sci-Fi","Period","Biopic","War","Action","Adventure","Family","Animation","Musical"],eligible_formats:["feature","tv_series","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:true,co_production_required:false,eligibility:"Emerging UK writers. Script competition — winner receives development support, industry showcase, and BAFTA mentoring. Not a cash production grant but a significant career accelerant with industry access. Annual call — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.bafta.org/supporting-talent/rocliffe"},
+
+{fund_name:"Film London — Production Finance Market",source_name:"Film London",territory:"United Kingdom",continent:"Europe",amount:"Market platform (not a direct grant)",amount_usd_approx:null,currency:"GBP",open_date:"2027-03-01",deadline:"2027-04-30",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary"],budget_min_usd:500000,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Projects with London connection seeking co-production finance. Film London Production Finance Market connects producers with UK and international financiers. Annual event (typically April). Not a direct grant — a structured pitching market with curated financier attendance.",verified_at:"2026-07-04",source_url:"https://filmlondon.org.uk/funding"},
+
+// ═══════════════════════════════════════════════════════════════
+// IRELAND — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Screen Ireland — Short Film Scheme",source_name:"Screen Ireland (Fís Éireann)",territory:"Ireland",continent:"Europe",amount:"Up to €30,000",amount_usd_approx:33000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","Musical","Action","Adventure","War"],eligible_formats:["short","animation"],budget_min_usd:null,budget_max_usd:35000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Irish filmmakers. Short fiction, animation, and documentary up to 30 minutes. Annual call — 2027 dates TBC. Intended as a stepping stone for emerging Irish talent toward feature development.",verified_at:"2026-07-04",source_url:"https://www.screenireland.ie/funding/short-film"},
+
+{fund_name:"RTE — Documentary on One Development Fund",source_name:"Raidió Teilifís Éireann (RTE)",territory:"Ireland",continent:"Europe",amount:"Up to €10,000 (development)",amount_usd_approx:11000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"development",emerging_filmmaker:false,genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"broadcaster",nationality_required:true,co_production_required:false,eligibility:"Irish production companies or Irish-based documentary makers. Radio documentary-to-film crossover strand. Subject must have Irish cultural, social, or historical relevance. RTE retains broadcast rights. Rolling applications via RTE Commissioning.",verified_at:"2026-07-04",source_url:"https://www.rte.ie/commissioning/"},
+
+// ═══════════════════════════════════════════════════════════════
+// FRANCE — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"CNC — Aide au Développement Documentaire",source_name:"Centre National du Cinéma et de l'Image Animée (CNC)",territory:"France",continent:"Europe",amount:"Up to €60,000",amount_usd_approx:66000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"development",emerging_filmmaker:false,genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"French production companies producing documentary projects. Rolling applications. Selective jury assessment. Separate from the main CNC Avance sur Recettes strand — this is documentary-specific development funding.",verified_at:"2026-07-04",source_url:"https://www.cnc.fr/professionnels/aides-et-financements/documentaires"},
+
+{fund_name:"CNC — Aide aux Cinémas du Monde",source_name:"Centre National du Cinéma et de l'Image Animée (CNC)",territory:"France",continent:"Europe",amount:"Up to €180,000",amount_usd_approx:198000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"co_production",nationality_required:false,co_production_required:true,eligibility:"International productions from non-EU countries co-producing with a French partner. Designed to support world cinema through French co-production. French partner must hold minority co-production share. Annual call administered by CNC with Institut Français.",verified_at:"2026-07-04",source_url:"https://www.cnc.fr/professionnels/aides-et-financements/international"},
+
+// ═══════════════════════════════════════════════════════════════
+// GERMANY — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"FFA — Drehbuchförderung (Script Development)",source_name:"Filmförderungsanstalt (FFA)",territory:"Germany",continent:"Europe",amount:"Up to €50,000",amount_usd_approx:55000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Biopic","Period","Crime","Fantasy","Mystery","Romance","Sci-Fi","War","Action","Adventure","Family","Animation","Musical"],eligible_formats:["feature","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"German screenwriters and producers developing feature film scripts. FFA script development funding operates on a rolling basis. German cultural content required. Separate from the DFFF production incentive.",verified_at:"2026-07-04",source_url:"https://www.ffa.de/drehbuchfoerderung.html"},
+
+{fund_name:"ZDF / ARTE — Documentary Co-Production Fund",source_name:"ZDF / ARTE",territory:"Germany",continent:"Europe",amount:"€100,000–€400,000",amount_usd_approx:250000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"broadcaster",nationality_required:false,co_production_required:true,eligibility:"International documentary co-productions with ZDF or ARTE Germany as broadcaster partner. ZDF/ARTE takes broadcast rights across German-speaking territories. No nationality restriction on lead filmmaker. Project submitted via German producer or directly to ZDF commissioning editors.",verified_at:"2026-07-04",source_url:"https://www.zdf.de/zdfunternehmensbereich/english/zdf-dokumentarfilm-100.html"},
+
+{fund_name:"Hamburg Film Fund (HFF / MFG / FFF Bayern)",source_name:"HamburgMusik / Filmförderung Hamburg Schleswig-Holstein",territory:"Germany",continent:"Europe",amount:"Up to €500,000",amount_usd_approx:550000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"multi",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Animation","Family","Sci-Fi","War","Action","Romance"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Productions with Hamburg or Schleswig-Holstein connection. Regional spend condition applies — portion of fund must be spent in region. International productions welcome. Germany has multiple regional film funds (Medienboard Berlin-Brandenburg already listed; FFF Bayern and Filmstiftung NRW are the other major ones at similar levels).",verified_at:"2026-07-04",source_url:"https://www.ffhsh.de/foerderung"},
+
+// ═══════════════════════════════════════════════════════════════
+// SPAIN — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"ICAA — Ayudas al Desarrollo de Proyectos",source_name:"Instituto de la Cinematografía y de las Artes Audiovisuales (ICAA)",territory:"Spain",continent:"Europe",amount:"Up to €80,000",amount_usd_approx:88000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Spanish production companies developing feature projects. Script and project development funding — separate from the ICAA production funding strand. Annual call alongside production funding. 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.culturaydeporte.gob.es/cultura/industriasculturales/cine/ayudas.html"},
+
+{fund_name:"ICEC — Ajuts a la Producció Cinematogràfica (Catalonia)",source_name:"Institut Català de les Empreses Culturals (ICEC)",territory:"Spain",continent:"Europe",amount:"Up to €300,000",amount_usd_approx:330000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","Action","War"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Catalan production companies or productions with significant Catalan cultural content. Annual call — separate from national ICAA funding. Catalan or Spanish language projects both eligible. 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://icec.gencat.cat/ca/ajuts/"},
+
+// ═══════════════════════════════════════════════════════════════
+// ITALY — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"MiC — Contributi allo Sviluppo (Development)",source_name:"Ministero della Cultura — Direzione Generale Cinema e Audiovisivo",territory:"Italy",continent:"Europe",amount:"Up to €100,000",amount_usd_approx:110000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Italian production companies in development phase. Separate from the MiC selective production funding. Development funding for script, research, and pre-production. Annual call — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://cinema.cultura.gov.it/"},
+
+{fund_name:"RAI Cinema — Co-Production Fund",source_name:"RAI Cinema",territory:"Italy",continent:"Europe",amount:"€200,000–€600,000",amount_usd_approx:400000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Biopic","Period","Crime","Mystery","Romance","Fantasy","Sci-Fi","War","Action","Adventure","Musical","Family"],eligible_formats:["feature"],budget_min_usd:500000,budget_max_usd:null,grant_type:"broadcaster",nationality_required:false,co_production_required:true,eligibility:"International co-productions with Italian partner. RAI Cinema enters as broadcaster co-producer with Italian rights. No nationality restriction on director. Projects submitted via Italian co-producer. Focus on narrative drama and auteur cinema.",verified_at:"2026-07-04",source_url:"https://www.raicinema.it/"},
+
+// ═══════════════════════════════════════════════════════════════
+// NETHERLANDS — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Netherlands Film Fund — International Co-Production",source_name:"Netherlands Film Fund",territory:"Netherlands",continent:"Europe",amount:"Up to €500,000",amount_usd_approx:550000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"co_production",nationality_required:false,co_production_required:true,eligibility:"International co-productions with a Dutch co-producer holding minority share. Dutch cultural or financial contribution required. Assessed on artistic merit and distribution potential. Netherlands Film Fund has bilateral co-production agreements with multiple countries.",verified_at:"2026-07-04",source_url:"https://www.filmfonds.nl/subsidies/internationale-coproductie"},
+
+// ═══════════════════════════════════════════════════════════════
+// CZECH REPUBLIC — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Czech Film Fund — Script Development",source_name:"Czech Film Fund (Státní fond kinematografie)",territory:"Czech Republic",continent:"Europe",amount:"Up to CZK 800,000 (~€32,000)",amount_usd_approx:35000,currency:"CZK",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Czech production companies developing feature projects. Separate development strand from the Czech Film Fund production support. Annual call — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.fondkinematografie.cz/"},
+
+// ═══════════════════════════════════════════════════════════════
+// HUNGARY — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"NFI Hungary — Short Film Fund",source_name:"National Film Institute Hungary (NFI)",territory:"Hungary",continent:"Europe",amount:"Up to HUF 50,000,000 (~€130,000)",amount_usd_approx:143000,currency:"HUF",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","Action","Musical","War"],eligible_formats:["short","animation"],budget_min_usd:null,budget_max_usd:150000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Hungarian filmmakers or productions with Hungarian director. Short fiction and animation up to 30 minutes. Annual call — 2027 dates TBC. NFI short film fund is a key development pathway for emerging Hungarian directors.",verified_at:"2026-07-04",source_url:"https://nfi.hu/en/funding"},
+
+// ═══════════════════════════════════════════════════════════════
+// ROMANIA — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"CNC Romania — Development and Short Film",source_name:"Centrul Național al Cinematografiei (CNC Romania)",territory:"Romania",continent:"Europe",amount:"Up to RON 500,000 (~€100,000)",amount_usd_approx:110000,currency:"RON",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","War","Action"],eligible_formats:["short","documentary","animation"],budget_min_usd:null,budget_max_usd:110000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Romanian filmmakers. Short fiction, documentary, and animation funding. Development strand for emerging directors. Annual call alongside production funding — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.cnc.ro/"},
+
+// ═══════════════════════════════════════════════════════════════
+// BELGIUM — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Wallimage — Production Fund (Wallonia)",source_name:"Wallimage",territory:"Belgium",continent:"Europe",amount:"Up to €600,000",amount_usd_approx:660000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Animation","Family","Sci-Fi","War","Action","Romance"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Productions spending in Wallonia (French-speaking Belgium). Regional spend condition — 160% spend-back requirement on grant. International productions eligible with no nationality restriction. Complements Screen Flanders (Dutch-speaking Belgium) — together they cover all Belgian regions.",verified_at:"2026-07-04",source_url:"https://www.wallimage.be/en/"},
+
+// ═══════════════════════════════════════════════════════════════
+// AMERICAS — gap-fill: Alberta, Quebec, Georgia, Louisiana, Illinois, New Mexico
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Alberta Foundation for the Arts — Film and Video Production",source_name:"Alberta Foundation for the Arts",territory:"Alberta",continent:"Americas",amount:"Up to CAD $30,000",amount_usd_approx:22000,currency:"CAD",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical","Sports"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Alberta-based artists and production companies. Alberta resident or permanent resident required. Film, video, and media art production funding. Annual fall call — 2026 deadline approximate. Administered by Alberta Foundation for the Arts. Separate from Alberta's AAMDC film incentive.",verified_at:"2026-07-04",source_url:"https://www.affta.ab.ca/funding/find-funding/film-and-video"},
+
+{fund_name:"SODEC — Programme d'aide à la production (Quebec)",source_name:"Société de développement des entreprises culturelles (SODEC)",territory:"Quebec",continent:"Americas",amount:"Up to CAD $400,000",amount_usd_approx:295000,currency:"CAD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical","Sports"],eligible_formats:["feature","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Quebec-based production companies with Quebec cultural content. French-language productions receive priority but bilingual and English-language projects with Quebec stories are eligible. Rolling applications. SODEC also administers the Quebec Film and Television Tax Credit separately.",verified_at:"2026-07-04",source_url:"https://www.sodec.gouv.qc.ca/en/"},
+
+{fund_name:"SODEC — Programme d'aide au développement (Quebec)",source_name:"Société de développement des entreprises culturelles (SODEC)",territory:"Quebec",continent:"Americas",amount:"Up to CAD $50,000",amount_usd_approx:37000,currency:"CAD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Quebec-based production companies. Script and project development for feature films, documentaries, and animation. Rolling applications. Assessed on creative merit and Quebec cultural contribution.",verified_at:"2026-07-04",source_url:"https://www.sodec.gouv.qc.ca/en/"},
+
+{fund_name:"Georgia Film Office — Film Georgia Fund",source_name:"Georgia Film Office / Georgia Council for the Arts",territory:"Georgia (USA)",continent:"Americas",amount:"Up to $20,000",amount_usd_approx:20000,currency:"USD",open_date:"2026-09-01",deadline:"2026-10-15",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Sports"],eligible_formats:["feature","documentary","short"],budget_min_usd:null,budget_max_usd:500000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Georgia-based filmmakers and production companies. Independent film and short documentary. Must demonstrate Georgia story or significant Georgia crew/spend. Annual call via Georgia Council for the Arts. Separate from Georgia's 20-30% cash rebate incentive programme. Note: State arts council programmes are subject to annual legislative budget approval.",verified_at:"2026-07-04",source_url:"https://www.georgia.org/film"},
+
+{fund_name:"Louisiana Division of the Arts — Artist Fellowship",source_name:"Louisiana Division of the Arts",territory:"Louisiana",continent:"Americas",amount:"Up to $10,000",amount_usd_approx:10000,currency:"USD",open_date:"2026-10-01",deadline:"2026-11-30",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical"],eligible_formats:["feature","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Louisiana residents only. Individual artist fellowship — supports screenwriters, directors, and producers at development stage. Annual call. Separate from Louisiana's 25% motion picture production tax credit. Note: State-level arts funding subject to annual legislative approval.",verified_at:"2026-07-04",source_url:"https://www.crt.state.la.us/cultural-development/arts/"},
+
+{fund_name:"Illinois Arts Council Agency — Individual Artists Support",source_name:"Illinois Arts Council Agency",territory:"Illinois",continent:"Americas",amount:"Up to $7,000",amount_usd_approx:7000,currency:"USD",open_date:"2026-08-01",deadline:"2026-09-30",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Animation"],eligible_formats:["feature","documentary","short","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Illinois residents only. Individual artist grants for film, video, and media arts. Development and short production funding. Annual call. Note: Illinois also operates the Illinois Film Production Tax Credit — this is a separate grant for individual artists, not a production incentive.",verified_at:"2026-07-04",source_url:"https://arts.illinois.gov/grants-programs/grants"},
+
+{fund_name:"New Mexico Arts — Film and Arts Funding",source_name:"New Mexico Arts (State Agency for the Arts)",territory:"New Mexico",continent:"Americas",amount:"Up to $10,000",amount_usd_approx:10000,currency:"USD",open_date:"2026-11-01",deadline:"2027-01-15",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Western","Musical"],eligible_formats:["feature","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"New Mexico residents and New Mexico-based organisations. Film, video, and media arts production. Annual call — 2027 dates approximate. Separate from New Mexico's 25-35% film production tax credit. Note: State arts council funding subject to annual legislative approval.",verified_at:"2026-07-04",source_url:"https://www.nmarts.org/grants/"},
+
+// ═══════════════════════════════════════════════════════════════
+// AMERICAS — additional depth: USA
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"NYSCA — Film, Media, and New Technology Grants",source_name:"New York State Council on the Arts (NYSCA)",territory:"New York",continent:"Americas",amount:"Up to $100,000",amount_usd_approx:100000,currency:"USD",open_date:"2026-10-01",deadline:"2026-12-15",recurrence:"annual",stage:"multi",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Animation","Sports"],eligible_formats:["feature","documentary","short","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"New York State-based organisations (production companies, nonprofits). Covers development, production, and exhibition. Annual call — dates approximate. New York State-registered entity required. Also supports immersive and interactive media. Note: NYSCA funding subject to annual state budget approval.",verified_at:"2026-07-04",source_url:"https://www.arts.ny.gov/grants"},
+
+{fund_name:"Tribeca Film Institute — Reframe Grants",source_name:"Tribeca Film Institute",territory:"New York",continent:"Americas",amount:"Up to $50,000",amount_usd_approx:50000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Drama","Documentary","Thriller","Crime","Biopic","Family","Romance","Period","Sci-Fi","Mystery","Comedy","Horror","War","Action","Adventure","Musical","Sports","Fantasy"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:2000000,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Filmmakers from underrepresented backgrounds worldwide. No nationality restriction. Focus on social justice, equity, and inclusion themes. Annual call — 2027 dates TBC. Tribeca Film Institute (distinct from Tribeca Festival) administers this independently.",verified_at:"2026-07-04",source_url:"https://www.tfiny.org/"},
+
+{fund_name:"Chicken & Egg Pictures — Hatching Fund",source_name:"Chicken & Egg Pictures",territory:"Global",continent:"Global",amount:"Up to $30,000",amount_usd_approx:30000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Women and non-binary documentary filmmakers worldwide. No nationality restriction. Early-stage documentary development. Annual call — 2027 dates TBC. Strong focus on environmental, social justice, and human rights subject matter.",verified_at:"2026-07-04",source_url:"https://chickeneggpics.org/funds/"},
+
+{fund_name:"Points North Institute — Fellowship",source_name:"Points North Institute",territory:"Global",continent:"Global",amount:"Up to $25,000 (fellowship)",amount_usd_approx:25000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Emerging documentary filmmakers worldwide. No nationality restriction. Annual fellowship with industry access at Camden International Film Festival. Focus on creative documentary with strong personal perspective.",verified_at:"2026-07-04",source_url:"https://www.pointsnorthinstitute.org/"},
+
+{fund_name:"California Arts Council — Artists in Communities",source_name:"California Arts Council",territory:"California",continent:"Americas",amount:"Up to $50,000",amount_usd_approx:50000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Documentary","Thriller","Crime","Biopic","Family","Romance","Period","Sci-Fi","Mystery","Comedy","Horror","War","Action","Adventure","Musical","Sports","Fantasy","Animation"],eligible_formats:["feature","documentary","short","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"California-based organisations and artists. Community-embedded media arts projects. Annual call — 2027 dates TBC. California resident or CA-registered organisation required. Note: subject to annual state budget approval.",verified_at:"2026-07-04",source_url:"https://www.arts.ca.gov/grants/"},
+
+// ═══════════════════════════════════════════════════════════════
+// AMERICAS — Canada additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Telefilm Canada — Talent to Watch (Short Film)",source_name:"Telefilm Canada",territory:"Ontario",continent:"Americas",amount:"Up to CAD $125,000",amount_usd_approx:92000,currency:"CAD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Documentary","Biopic","Period","War","Musical","Sports","Western"],eligible_formats:["short","animation"],budget_min_usd:null,budget_max_usd:125000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Canadian emerging filmmakers with fewer than two produced features. Short film production up to 40 minutes. Annual call — 2027 dates TBC. Includes both English and French language streams. One of the most important stepping stones for emerging Canadian talent.",verified_at:"2026-07-04",source_url:"https://telefilm.ca/en/funding/talent-to-watch"},
+
+{fund_name:"Harold Greenberg Fund — Development",source_name:"Harold Greenberg Fund",territory:"British Columbia",continent:"Americas",amount:"Up to CAD $75,000",amount_usd_approx:55000,currency:"CAD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Biopic","Period","War","Musical","Sports"],eligible_formats:["feature","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:true,co_production_required:false,eligibility:"Canadian production companies and writers developing feature film and TV projects. Rolling applications. Harold Greenberg Fund focuses on script development and the early creative phase. Canadian content certification required.",verified_at:"2026-07-04",source_url:"https://www.haroldgreenbergfund.com/"},
+
+// ═══════════════════════════════════════════════════════════════
+// AFRICA — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Realness Institute — African Feature Film Development",source_name:"Realness Institute",territory:"Western Cape",continent:"Africa",amount:"Up to USD $20,000",amount_usd_approx:20000,currency:"USD",open_date:"2027-01-01",deadline:"2027-02-28",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Documentary","Biopic","Crime","Mystery","Romance","Family","Period","Action","Adventure","Sci-Fi","Horror","Fantasy","War","Musical"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"African filmmakers (all nationalities on African continent). Feature film and documentary development. Annual residency-based programme based in Cape Town. No nationality restriction within Africa. Strong track record of supporting debut African feature directors.",verified_at:"2026-07-04",source_url:"https://www.realnessinstitute.com/"},
+
+{fund_name:"African Development Bank — Fund for African Private Sector Assistance (FAPA) Cultural Industry",source_name:"African Development Bank / FAPA",territory:"Nigeria",continent:"Africa",amount:"Programme-based (grant and loan blended)",amount_usd_approx:null,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Documentary","Biopic","Crime","Mystery","Romance","Family","Period","Action","Adventure","Sci-Fi","Horror","Fantasy","War","Musical","Animation","Sports"],eligible_formats:["feature","tv_series","documentary","animation"],budget_min_usd:500000,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Film and media companies across African Development Bank member countries. Blended grant/loan facility for cultural industries including film. Focuses on job creation and economic development via creative sectors. Applications via AfDB country offices. Not a straightforward film fund — requires development finance framing.",verified_at:"2026-07-04",source_url:"https://www.afdb.org/en/topics-and-sectors/sectors/private-sector"},
+
+{fund_name:"Fonds Images Afrique — Institut Français",source_name:"Institut Français / French Ministry of Foreign Affairs",territory:"Morocco",continent:"Africa",amount:"Up to €60,000",amount_usd_approx:66000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Family","Sci-Fi","War","Action","Adventure","Animation"],eligible_formats:["feature","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"co_production",nationality_required:false,co_production_required:true,eligibility:"African filmmakers co-producing with French partners, or French productions about African subjects. Administered by Institut Français with bilateral treaty framework. Covers Francophone Africa primarily — relevant to Morocco, Nigeria (French-adjacent markets), Western Cape. Annual call — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.institutfrancais.com/fr/ressources/fonds-images-afrique"},
+
+{fund_name:"Hubert Bals Fund — IDFAcademy",source_name:"International Film Festival Rotterdam (IFFR)",territory:"Nigeria",continent:"Africa",amount:"Up to €10,000 (script/development)",amount_usd_approx:11000,currency:"EUR",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Documentary","Biopic","Crime","Mystery","Romance","Family","Period","Action","Sci-Fi","Horror","Fantasy","War","Comedy","Musical","Animation"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Filmmakers from underrepresented regions: Africa, Asia, Latin America, Middle East, Eastern Europe. No nationality restriction within priority regions. Script development and project development funding. Annual call linked to IFFR (January). Hubert Bals Fund also has a larger production funding strand.",verified_at:"2026-07-04",source_url:"https://iffr.com/en/filmmakers/hubert-bals-fund"},
+
+{fund_name:"Hot Docs — Blue Ice Fund (Africa Focus)",source_name:"Hot Docs Canadian International Documentary Festival",territory:"Western Cape",continent:"Africa",amount:"Up to CAD $15,000",amount_usd_approx:11000,currency:"CAD",open_date:"2026-12-01",deadline:"2027-01-31",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Documentary"],eligible_formats:["documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"African documentary filmmakers at production stage. No nationality restriction within Africa. Annual call linked to Hot Docs submission cycle (spring). Focus on human rights, environmental, and social justice documentary.",verified_at:"2026-07-04",source_url:"https://hotdocs.ca/industry/blue-ice-fund"},
+
+// ═══════════════════════════════════════════════════════════════
+// ASIA-PACIFIC — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Busan International Film Festival — Asian Cinema Fund",source_name:"Busan International Film Festival (BIFF)",territory:"South Korea",continent:"Asia-Pacific",amount:"Up to USD $30,000",amount_usd_approx:30000,currency:"USD",open_date:"2026-09-01",deadline:"2026-10-15",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Animation"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Asian filmmakers (broad Asia-Pacific definition). No nationality restriction within Asia. Script development and project development for feature film and documentary. Annual call linked to BIFF (October). Administered via Asian Cinema Fund (ACF) under BIFF.",verified_at:"2026-07-04",source_url:"https://www.biff.kr/eng/sub1_5_1.asp"},
+
+{fund_name:"Singapore International Film Festival — Southeast Asian Film Fund",source_name:"Singapore International Film Festival (SGIFF)",territory:"Singapore",continent:"Asia-Pacific",amount:"Up to SGD $30,000",amount_usd_approx:22000,currency:"SGD",open_date:"2026-08-01",deadline:"2026-09-30",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Animation"],eligible_formats:["feature","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Southeast Asian filmmakers. No nationality restriction within Southeast Asia (includes Singapore, Malaysia, Indonesia, Thailand, Philippines, Vietnam, Myanmar, Cambodia, Laos, Brunei). Annual call linked to SGIFF (November). Script development and short film production.",verified_at:"2026-07-04",source_url:"https://sgiff.com/"},
+
+{fund_name:"Australian Film Television and Radio School — Short Film Fund",source_name:"Australian Film Television and Radio School (AFTRS)",territory:"Australia",continent:"Asia-Pacific",amount:"Up to AUD $30,000",amount_usd_approx:20000,currency:"AUD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Documentary","Family","Animation","Musical"],eligible_formats:["short","animation","documentary"],budget_min_usd:null,budget_max_usd:35000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Australian emerging filmmakers. Short film production fund separate from Screen Australia. Annual call — 2027 dates TBC. AFTRS alumni and Australian-resident filmmakers.",verified_at:"2026-07-04",source_url:"https://www.aftrs.edu.au/"},
+
+{fund_name:"NHK — Japan Broadcasting Corporation International Co-Production",source_name:"NHK (Nippon Hoso Kyokai)",territory:"Japan",continent:"Asia-Pacific",amount:"JPY 10,000,000–30,000,000 (~USD 68,000–204,000)",amount_usd_approx:136000,currency:"JPY",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Documentary","Drama","Sci-Fi","Biopic","Period","War","Mystery","Family","Adventure","Crime","Thriller"],eligible_formats:["documentary","feature","tv_series"],budget_min_usd:200000,budget_max_usd:null,grant_type:"broadcaster",nationality_required:false,co_production_required:true,eligibility:"International production companies co-producing with NHK as broadcaster partner. NHK takes Japanese broadcast rights. International co-productions with significant global story or Japanese subject matter preferred. Applications via NHK commissioning department or Japanese co-producer.",verified_at:"2026-07-04",source_url:"https://www3.nhk.or.jp/nhkworld/en/tv/coproduction/"},
+
+{fund_name:"NFDC — National Film Development Corporation India — Production Grant",source_name:"National Film Development Corporation of India (NFDC)",territory:"India",continent:"Asia-Pacific",amount:"Up to INR 5,000,000 (~USD 60,000)",amount_usd_approx:60000,currency:"INR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Sports","Animation"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Indian production companies and filmmakers. First and second feature directors receive priority. Annual call — 2027 dates TBC. NFDC also administers co-production treaties and the Film Bazaar market separately.",verified_at:"2026-07-04",source_url:"https://www.nfdcindia.com/funding"},
+
+// ═══════════════════════════════════════════════════════════════
+// GLOBAL — additional depth
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Berlinale World Cinema Fund",source_name:"Berlin International Film Festival (Berlinale) / Federal Cultural Foundation",territory:"Global",continent:"Global",amount:"Up to €100,000 (production)",amount_usd_approx:110000,currency:"EUR",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Animation","Sports","Western"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:false,eligibility:"Filmmakers from underrepresented regions: Africa, Latin America, Middle East, Central Asia, Southeast Asia. No nationality restriction within priority regions. German or European co-producer highly recommended but not mandatory. Annual call — 2026 dates approximate. Also development strand (up to €50K).",verified_at:"2026-07-04",source_url:"https://www.berlinale.de/en/world-cinema-fund.html"},
+
+{fund_name:"Sundance Institute — Catalyst Forum",source_name:"Sundance Institute",territory:"Global",continent:"Global",amount:"Market platform — not a direct grant",amount_usd_approx:null,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Documentary","Drama","Thriller","Crime","Biopic","Family","Romance","Period","Sci-Fi","Mystery","Comedy","Horror","War","Action","Adventure","Musical","Sports","Fantasy","Animation","Western"],eligible_formats:["feature","documentary"],budget_min_usd:500000,budget_max_usd:5000000,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Independent filmmakers and producers worldwide seeking impact investment and philanthropic financing. Catalyst Forum connects projects with impact investors — not a direct grant. Annual call linked to Sundance Festival. Projects at production or post stage with clear social impact mandate.",verified_at:"2026-07-04",source_url:"https://www.sundance.org/programs/catalyst"},
+
+{fund_name:"IFFR — Hubert Bals Fund — Production",source_name:"International Film Festival Rotterdam (IFFR)",territory:"Global",continent:"Global",amount:"Up to €30,000 (production support)",amount_usd_approx:33000,currency:"EUR",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",stage:"production",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Documentary","Biopic","Crime","Mystery","Romance","Family","Period","Action","Sci-Fi","Horror","Fantasy","War","Comedy","Musical","Animation","Adventure","Sports"],eligible_formats:["feature","documentary"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Filmmakers from Africa, Asia, Latin America, Middle East, and Eastern Europe. No nationality restriction within priority regions. Production funding for feature film and documentary. Annual call — 2026 dates approximate. Separate from Hubert Bals script/development funding.",verified_at:"2026-07-04",source_url:"https://iffr.com/en/filmmakers/hubert-bals-fund/production"},
+
+{fund_name:"Tribeca — IF/Then Shorts — Social Impact Documentary",source_name:"Tribeca Film Institute",territory:"Global",continent:"Global",amount:"Up to $50,000",amount_usd_approx:50000,currency:"USD",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:false,genre_tags:["Documentary"],eligible_formats:["short","documentary"],budget_min_usd:null,budget_max_usd:60000,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Documentary filmmakers worldwide focused on social change and impact. Short documentary specifically — not feature production. No nationality restriction. Annual call — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.tfiny.org/"},
+
+{fund_name:"CNRS Images — Scientific and Environmental Documentary",source_name:"CNRS Images (Centre National de la Recherche Scientifique)",territory:"Global",continent:"Global",amount:"Up to €40,000",amount_usd_approx:44000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:false,genre_tags:["Documentary","Sci-Fi","Family","Adventure"],eligible_formats:["documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:false,co_production_required:true,eligibility:"International documentary filmmakers covering scientific, environmental, or research subjects. French co-production or French research institution partnership required. CNRS Images is the audiovisual arm of France's national research body. Rolling applications.",verified_at:"2026-07-04",source_url:"https://images.cnrs.fr/"},
+
+// ═══════════════════════════════════════════════════════════════
+// ICELAND — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Icelandic Film Centre — Short Film and New Talent",source_name:"Icelandic Film Centre (Kvikmyndamiðstöð Íslands)",territory:"Iceland",continent:"Europe",amount:"Up to ISK 10,000,000 (~€67,000)",amount_usd_approx:73000,currency:"ISK",open_date:"2026-09-01",deadline:"2026-10-31",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary"],eligible_formats:["short","animation","documentary"],budget_min_usd:null,budget_max_usd:75000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Icelandic filmmakers. Short fiction, animation, and documentary. Specifically for new and emerging Icelandic talent. Annual autumn call.",verified_at:"2026-07-04",source_url:"https://www.icelandicfilmcentre.is/funding/"},
+
+// ═══════════════════════════════════════════════════════════════
+// MALTA — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Arts Council Malta — Creative Fund",source_name:"Arts Council Malta",territory:"Malta",continent:"Europe",amount:"Up to €30,000",amount_usd_approx:33000,currency:"EUR",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"multi",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","Musical","Action","Adventure","War"],eligible_formats:["feature","short","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Malta-based artists and creative practitioners. Film, video, and media arts. Development and short production. Rolling applications via Arts Council Malta. Separate from the Malta Film Commission's production grant and 40% incentive.",verified_at:"2026-07-04",source_url:"https://artscouncilmalta.org/funding/"},
+
+// ═══════════════════════════════════════════════════════════════
+// SINGAPORE — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"NAC — National Arts Council Singapore — Creation Grant",source_name:"National Arts Council (NAC) Singapore",territory:"Singapore",continent:"Asia-Pacific",amount:"Up to SGD $50,000",amount_usd_approx:37000,currency:"SGD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"multi",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","Musical","Action","Adventure","War","Sports"],eligible_formats:["feature","short","documentary","animation","tv_series"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Singapore citizens or permanent residents, or Singapore-registered organisations. Film and media arts creation. Rolling applications. Separate from IMDA's Singapore Media Fund — NAC focuses on artistic merit rather than commercial viability.",verified_at:"2026-07-04",source_url:"https://www.nac.gov.sg/our-support/support-for-arts-groups-individuals/grants"},
+
+// ═══════════════════════════════════════════════════════════════
+// INDIA — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"Film and Television Institute of India — Short Film",source_name:"Film and Television Institute of India (FTII)",territory:"India",continent:"Asia-Pacific",amount:"Up to INR 2,000,000 (~USD 24,000)",amount_usd_approx:24000,currency:"INR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"short",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Animation","Family","Documentary","Biopic","Period","Musical","Action","War","Sports"],eligible_formats:["short","documentary","animation"],budget_min_usd:null,budget_max_usd:25000,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Indian filmmakers and FTII alumni. Short fiction and documentary. Annual call — 2027 dates TBC. FTII is India's premier film school and public film body. Short film grants support emerging Indian independent cinema.",verified_at:"2026-07-04",source_url:"https://www.ftii.ac.in/"},
+
+// ═══════════════════════════════════════════════════════════════
+// MEXICO — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"IMCINE — FIDECINE (Commercial Cinema Fund)",source_name:"Instituto Mexicano de Cinematografía (IMCINE)",territory:"Mexico",continent:"Americas",amount:"Up to MXN 15,000,000 (~USD 870,000)",amount_usd_approx:870000,currency:"MXN",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"production",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Family","Animation","Biopic","Period","War","Musical","Sports","Western"],eligible_formats:["feature","animation"],budget_min_usd:500000,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Mexican production companies. Commercial cinema strand — higher budget than FOPROCINE. Projects must demonstrate Mexican cultural content and commercial audience potential. Annual call via IMCINE — 2027 dates TBC. Recoupable from box office above threshold.",verified_at:"2026-07-04",source_url:"https://www.imcine.gob.mx/convocatorias"},
+
+// ═══════════════════════════════════════════════════════════════
+// BRAZIL — additional
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"ANCINE — FSA Desenvolvimento (Development)",source_name:"Agência Nacional do Cinema (ANCINE)",territory:"Brazil",continent:"Americas",amount:"Up to BRL 500,000 (~USD 100,000)",amount_usd_approx:100000,currency:"BRL",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:false,genre_tags:["Drama","Thriller","Comedy","Horror","Documentary","Biopic","Period","Crime","Fantasy","Mystery","Romance","Animation","Family","Sci-Fi","War","Action","Adventure","Musical","Sports"],eligible_formats:["feature","documentary","animation"],budget_min_usd:null,budget_max_usd:null,grant_type:"public_fund",nationality_required:true,co_production_required:false,eligibility:"Brazilian production companies. Feature film and documentary development. Annual call via FSA — 2027 dates TBC. Separate from ANCINE's production fund. Brazilian cultural content required.",verified_at:"2026-07-04",source_url:"https://ancine.gov.br/pt-br/fsa"},
+
+// ═══════════════════════════════════════════════════════════════
+// GLOBAL — post-production specific
+// ═══════════════════════════════════════════════════════════════
+{fund_name:"EWA Network — Women in Film and Television",source_name:"European Women's Audiovisual Network (EWA)",territory:"Global",continent:"Global",amount:"Up to €10,000 (training/development)",amount_usd_approx:11000,currency:"EUR",open_date:"tbc_2027",deadline:"tbc_2027",recurrence:"annual",stage:"development",emerging_filmmaker:true,genre_tags:["Drama","Thriller","Comedy","Horror","Sci-Fi","Fantasy","Crime","Mystery","Romance","Action","Adventure","Documentary","Family","Biopic","Period","War","Musical","Animation","Sports","Western"],eligible_formats:["feature","tv_series","documentary","animation","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Women filmmakers and screen practitioners in Europe and beyond. No strict nationality restriction — European connection preferred. Development, mentoring, and co-production matchmaking. Annual call — 2027 dates TBC.",verified_at:"2026-07-04",source_url:"https://www.ewawomen.com/"},
+
+{fund_name:"Cine Foundation International — Production Grant",source_name:"Cine Foundation International",territory:"Global",continent:"Global",amount:"Up to $25,000",amount_usd_approx:25000,currency:"USD",open_date:"rolling",deadline:"rolling",recurrence:"rolling",stage:"production",emerging_filmmaker:true,genre_tags:["Documentary","Drama","Thriller","Crime","Biopic","Family","Romance","Period","Sci-Fi","Mystery","Comedy","Horror","War","Action","Adventure","Musical","Sports","Fantasy","Animation","Western"],eligible_formats:["feature","documentary","short"],budget_min_usd:null,budget_max_usd:null,grant_type:"foundation",nationality_required:false,co_production_required:false,eligibility:"Independent filmmakers worldwide. No nationality restriction. Short film, documentary, and emerging feature work. Rolling applications. Focus on underrepresented voices and stories with cultural impact.",verified_at:"2026-07-04",source_url:"https://www.cinefoundation.com/"},
+];
+
+const TODAY=new Date('2026-07-04');
+const NINETY=90*86400000;
+
+function statusOf(r){
+  if(r.deadline==='rolling'||r.open_date==='rolling') return 'rolling';
+  if(!r.deadline||r.deadline==='tbc_2027'||r.deadline==='tbc_2026') return 'tbc';
+  const d=new Date(r.deadline);
+  if(d<TODAY) return 'closed';
+  if(d-TODAY<NINETY) return 'closing';
+  return 'open';
+}
+
+function badgeSt(s){
+  const m={open:'b-open',closing:'b-closing',closed:'b-closed',rolling:'b-rolling',tbc:'b-tbc'};
+  const l={open:'Open',closing:'Closing Soon',closed:'Closed',rolling:'Rolling',tbc:'TBC'};
+  return `<span class="badge ${m[s]||'b-tbc'}">${l[s]||'TBC'}</span>`;
+}
+
+function fmtD(v){
+  if(!v||v==='tbc_2027'||v==='tbc_2026') return `<span class="tbc-lbl">TBC</span>`;
+  if(v==='rolling') return `<span class="open-lbl">Rolling</span>`;
+  try{
+    const d=new Date(v);
+    const cls=d<TODAY?'closed-lbl':'close-lbl';
+    return `<span class="${cls}">${d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</span>`;
+  }catch{return v}
+}
+
+function fmtBudget(mn,mx){
+  if(!mn&&!mx) return '<span style="color:#333;font-size:10px">—</span>';
+  const f=n=>n>=1000000?`$${(n/1e6).toFixed(1)}M`:`$${(n/1000).toFixed(0)}K`;
+  if(mn&&mx) return `<span style="font-size:10px;color:#aaa">${f(mn)}–${f(mx)}</span>`;
+  if(mn) return `<span style="font-size:10px;color:#aaa">Min ${f(mn)}</span>`;
+  if(mx) return `<span style="font-size:10px;color:#aaa">Max ${f(mx)}</span>`;
+}
+
+function stageLabel(s){
+  const m={development:'DEV',production:'PROD',post:'POST',short:'SHORT',series:'SERIES',multi:'MULTI'};
+  return m[s]||s;
+}
+
+function matchF(r){
+  const fc=document.getElementById('fContinent').value;
+  const ft=document.getElementById('fTerritory').value;
+  const fg=document.getElementById('fGenre').value;
+  const ff=document.getElementById('fFormat').value;
+  const fst=document.getElementById('fStage').value;
+  const fs=document.getElementById('fStatus').value;
+  const fn=document.getElementById('fNat').value;
+  const fe=document.getElementById('fEmerging').value;
+  const ftp=document.getElementById('fType').value;
+  const fq=document.getElementById('fSearch').value.toLowerCase();
+  const st=statusOf(r);
+  if(fc&&r.continent!==fc) return false;
+  if(ft&&r.territory!==ft) return false;
+  if(fg&&!r.genre_tags.includes(fg)) return false;
+  if(ff&&!r.eligible_formats.includes(ff)) return false;
+  if(fst&&r.stage!==fst) return false;
+  if(fs==='open'&&st!=='open') return false;
+  if(fs==='rolling'&&st!=='rolling') return false;
+  if(fs==='closing'&&st!=='closing') return false;
+  if(fs==='tbc'&&st!=='tbc') return false;
+  if(fn==='open'&&r.nationality_required) return false;
+  if(fn==='restricted'&&!r.nationality_required) return false;
+  if(fe==='yes'&&!r.emerging_filmmaker) return false;
+  if(ftp&&r.grant_type!==ftp) return false;
+  if(fq&&!(r.fund_name.toLowerCase().includes(fq)||r.territory.toLowerCase().includes(fq)||r.source_name.toLowerCase().includes(fq)||(r.eligibility||'').toLowerCase().includes(fq))) return false;
+  return true;
+}
+
+function render(){
+  const filtered=G.filter(matchF);
+  const order=['Europe','Americas','Africa','Asia-Pacific','Global'];
+  const groups={};
+  order.forEach(c=>{groups[c]=[]});
+  filtered.forEach(r=>{(groups[r.continent]||(groups[r.continent]=[])).push(r);});
+  let html='';
+  order.forEach(cont=>{
+    const rows=groups[cont];
+    if(!rows||!rows.length) return;
+    html+=`<tr class="continent-hdr"><td colspan="16">▸ ${cont} — ${rows.length} grant${rows.length!==1?'s':''}</td></tr>`;
+    rows.forEach(r=>{
+      const st=statusOf(r);
+      const typeLabel={public_fund:'Public',broadcaster:'Broadcaster',foundation:'Foundation',co_production:'Co-Pro'}[r.grant_type]||r.grant_type;
+      html+=`<tr>
+        <td class="td-name">
+          <div class="fund-name">${r.fund_name}</div>
+          <div class="org">${r.source_name}</div>
+          <div class="badge-row">
+            ${badgeSt(st)}
+            ${r.emerging_filmmaker?'<span class="badge b-emerging">Emerging</span>':''}
+          </div>
+        </td>
+        <td class="td-terr">${r.territory}</td>
+        <td class="td-amt">
+          ${r.amount}
+          ${r.amount_usd_approx?`<div class="local">≈ $${r.amount_usd_approx.toLocaleString()}</div>`:''}
+        </td>
+        <td><span class="stag">${stageLabel(r.stage||'multi')}</span></td>
+        <td class="td-dates">${fmtD(r.open_date)}</td>
+        <td class="td-dates">${fmtD(r.deadline)}</td>
+        <td style="font-size:10px;color:#777">${r.recurrence}</td>
+        <td>
+          <div class="tag-wrap">${r.genre_tags.slice(0,4).map(g=>`<span class="gtag">${g}</span>`).join('')}${r.genre_tags.length>4?`<span class="gtag">+${r.genre_tags.length-4}</span>`:''}</div>
+        </td>
+        <td>
+          <div class="tag-wrap">${(r.eligible_formats||[]).map(f=>`<span class="ftag">${f}</span>`).join('')}</div>
+        </td>
+        <td>${fmtBudget(r.budget_min_usd,r.budget_max_usd)}</td>
+        <td><span style="font-size:10px;color:#aaa">${typeLabel}</span></td>
+        <td class="td-nat">${r.nationality_required?'🔒':'🌍'}</td>
+        <td style="text-align:center;font-size:16px">${r.co_production_required?'🤝':'—'}</td>
+        <td class="td-elig">${r.eligibility}</td>
+        <td>${r.verified_at?`<span class="badge b-verified">${r.verified_at}</span>`:'<span class="badge b-unverified">UNVERIFIED</span>'}</td>
+        <td><a class="src-link" href="${r.source_url}" target="_blank" rel="noopener">Official Source ↗</a></td>
+      </tr>`;
+    });
+  });
+  document.getElementById('tBody').innerHTML=html;
+  document.getElementById('resCount').textContent=`Showing ${filtered.length} of ${G.length} grants`;
+  updateStats();
+}
+
+function updateStats(){
+  document.getElementById('st-total').textContent=G.length;
+  document.getElementById('st-open').textContent=G.filter(r=>statusOf(r)==='open').length;
+  document.getElementById('st-rolling').textContent=G.filter(r=>statusOf(r)==='rolling').length;
+  document.getElementById('st-closing').textContent=G.filter(r=>statusOf(r)==='closing').length;
+  document.getElementById('st-tbc').textContent=G.filter(r=>statusOf(r)==='tbc').length;
+  document.getElementById('st-emerging').textContent=G.filter(r=>r.emerging_filmmaker).length;
+  document.getElementById('st-nat').textContent=G.filter(r=>r.nationality_required).length;
+  document.getElementById('st-europe').textContent=G.filter(r=>r.continent==='Europe').length;
+  document.getElementById('st-americas').textContent=G.filter(r=>r.continent==='Americas').length;
+  document.getElementById('st-africa').textContent=G.filter(r=>r.continent==='Africa').length;
+  document.getElementById('st-asia').textContent=G.filter(r=>r.continent==='Asia-Pacific').length;
+  document.getElementById('st-global').textContent=G.filter(r=>r.continent==='Global').length;
+}
+
+function populateDDs(){
+  const terrs=[...new Set(G.map(r=>r.territory))].sort();
+  const sel=document.getElementById('fTerritory');
+  terrs.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);});
+  const genres=[...new Set(G.flatMap(r=>r.genre_tags))].sort();
+  const gsel=document.getElementById('fGenre');
+  genres.forEach(g=>{const o=document.createElement('option');o.value=g;o.textContent=g;gsel.appendChild(o);});
+}
+
+function resetFilters(){
+  ['fContinent','fTerritory','fGenre','fFormat','fStage','fStatus','fNat','fEmerging','fType'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fSearch').value='';
+  render();
+}
+
+const PENDING = [];
+function toggleAdmin(){
+  const p = document.getElementById('adminPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+function addGrant(){
+  const v = id => document.getElementById(id).value.trim();
+  const name = v('a_name');
+  const required = {name: name, territory: v('a_territory'), continent: v('a_continent'), type: v('a_type'), amount: v('a_amount'), deadline: v('a_deadline'), elig: v('a_elig'), srcname: v('a_srcname'), srcurl: v('a_srcurl')};
+  for (const k in required) { if (!required[k]) { alert('Missing required field: ' + k); return; } }
+  const exists = G.concat(PENDING).some(r => r && r.fund_name.toLowerCase() === name.toLowerCase());
+  if (exists) { alert('Duplicate: a grant with this fund name already exists in the dataset or pending list.'); return; }
+  PENDING.push({
+    fund_name: name, territory: required.territory, continent: required.continent,
+    grant_type: required.type, amount: required.amount, currency: null, amount_usd_approx: null,
+    budget_min_usd: null, budget_max_usd: null, deadline: required.deadline, open_date: null,
+    recurrence: null, genre_tags: v('a_genres') ? v('a_genres').split(',').map(function(s){return s.trim()}).filter(Boolean) : ['all'],
+    eligible_formats: v('a_formats') ? v('a_formats').split(',').map(function(s){return s.trim()}).filter(Boolean) : ['all'],
+    eligibility: required.elig, nationality_required: document.getElementById('a_nat').checked,
+    co_production_required: document.getElementById('a_coprod').checked,
+    source_name: required.srcname, source_url: required.srcurl,
+    verified_at: null, added_by_admin: true
+  });
+  ['a_name','a_territory','a_type','a_amount','a_deadline','a_genres','a_formats','a_srcname','a_srcurl','a_elig'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('a_continent').value=''; document.getElementById('a_nat').checked=false; document.getElementById('a_coprod').checked=false;
+  renderPending();
+}
+function removePending(i){ PENDING.splice(i,1); renderPending(); }
+function renderPending(){
+  const el = document.getElementById('pendingList');
+  if (!PENDING.length) { el.innerHTML=''; return; }
+  el.innerHTML = '<div style="font-size:11px;font-weight:700;color:#D4AF37;margin-bottom:6px">PENDING REVIEW (' + PENDING.length + ')</div>' +
+    PENDING.map(function(r,i){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;background:#111;border:1px solid #333;border-radius:4px;padding:7px 10px;margin-bottom:5px;font-size:11.5px"><span><b>' + r.fund_name + '</b> \u00b7 ' + r.territory + ' \u00b7 ' + r.deadline + ' <span class="badge b-unverified" style="margin-left:6px">UNVERIFIED</span></span><button onclick="removePending(' + i + ')" style="background:transparent;border:1px solid #444;color:#888;border-radius:3px;cursor:pointer;font-size:10px;padding:2px 8px">remove</button></div>';
+    }).join('');
+}
+function downloadJSON(){
+  const data = G.filter(Boolean).concat(PENDING);
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'grants_database.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+populateDDs();
+render();
+</script>
+</body>
+</html>

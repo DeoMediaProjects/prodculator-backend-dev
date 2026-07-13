@@ -39,6 +39,31 @@ class CrewCostInfo(BaseModel):
     sample_roles: dict[str, str] = {}
 
 
+class TerritoryProfileInfo(BaseModel):
+    """Maintained crew-depth / infrastructure / bankability profile.
+
+    Tier/score of None means "not yet assessed". cert/payment weeks describe
+    incentive certification and payout timing; real_world_confirms is None
+    when unconfirmed (distinct from False).
+    """
+
+    crew_depth_tier: str | None = None
+    crew_depth_score: int | None = None
+    crew_depth_notes: str | None = None
+    infrastructure_tier: str | None = None
+    infrastructure_score: int | None = None
+    infrastructure_notes: str | None = None
+    cert_weeks_min: int | None = None
+    cert_weeks_max: int | None = None
+    payment_weeks_min: int | None = None
+    payment_weeks_max: int | None = None
+    bankability_source_quality: str | None = None
+    bankability_source_note: str | None = None
+    bankability_real_world_confirms: bool | None = None
+    bankability_suspended: bool | None = None
+    bankability_source_url: str | None = None
+
+
 class TerritoryCompareItem(BaseModel):
     label: str
     iso: str
@@ -46,6 +71,7 @@ class TerritoryCompareItem(BaseModel):
     parent: str | None = None
     incentive: IncentiveInfo | None = None
     crew_costs: CrewCostInfo | None = None
+    profile: TerritoryProfileInfo | None = None
     labor_requirement: str | None = None
     highlights: list[str] = []
     restrictions: list[str] = []

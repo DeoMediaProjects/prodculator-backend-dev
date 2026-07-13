@@ -60,7 +60,17 @@ class CreateReportRequest(BaseModel):
     crew_size: int | None = None
     principal_cast: int | None = None
     supporting_cast: int | None = None
-    target_audience: str | None = None
+    # Declared audience (handoff §4): target_audience = checked age quadrants
+    # (kids_family / under_25 / adults_25_plus); audience_segments = declared
+    # segments such as lgbtq_audience; audience_skew = stored for B2B, never
+    # scored. All declared-only — never inferred from genre.
+    target_audience: str | list[str] | None = None
+    audience_segments: list[str] | None = None
+    audience_skew: Literal["female_leaning", "male_leaning", "balanced"] | None = None
+    # Representation — strict opt-in; drives representation-focused festival /
+    # distributor matching only when the user filled these in.
+    representation_gender: str | None = None
+    representation_minority: list[str] | None = None
     language: str | None = None
 
     # Producer eligibility (for nationality / co-production checks)
@@ -187,33 +197,6 @@ class IncentiveEstimate(BaseModel):
     bankabilityLabel: Literal["BANKABLE", "VERIFY FIRST", "NOT BANKABLE"] | None = None
 
 
-class CrewInsight(BaseModel):
-    territory: str
-    availability: Literal["High", "Medium", "Low"]
-    costVsUSD: str
-    qualityRating: int  # 1-5
-    specialties: list[str]  # up to 5 roles
-    tradeoff: str
-    # Enriched FX fields (populated by ReportValidator)
-    currency: str | None = None    # source currency of underlying data
-    fxRate: float | None = None    # rate used for GBP conversion
-    fxDate: str | None = None      # date of FX rate used
-    dataSource: str | None = None  # source attribution for crew rates
-
-
-class CastInsight(BaseModel):
-    territory: str
-    roleCategory: str  # CAST-Lead, CAST-Supporting, CAST-DayPlayer, etc.
-    estimatedRange: str  # e.g. "$700-$1,800/day"
-    rateCurrency: str | None = None
-    ratePeriod: str | None = None  # day, week, session
-    fringeNote: str | None = None
-    sourceNote: str | None = None
-    # Enriched FX fields (populated by ReportValidator)
-    fxRate: float | None = None
-    fxDate: str | None = None
-
-
 class Attribution(BaseModel):
     territory: str
     text: str
@@ -306,6 +289,61 @@ class ExecutiveSummary(BaseModel):
     keyFlags: list[str] | None = None  # max 3 top-level flags
 
 
+class NamedLocationShare(BaseModel):
+    name: str
+    scenes: int
+    pct: int | None = None
+
+
+class ScriptIntelligence(BaseModel):
+    """Deterministic parsed-script stats (counted, not narrated)."""
+
+    sceneCount: int | None = None
+    interiorPct: int | None = None
+    exteriorPct: int | None = None
+    dayScenes: int | None = None
+    nightScenes: int | None = None
+    otherScenes: int | None = None
+    estShootingDays: int | None = None
+    principalCast: str | None = None
+    supportingCast: str | None = None
+    crowdScenes: int | None = None
+    musicPerformanceScenes: int | None = None
+    languages: list[str] | None = None
+    namedLocations: list[NamedLocationShare] | None = None
+    productionChallenges: list[str] | None = None
+
+
+class FestivalRecommendation(BaseModel):
+    """Festival matched on declared production attributes only — never inferred."""
+
+    name: str
+    location: str | None = None
+    tier: str | None = None
+    oscarQualifying: bool = False
+    deadlinePattern: str | None = None
+    eligibleFormats: list[str] | None = None
+    matchedOn: list[str] = []
+    whyMatched: str | None = None
+    sourceUrl: str | None = None
+
+
+class DistributorRecommendation(BaseModel):
+    """Distributor ranked partly on scouting the recommended festivals."""
+
+    name: str
+    primaryMarket: str | None = None
+    territoryReach: list[str] | None = None
+    rightsType: str | None = None
+    budgetTierFit: str | None = None
+    submissionProcess: str | None = None
+    scoutsRecommendedFestivals: list[str] = []
+    matchedOn: list[str] = []
+    whyMatched: str | None = None
+    verified: bool = False
+    sourceUrl: str | None = None
+
+
 class FinancialScenario(BaseModel):
     territory: str
     # v3 6-step working fields
@@ -327,14 +365,23 @@ class FinancialScenario(BaseModel):
     rebateRate: str | None = None
 
 
-class CrewCostRow(BaseModel):
-    role: str
-    territories: dict[str, str]  # territory_name -> salary range string
+class PaymentTimingEntry(BaseModel):
+    """Certification/payment receipt windows from territory_profiles bankability data."""
+
+    territory: str
+    certWeeksMin: float | None = None
+    certWeeksMax: float | None = None
+    paymentWeeksMin: float | None = None
+    paymentWeeksMax: float | None = None
+    totalWeeksMin: float | None = None
+    totalWeeksMax: float | None = None
+    sourceQuality: str | None = None
+    suspended: bool = False
 
 
 class FinancialAnalysis(BaseModel):
     budgetScenarios: list[FinancialScenario]
-    crewCostComparison: list[CrewCostRow]
+    paymentTiming: list[PaymentTimingEntry] | None = None
 
 
 class TerritoryDeepDive(BaseModel):
@@ -358,8 +405,6 @@ class ScriptAnalysis(BaseModel):
     complexity: Literal["Low", "Medium", "High", "Very High"]
     locationRankings: list[LocationRanking]
     incentiveEstimates: list[IncentiveEstimate]
-    crewInsights: list[CrewInsight]
-    castInsights: list[CastInsight] | None = None
     comparables: list[ComparableProductionEntry]
     weatherLogistics: list[WeatherLogistic]
     fundingOpportunities: list[FundingOpportunity]
@@ -369,9 +414,13 @@ class ScriptAnalysis(BaseModel):
     alternativeStrategy: str | None = None
     scoringMethodology: ScoringMethodology | None = None
     attributions: list[Attribution] | None = None
-    crewCostDisclaimer: str | None = None
     # v3 additions
     sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated
+    # PRO report redesign additions (all computed, None-safe)
+    scriptStats: ScriptIntelligence | None = None  # parsed stats (scriptIntelligence is the AI-narrative key)
+    festivalRecommendations: list[FestivalRecommendation] | None = None
+    distributorRecommendations: list[DistributorRecommendation] | None = None
+    scriptOriginCallout: dict | None = None
 
 
 class ProductionIntelligence(BaseModel):

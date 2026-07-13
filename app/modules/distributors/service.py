@@ -4,40 +4,30 @@ from uuid import uuid4
 
 from app.core.database_client import DatabaseClient
 
-_TABLE = "crew_costs"
+_TABLE = "distributors"
 _SYNC_SETTINGS_TABLE = "sync_settings"
 _PENDING_CHANGES_TABLE = "pending_changes"
-_RESOURCE_TYPE = "crew_costs"
+_RESOURCE_TYPE = "distributors"
 
-# ── Crew cost field maps (camelCase ↔ snake_case) ────────────────────────────
+# ── Distributor field maps (camelCase ↔ snake_case) ───────────────────────────
 
 _CAMEL_TO_SNAKE: dict[str, str] = {
-    # Legacy fields (kept during transition)
-    "dayRate": "day_rate",
-    "weekRate": "week_rate",
-    "lastUpdated": "last_updated",
+    "sourceUrl": "source_url",
+    "specialtyGenres": "specialty_genres",
+    "specialtyRepresentation": "specialty_representation",
+    "territoryReach": "territory_reach",
+    "scoutsFestivals": "scouts_festivals",
+    "rightsType": "rights_type",
+    "budgetTierFit": "budget_tier_fit",
+    "submissionProcess": "submission_process",
+    "verifiedAt": "verified_at",
+    "activeStatus": "active_status",
+    "primaryMarket": "primary_market",
     "createdAt": "created_at",
     "updatedAt": "updated_at",
-    "sourceUrl": "source_url",
-    "budgetBand": "budget_band",
-    "rateNotes": "rate_notes",
-    "lastVerifiedAt": "last_verified_at",
-    # New government-stats schema fields
-    "roleCategory": "role_category",
-    "unionRateCents": "union_rate_cents",
-    "nonUnionRateCents": "non_union_rate_cents",
-    "rateCurrency": "rate_currency",
-    "workingDayHours": "working_day_hours",
-    "fringeRatePct": "fringe_rate_pct",
-    "fringeDescription": "fringe_description",
-    "sourceName": "source_name",
-    "sourceType": "source_type",
-    "confidenceScore": "confidence_score",
-    "effectiveFrom": "effective_from",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 
-# Pending changes field maps
 _PC_CAMEL_TO_SNAKE: dict[str, str] = {
     "currentValue": "current_value",
     "detectedValue": "detected_value",
@@ -50,7 +40,6 @@ _PC_CAMEL_TO_SNAKE: dict[str, str] = {
 }
 _PC_SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _PC_CAMEL_TO_SNAKE.items()}
 
-# Sync settings field maps
 _SS_CAMEL_TO_SNAKE: dict[str, str] = {
     "lastSyncAt": "last_sync_at",
     "nextScheduledCheck": "next_scheduled",
@@ -61,7 +50,7 @@ _SS_CAMEL_TO_SNAKE: dict[str, str] = {
 _SS_SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _SS_CAMEL_TO_SNAKE.items()}
 
 
-def _crew_to_db(payload: dict[str, Any]) -> dict[str, Any]:
+def _distributor_to_db(payload: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for k, v in payload.items():
         result[_CAMEL_TO_SNAKE.get(k, k)] = v
@@ -70,8 +59,13 @@ def _crew_to_db(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _crew_from_db(row: dict[str, Any]) -> dict[str, Any]:
-    return {_SNAKE_TO_CAMEL.get(k, k): v for k, v in row.items()}
+def _distributor_from_db(row: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for k, v in row.items():
+        if isinstance(v, datetime):
+            v = v.isoformat()
+        result[_SNAKE_TO_CAMEL.get(k, k)] = v
+    return result
 
 
 def _pending_change_from_db(row: dict[str, Any]) -> dict[str, Any]:
@@ -92,11 +86,17 @@ def _sync_settings_from_db(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-class CrewCostsService:
+class DistributorsService:
     def __init__(self, supabase: DatabaseClient):
         self.supabase = supabase
 
-    # ── Admin CRUD ───────────────────────────────────────────────────────────
+    # ── Public endpoint ────────────────────────────────────────────────────────
+
+    def get_distributors(self) -> list[dict]:
+        result = self.supabase.table(_TABLE).select("*").order("name", desc=False).execute()
+        return [_distributor_from_db(row) for row in (result.data or [])]
+
+    # ── Admin methods ──────────────────────────────────────────────────────────
 
     def list_for_admin(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         self._materialize_approved_changes_without_resource()
@@ -110,19 +110,19 @@ class CrewCostsService:
             .data
             or []
         )
-        return [_crew_from_db(r) for r in rows], count
+        return [_distributor_from_db(r) for r in rows], count
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
-        db_payload = _crew_to_db(payload)
+        db_payload = _distributor_to_db(payload)
         db_payload.setdefault("id", str(uuid4()))
         db_payload["created_at"] = now
         db_payload["updated_at"] = now
         result = self.supabase.table(_TABLE).insert(db_payload).select("*").single().execute()
-        return _crew_from_db(result.data)
+        return _distributor_from_db(result.data)
 
     def update(self, row_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        db_payload = _crew_to_db(payload)
+        db_payload = _distributor_to_db(payload)
         db_payload["updated_at"] = datetime.now(timezone.utc).isoformat()
         result = (
             self.supabase.table(_TABLE)
@@ -132,7 +132,7 @@ class CrewCostsService:
             .single()
             .execute()
         )
-        return _crew_from_db(result.data)
+        return _distributor_from_db(result.data)
 
     def delete(self, row_id: str) -> None:
         self.supabase.table(_TABLE).delete().eq("id", row_id).execute()
@@ -140,12 +140,8 @@ class CrewCostsService:
     # ── Sync status ──────────────────────────────────────────────────────────
 
     def get_sync_status(self) -> dict[str, Any]:
-        all_rows = self.supabase.table(_TABLE).select("country,territory").execute().data or []
-        territories = len({
-            r.get("country") or r.get("territory")
-            for r in all_rows
-            if r.get("country") or r.get("territory")
-        })
+        all_rows = self.supabase.table(_TABLE).select("primary_market").execute().data or []
+        territories = len({r.get("primary_market") for r in all_rows if r.get("primary_market")})
 
         pending_count = (
             self.supabase.table(_PENDING_CHANGES_TABLE)
@@ -191,7 +187,6 @@ class CrewCostsService:
 
     def approve_change(self, change_id: str, admin_id: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
-
         change = (
             self.supabase.table(_PENDING_CHANGES_TABLE)
             .select("*")
@@ -244,7 +239,7 @@ class CrewCostsService:
         )
         return _pending_change_from_db(result.data)
 
-    # ── Sync trigger ─────────────────────────────────────────────────────────
+    # ── Sync trigger ──────────────────────────────────────────────────────────
 
     def trigger_sync(self) -> dict[str, Any]:
         from app.core.config import get_settings
@@ -286,28 +281,26 @@ class CrewCostsService:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _get_or_create_resource_id_for_change(self, change: dict[str, Any], now: str) -> str:
-        country = change.get("country") or change.get("territory")
-        source = change.get("source") or change.get("source_name")
+        source_url = change.get("source")
 
-        query = self.supabase.table(_TABLE).select("id").order("created_at", desc=True).limit(1)
-        if country:
-            # Try country first (new schema), fallback to territory (legacy)
-            if len(country) == 2:
-                query = query.eq("country", country)
-            else:
-                query = query.eq("territory", country)
-        if source:
-            query = query.eq("source_name", source)
-        existing = query.execute().data or []
-        if existing:
-            return existing[0]["id"]
+        if source_url:
+            existing = (
+                self.supabase.table(_TABLE)
+                .select("id")
+                .eq("source_url", source_url)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if existing:
+                return existing[0]["id"]
 
         row_id = str(uuid4())
         create_payload: dict[str, Any] = {
             "id": row_id,
-            "country": country if country and len(country) == 2 else None,
-            "territory": country if country and len(country) != 2 else None,
-            "source_name": source,
+            "source_url": source_url,
             "created_at": now,
             "updated_at": now,
         }

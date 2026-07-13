@@ -53,6 +53,29 @@ class IncentiveProgram(BaseModel):
     coProductionTreaties: str | None = None      # JSON array of treaty partner codes
     spvEligible: bool | None = None
 
+    # v4 source-of-truth fields (display strings + verification layer).
+    # Display fields keep the full source string ("up to 35%", tiered, "None")
+    # while rateGross/rateNet above hold the numeric engine floor.
+    rateGrossDisplay: str | None = None
+    rateNetDisplay: str | None = None
+    rebateCapDisplay: str | None = None
+    perPersonCapDisplay: str | None = None
+    paymentTimeline: str | None = None
+    notes: str | None = None
+    authority: str | None = None                 # 'government' | 'government_agency'
+    aiRule: str | None = None
+    confidence: int | None = None                # 0–100 source confidence
+    budgetEligibilityCeiling: str | None = None
+    annualProgrammeCap: str | None = None
+    mechanismPattern: str | None = None
+    qsBasis: str | None = None
+    verificationStatus: str | None = None        # e.g. 'verified-2026-07'
+    calcFormula: str | None = None
+    regionalFundsNote: str | None = None
+    capType: str | None = None                   # 'output' | 'qualifying_spend'
+    bankPts: int | None = None
+    region: str | None = None
+
     @field_validator("territory", mode="before")
     @classmethod
     def normalise_territory(cls, v: str | None) -> str | None:

@@ -10,6 +10,27 @@ from app.core.database_client import DatabaseClient
 logger = logging.getLogger(__name__)
 
 
+def _money_compact(value: float | int | None) -> str:
+    """1_234_567 → '1.23M'; 850_000 → '850K'; small values keep separators."""
+    if value is None:
+        return ""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    negative = amount < 0
+    amount = abs(amount)
+    if amount >= 1_000_000_000:
+        text = f"{amount / 1_000_000_000:.2f}B"
+    elif amount >= 1_000_000:
+        text = f"{amount / 1_000_000:.2f}M"
+    elif amount >= 10_000:
+        text = f"{amount / 1_000:.0f}K"
+    else:
+        text = f"{amount:,.0f}"
+    return f"-{text}" if negative else text
+
+
 class PDFService:
     def __init__(self):
         templates_dir = Path(__file__).resolve().parents[2] / "templates" / "pdf"
@@ -17,6 +38,19 @@ class PDFService:
             loader=FileSystemLoader(str(templates_dir)),
             autoescape=select_autoescape(["html", "xml"]),
         )
+        self.env.filters["money_compact"] = _money_compact
+        # Original Prodculator logo (JPEG data despite historic .png naming —
+        # see DATA_REPAIR_NOTE: declare image/jpeg where MIME is explicit)
+        logo_path = templates_dir / "assets" / "prodculator_logo.jpg"
+        try:
+            import base64
+
+            self._logo_data_uri = (
+                "data:image/jpeg;base64,"
+                + base64.b64encode(logo_path.read_bytes()).decode("ascii")
+            )
+        except OSError:
+            self._logo_data_uri = None
 
     def render_report_html(
         self,
@@ -37,6 +71,7 @@ class PDFService:
             created_at=created_at,
             request_config=request_config,
             is_preview=is_preview,
+            logo_data_uri=self._logo_data_uri,
         )
         logger.debug(
             "Rendered report HTML: keys=%s html_chars=%s elapsed_ms=%s",

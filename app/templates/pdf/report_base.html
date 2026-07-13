@@ -1,2027 +1,974 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Prodculator Report — {{ script_title }}</title>
+<meta charset="UTF-8">
+<title>{{ script_title }} — Production Analysis Report</title>
 <style>
-  /* ── Reset & Base ─────────────────────────────────────────── */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap');
 
-  @page {
-    size: A4;
-    margin: 20mm;
-    @bottom-right { content: counter(page); font-size: 9px; color: #888; }
-  }
+:root{
+  --paper:#FDFCFA;
+  --ink:#141414;
+  --gold:#B8941F;        /* print-safe gold for text & rules */
+  --gold-bright:#D4AF37; /* fills & chips only */
+  --gold-wash:#F7F2E4;
+  --grey:#6E6A61;
+  --hairline:#E7E3DA;
+  --green:#2E7D4F;
+  --amber:#B87A1F;
+  --red:#B3402E;
+  --mont:'Montserrat',-apple-system,sans-serif;
+  --serif:'Source Serif 4',Georgia,serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
 
-  @page cover { margin: 0; }
-  @page toc   { margin: 20mm; }
+@page{
+  size:A4;
+  margin:52px 56px 58px;
+  @bottom-left{
+    content:"Prodculator · Production Intelligence";
+    font-family:'Montserrat',sans-serif;font-size:8px;letter-spacing:.14em;
+    color:#6E6A61;font-weight:500;text-transform:uppercase;
+  }
+  @bottom-right{
+    content:counter(page) " / " counter(pages);
+    font-family:'Montserrat',sans-serif;font-size:8px;letter-spacing:.14em;
+    color:#6E6A61;font-weight:600;
+  }
+}
 
-  body {
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 11px;
-    line-height: 1.5;
-    color: #1a1a1a;
-  }
+html{background:var(--paper)}
+body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:12px;-webkit-font-smoothing:antialiased}
 
-  /* ── Utility Classes ──────────────────────────────────────── */
-  .page-break { page-break-before: always; }
-  .avoid-break { page-break-inside: avoid; }
+/* Each top-level section starts a new PDF page */
+.page{page-break-before:always;background:var(--paper)}
+.page.first{page-break-before:avoid}
 
-  .gold { color: #D4AF37; }
-  .muted { color: #666; font-size: 9px; }
-  .small { font-size: 9px; }
+/* screen preview niceties (ignored in print) */
+@media screen{
+  body{background:#EBE8E2;padding:32px 8px}
+  .page{width:794px;max-width:100%;margin:0 auto 36px;padding:56px 64px 48px;
+        box-shadow:0 2px 24px rgba(20,20,20,.10);min-height:1050px}
+}
 
-  h1 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
-  h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; border-bottom: 2px solid #D4AF37; padding-bottom: 6px; }
-  h3 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
-  h4 { font-size: 11px; font-weight: 600; margin: 10px 0 4px; }
+/* ============ PAGE CHROME ============ */
+.runhead{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:14px;border-bottom:1px solid var(--hairline);margin-bottom:34px}
+.runhead .wordmark{font-size:12px;font-weight:800;letter-spacing:.3em;color:var(--ink)}
+.runhead .wordmark span{color:var(--gold)}
+.runhead .rh-right{font-size:9px;letter-spacing:.18em;color:var(--grey);font-weight:600;text-transform:uppercase}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.24em;color:var(--gold);text-transform:uppercase;margin-bottom:10px}
+.sectitle{font-size:25px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+.secsub{font-family:var(--serif);font-style:italic;color:var(--grey);font-size:13.5px;margin-bottom:26px}
 
-  p { margin-bottom: 8px; }
+/* the two-voice system */
+.serif{font-family:var(--serif);font-size:13.5px;line-height:1.7;color:#26241F}
+.provchip{display:inline-flex;align-items:center;gap:5px;font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold);border-radius:2px;padding:3px 7px;background:transparent}
+.provchip.muted{border-color:var(--hairline);color:var(--grey)}
+.writtenrule{border-left:2px solid var(--hairline);padding-left:20px}
 
-  /* ── Tables ───────────────────────────────────────────────── */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 14px;
-    font-size: 10px;
-  }
-  th, td {
-    padding: 6px 8px;
-    text-align: left;
-    border-bottom: 1px solid #e0e0e0;
-  }
-  th {
-    background: #f5f5f5;
-    font-weight: 600;
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    color: #555;
-  }
-  tr:last-child td { border-bottom: none; }
+/* chips */
+.chip{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:4px 9px;border-radius:2px}
+.chip.bank{background:#E8F2EC;color:var(--green)}
+.chip.verify{background:#F7EEDD;color:var(--amber)}
+.chip.notbank{background:#F6E7E4;color:var(--red)}
+.chip.gold{background:var(--gold-wash);color:var(--gold)}
 
-  /* ── Score Bar ─────────────────────────────────────────────── */
-  .score-bar {
-    display: inline-block;
-    width: 80px;
-    height: 8px;
-    background: #e8e8e8;
-    border-radius: 4px;
-    overflow: hidden;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-  .score-bar-fill {
-    height: 100%;
-    border-radius: 4px;
-  }
-  .score-high  { background: #22c55e; }
-  .score-mid   { background: #D4AF37; }
-  .score-low   { background: #ef4444; }
+/* ============ COVER ============ */
+.cover{display:flex;flex-direction:column;justify-content:space-between;min-height:920px;text-align:center}
+.cover .band{background:var(--ink);padding:44px 0;margin:60px -56px 0}
+.cover .band .wordmark{font-size:22px;font-weight:800;letter-spacing:.42em;color:var(--paper)}
+.cover .band .wordmark span{color:var(--gold-bright)}
+.cover-kicker{font-size:11px;font-weight:800;letter-spacing:.34em;color:var(--gold);text-transform:uppercase;margin-bottom:20px}
+.cover-title{font-size:42px;font-weight:800;letter-spacing:-.01em;line-height:1.08;margin-bottom:16px}
+.cover-rule{width:64px;border-top:2px solid var(--gold-bright);margin:0 auto}
+.cover-bottom{display:flex;justify-content:space-between;align-items:flex-end;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--grey);font-weight:600;padding-bottom:10px}
+.cover-bottom .conf{color:var(--gold);font-weight:700}
+.cover-foot{border-top:1px solid var(--hairline);padding-top:10px;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--grey);font-weight:600;text-align:center}
 
-  /* ── Cards ────────────────────────────────────────────────── */
-  .card {
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    padding: 14px;
-    margin-bottom: 12px;
-    page-break-inside: avoid;
-  }
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-  .card-gold {
-    border-color: #D4AF37;
-    background: rgba(212, 175, 55, 0.03);
-  }
+/* ============ CONTENTS ============ */
+.toc{width:100%;border-collapse:collapse}
+.toc td{padding:11px 0;border-bottom:1px solid var(--hairline);vertical-align:bottom}
+.toc .n{width:44px;font-size:12px;font-weight:800;color:var(--gold)}
+.toc .t{font-size:13px;font-weight:600}
+.toc .t a{color:inherit;text-decoration:none}
+.toc .p{width:40px;font-size:11px;font-weight:700;color:var(--grey);text-align:right;font-variant-numeric:tabular-nums}
+.toc .p a{color:inherit;text-decoration:none}
+.toc .p a::after{content:target-counter(attr(href url), page)}
+.toc .locked{color:var(--grey)}
 
-  /* ── Stat Grid ────────────────────────────────────────────── */
-  .stat-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-  .stat-box {
-    flex: 1 1 120px;
-    background: #fafafa;
-    border: 1px solid #eee;
-    border-radius: 6px;
-    padding: 10px 12px;
-    text-align: center;
-  }
-  .stat-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: #D4AF37;
-  }
-  .stat-label {
-    font-size: 9px;
-    text-transform: uppercase;
-    color: #888;
-    letter-spacing: 0.3px;
-    margin-bottom: 4px;
-  }
+/* ============ ID STRIP / EXEC SUMMARY ============ */
+.idstrip{border-top:2px solid var(--ink);border-bottom:1px solid var(--hairline);display:table;width:100%}
+.idstrip .idc{display:table-cell;padding:14px 12px 14px 0;border-right:1px solid var(--hairline)}
+.idstrip .idc:last-child{border-right:none;padding-right:0}
+.idc .k{font-size:8.5px;font-weight:700;letter-spacing:.18em;color:var(--grey);text-transform:uppercase;margin-bottom:6px}
+.idc .v{font-size:12px;font-weight:600;line-height:1.35}
+.headline-net{margin:30px 0 26px;padding:24px 0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+.headline-net .lbl{font-size:10px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--grey);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.headline-net .fig{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.headline-net .fig small{font-size:17px;font-weight:600;color:var(--gold);letter-spacing:0}
+.headline-net .sub{font-family:var(--serif);font-size:13px;color:var(--grey);margin-top:12px}
+.reco{display:table;width:100%;border:1px solid var(--hairline);border-left:3px solid var(--gold-bright);margin-bottom:24px}
+.reco>div{display:table-cell;padding:15px 16px;border-right:1px solid var(--hairline);vertical-align:top}
+.reco>div:last-child{border-right:none}
+.reco .k{font-size:8.5px;font-weight:700;letter-spacing:.16em;color:var(--grey);text-transform:uppercase;margin-bottom:7px}
+.reco .v{font-size:14px;font-weight:700}
+.reco .v .score{color:var(--gold)}
+.riskrow{display:table;width:100%;border-collapse:separate;border-spacing:12px 0;margin:0 -12px 26px}
+.risk{display:table-cell;width:33%;border:1px solid var(--hairline);padding:13px 15px;vertical-align:top}
+.risk .rk{font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;color:var(--amber)}
+.risk p{font-size:11px;line-height:1.5;color:#3A382F;font-weight:500}
+.sumblock h4{font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--grey);margin-bottom:12px;display:flex;align-items:center;gap:10px}
 
-  /* ── Tag / Pill ───────────────────────────────────────────── */
-  .tag {
-    display: inline-block;
-    background: #f0f0f0;
-    color: #444;
-    font-size: 9px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    margin: 2px 2px 2px 0;
-  }
-  .tag-gold {
-    background: rgba(212, 175, 55, 0.15);
-    color: #96791f;
-  }
+/* ============ DATA TABLES / BARS ============ */
+.datatable{width:100%;border-collapse:collapse;border-top:2px solid var(--ink)}
+.datatable td{padding:9px 4px;border-bottom:1px solid var(--hairline);font-size:12px}
+.datatable td:first-child{color:var(--grey);font-weight:500;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.datatable td:last-child{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.h5label{font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--grey);margin-bottom:12px}
+.lb-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.lb-name{width:110px;font-size:11px;font-weight:600}
+.lb-track{flex:1;height:14px;background:#F1EEE6;position:relative}
+.lb-fill{height:100%;background:var(--gold-bright)}
+.lb-fill.minor{background:#DCD4BC}
+.lb-val{width:74px;font-size:10px;font-weight:700;color:var(--grey);text-align:right;font-variant-numeric:tabular-nums}
+.challenges li{font-size:12px;line-height:1.55;margin-bottom:8px;list-style:none;padding-left:16px;position:relative;font-weight:500}
+.challenges li::before{content:'';position:absolute;left:0;top:7px;width:6px;height:6px;background:var(--gold-bright)}
+.si-grid{display:table;width:100%;table-layout:fixed}
+.si-grid>div{display:table-cell;vertical-align:top}
+.si-grid>div:first-child{padding-right:20px;width:46%}
+.si-grid>div:last-child{padding-left:20px}
+.si-grid h4{font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--grey);margin-bottom:14px;display:flex;align-items:center;gap:10px;justify-content:space-between}
 
-  /* ── Risk Badges ──────────────────────────────────────────── */
-  .risk-low    { color: #16a34a; font-weight: 600; }
-  .risk-medium { color: #ca8a04; font-weight: 600; }
-  .risk-high   { color: #dc2626; font-weight: 600; }
+/* ============ TERRITORY CARD ============ */
+.tcard{border:1px solid var(--hairline);margin-bottom:24px;page-break-inside:avoid}
+.tcard-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--hairline);background:var(--gold-wash)}
+.tcard-head .rank{font-size:10.5px;font-weight:800;letter-spacing:.2em;color:var(--gold);text-transform:uppercase}
+.tcard-head h3{font-size:19px;font-weight:700;margin-top:3px}
+.bigscore{text-align:right}
+.bigscore .n{font-size:30px;font-weight:800;letter-spacing:-.02em}
+.bigscore .d{font-size:11px;color:var(--grey);font-weight:600}
+.tcard-body{display:table;width:100%;table-layout:fixed}
+.tcard-body>div{display:table-cell;vertical-align:top}
+.dims{padding:18px 20px;border-right:1px solid var(--hairline);width:46%}
+.dim{margin-bottom:11px}
+.dim .dk{display:flex;justify-content:space-between;font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px}
+.dim .dk span:last-child{font-variant-numeric:tabular-nums;color:var(--gold)}
+.dim .dt{height:8px;background:#F1EEE6}
+.dim .df{height:100%;background:var(--gold-bright)}
+.tfacts{padding:18px 20px}
+.tfact{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline);font-size:11.5px}
+.tfact:last-child{border-bottom:none}
+.tfact .k{color:var(--grey);font-weight:500;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.tfact .v{font-weight:700;text-align:right;max-width:60%}
+.treason{padding:16px 20px;border-top:1px solid var(--hairline)}
+.treason h5{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--grey);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.minicards{display:table;width:100%;border-collapse:separate;border-spacing:14px 0;margin:0 -14px 24px}
+.minicard{display:table-cell;width:50%;border:1px solid var(--hairline);padding:15px 17px;vertical-align:top}
+.minicard .rank{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--gold);text-transform:uppercase}
+.minicard h4{font-size:15px;font-weight:700;margin-top:2px}
+.minicard .sub{font-size:10.5px;color:var(--grey);font-weight:600;margin-top:8px}
 
-  /* ── Locked Section Placeholder (free-tier preview PDF) ─────── */
-  .locked-section {
-    border-top: 3px solid #D4AF37;
-    border-bottom: 1px solid #e8e8e8;
-    padding: 48px 32px;
-    text-align: center;
-    background: #fafafa;
-    margin: 0;
-  }
-  .locked-section-rule {
-    display: inline-block;
-    width: 32px;
-    height: 2px;
-    background: #D4AF37;
-    margin: 0 10px;
-    vertical-align: middle;
-  }
-  .locked-section-headline {
-    font-size: 13px;
-    font-weight: 700;
-    color: #1a1a1a;
-    letter-spacing: 0.5px;
-    margin: 14px 0 6px;
-  }
-  .locked-section-sub {
-    font-size: 9.5px;
-    color: #777;
-    margin: 0 0 14px;
-    line-height: 1.5;
-  }
-  .locked-section-cta {
-    display: inline-block;
-    background: #1a1a1a;
-    color: #D4AF37;
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    padding: 5px 14px;
-    border-radius: 2px;
-  }
+/* script-origin callout */
+.origin{border:1px solid var(--hairline);border-left:4px solid var(--ink);padding:22px 24px;margin-top:6px;background:#FBFAF6;page-break-inside:avoid}
+.origin .ok{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.origin .ok h4{font-size:14px;font-weight:700}
+.origin .outside{font-size:8.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--paper);background:var(--ink);padding:4px 9px}
+.origin .ostats{display:flex;gap:28px;margin:16px 0 14px;padding:14px 0;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline)}
+.origin .os .n{font-size:20px;font-weight:800}
+.origin .os .l{font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--grey);margin-top:3px}
 
-  /* ── Locked Value Inline Badge (free-tier preview) ──────────── */
-  .locked-val {
-    display: inline-block;
-    background: rgba(212, 175, 55, 0.1);
-    border: 1px solid rgba(212, 175, 55, 0.35);
-    color: #96791f;
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    padding: 2px 8px;
-    border-radius: 2px;
-  }
+/* ============ FESTIVALS & DISTRIBUTORS ============ */
+.fcard{border:1px solid var(--hairline);padding:16px 18px;margin-bottom:13px;page-break-inside:avoid}
+.fcard-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.fcard-top h4{font-size:14px;font-weight:700}
+.fcard-top .meta{font-size:10px;color:var(--grey);font-weight:600;margin-top:3px;letter-spacing:.04em}
+.deadline{text-align:right;max-width:44%}
+.deadline .d{font-size:10.5px;font-weight:700}
+.deadline .l{font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--grey)}
+.whym{font-family:var(--serif);font-size:12.5px;line-height:1.6;color:#26241F;padding-top:10px;border-top:1px solid var(--hairline)}
+.whym .sig{color:var(--gold);font-weight:600;font-style:italic}
+.linkage{display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px}
+.linkage::before{content:'⟶';font-size:12px}
+.bridge{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--grey);line-height:1.65;border-left:2px solid var(--gold-bright);padding-left:18px;margin-bottom:22px}
 
-  /* ── Trial Report Banner (visible sections only) ────────────── */
-  .trial-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #1a1a1a;
-    border-left: 4px solid #D4AF37;
-    border-radius: 3px;
-    padding: 9px 14px;
-    margin-bottom: 20px;
-  }
-  .trial-banner-label {
-    color: #D4AF37;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 2.5px;
-    text-transform: uppercase;
-  }
-  .trial-banner-note {
-    color: #aaa;
-    font-size: 8px;
-  }
-
-  /* ── Trial Cover Badge ───────────────────────────────────────── */
-  .trial-cover-badge {
-    display: inline-block;
-    border: 1px solid #D4AF37;
-    color: #D4AF37;
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    padding: 4px 14px;
-    border-radius: 2px;
-    margin-top: 14px;
-  }
-
-  /* ── Data Source Footer ───────────────────────────────────── */
-  .data-source {
-    font-size: 8px;
-    color: #999;
-    border-top: 1px solid #eee;
-    padding-top: 6px;
-    margin-top: 10px;
-  }
-
-  /* ── Disclaimer ───────────────────────────────────────────── */
-  .disclaimer {
-    font-size: 9px;
-    color: #666;
-    line-height: 1.6;
-    margin-bottom: 10px;
-  }
-
-  /* ── Cover Page ───────────────────────────────────────────── */
-  .cover {
-    page: cover;
-    width: 210mm;
-    height: 297mm;
-    background: #000;
-    color: #fff;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    padding: 40mm 30mm;
-  }
-  .cover-brand {
-    font-size: 14px;
-    letter-spacing: 6px;
-    text-transform: uppercase;
-    color: #D4AF37;
-    margin-bottom: 40px;
-  }
-  .cover-title {
-    font-size: 32px;
-    font-weight: 700;
-    line-height: 1.2;
-    margin-bottom: 16px;
-  }
-  .cover-subtitle {
-    font-size: 14px;
-    color: #D4AF37;
-    margin-bottom: 40px;
-  }
-  .cover-divider {
-    width: 60px;
-    height: 2px;
-    background: #D4AF37;
-    margin: 0 auto 40px;
-  }
-  .cover-meta {
-    font-size: 11px;
-    color: #999;
-  }
-  .cover-meta span { color: #ccc; }
-
-  /* ── TOC ──────────────────────────────────────────────────── */
-  .toc { page: toc; }
-  .toc-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px dotted #ddd;
-    font-size: 12px;
-  }
-  .toc-item:last-child { border-bottom: none; }
-  .toc-number { color: #D4AF37; font-weight: 600; width: 30px; }
-  .toc-title  { flex: 1; }
-
-  /* ── Preview placeholder ──────────────────────────────────── */
-  .preview-placeholder {
-    background: #f9f9f9;
-    border: 1px dashed #ccc;
-    border-radius: 6px;
-    padding: 20px;
-    text-align: center;
-    color: #999;
-    font-size: 11px;
-    margin-bottom: 14px;
-  }
-
-  /* ── Fallback banner ──────────────────────────────────────── */
-  .fallback-banner {
-    background: #fef3c7;
-    border: 1px solid #f59e0b;
-    border-radius: 6px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    font-size: 10px;
-    color: #92400e;
-  }
-
-  /* ── Recommendation highlight ─────────────────────────────── */
-  .rec-card {
-    border: 2px solid #D4AF37;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 16px;
-    background: rgba(212, 175, 55, 0.04);
-    page-break-inside: avoid;
-  }
-  .rec-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 10px;
-  }
-  .rec-stat {
-    flex: 1 1 100px;
-  }
-  .rec-stat-label {
-    font-size: 8px;
-    text-transform: uppercase;
-    color: #888;
-    letter-spacing: 0.3px;
-  }
-  .rec-stat-value {
-    font-size: 12px;
-    font-weight: 700;
-    color: #1a1a1a;
-  }
-
-  /* ── v3 Section Explainer Boxes ──────────────────────────── */
-  .section-explainer {
-    background: #f8f6f0;
-    border-left: 3px solid #D4AF37;
-    padding: 10px 14px;
-    margin-bottom: 14px;
-    font-size: 10px;
-    line-height: 1.6;
-    color: #444;
-  }
-  .section-explainer strong {
-    color: #1a1a1a;
-  }
-
-  /* ── Production Brief ─────────────────────────────────────── */
-  .prod-brief {
-    border: 1px solid #e0e0e0;
-    border-left: 4px solid #D4AF37;
-    border-radius: 4px;
-    padding: 14px 16px;
-    margin-bottom: 18px;
-    background: #fafafa;
-    page-break-inside: avoid;
-  }
-  .prod-brief-heading {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #D4AF37;
-    margin-bottom: 2px;
-  }
-  .prod-brief-sub {
-    font-size: 9px;
-    color: #888;
-    margin-bottom: 10px;
-  }
-  .prod-brief table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 10px;
-  }
-  .prod-brief table tr td {
-    padding: 4px 6px;
-    border-bottom: 1px solid #eeeeee;
-    vertical-align: top;
-  }
-  .prod-brief table tr:last-child td {
-    border-bottom: none;
-  }
-  .prod-brief table tr td:first-child {
-    width: 160px;
-    color: #666;
-    font-weight: 500;
-  }
-  .prod-brief table tr td:last-child {
-    color: #1a1a1a;
-    font-weight: 600;
-  }
-
-  /* ── v3 Headline Net Budget ────────────────────────────────── */
-  .headline-budget {
-    background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
-    color: #fff;
-    padding: 16px 20px;
-    border-radius: 6px;
-    margin-bottom: 16px;
-    text-align: center;
-  }
-  .headline-budget-label {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #D4AF37;
-    margin-bottom: 4px;
-  }
-  .headline-budget-value {
-    font-size: 24px;
-    font-weight: 700;
-    color: #D4AF37;
-  }
-  .headline-budget-detail {
-    font-size: 9px;
-    color: #999;
-    margin-top: 4px;
-  }
-
-  /* ── v3 Bankability Labels ─────────────────────────────────── */
-  .bankability {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
-  }
-  .bankability-bankable {
-    background: #dcfce7;
-    color: #166534;
-    border: 1px solid #86efac;
-  }
-  .bankability-verify {
-    background: #fef3c7;
-    color: #92400e;
-    border: 1px solid #fcd34d;
-  }
-  .bankability-not {
-    background: #fee2e2;
-    color: #991b1b;
-    border: 1px solid #fca5a5;
-  }
-
-  /* ── v3 Action Timeline ────────────────────────────────────── */
-  .action-timeline {
-    margin-bottom: 14px;
-  }
-  .timeline-item {
-    display: flex;
-    gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px solid #eee;
-    font-size: 10px;
-  }
-  .timeline-item:last-child {
-    border-bottom: none;
-  }
-  .timeline-date {
-    flex: 0 0 100px;
-    font-weight: 600;
-    color: #D4AF37;
-  }
-  .timeline-action {
-    flex: 1;
-  }
-  .timeline-owner {
-    flex: 0 0 90px;
-    color: #888;
-    font-size: 9px;
-    text-align: right;
-  }
-
-  /* ── v3 Key Flags ──────────────────────────────────────────── */
-  .key-flags {
-    margin-bottom: 14px;
-  }
-  .key-flag {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 6px 10px;
-    margin-bottom: 6px;
-    background: #fffbeb;
-    border: 1px solid #fcd34d;
-    border-radius: 4px;
-    font-size: 10px;
-    line-height: 1.5;
-  }
-  .key-flag-icon {
-    flex: 0 0 16px;
-    font-weight: 700;
-    color: #b45309;
-  }
-
-  /* ── v3 Financial 6-step Working ───────────────────────────── */
-  .fin-step {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-    font-size: 10px;
-    border-bottom: 1px dashed #e0e0e0;
-  }
-  .fin-step:last-child {
-    border-bottom: none;
-  }
-  .fin-step-label {
-    color: #666;
-  }
-  .fin-step-value {
-    font-weight: 600;
-    text-align: right;
-  }
-  .fin-step-highlight {
-    color: #D4AF37;
-    font-size: 12px;
-  }
-
-  /* ── Territory deep dive ──────────────────────────────────── */
-  .dd-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
-  }
-  .dd-score {
-    font-size: 28px;
-    font-weight: 700;
-    color: #D4AF37;
-  }
-  .dd-score-label {
-    font-size: 9px;
-    color: #888;
-    text-align: right;
-  }
-  .dd-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-  .dd-grid-item {
-    flex: 1 1 140px;
-    background: #fafafa;
-    border: 1px solid #eee;
-    border-radius: 4px;
-    padding: 8px 10px;
-  }
-  .dd-grid-label {
-    font-size: 8px;
-    text-transform: uppercase;
-    color: #888;
-    letter-spacing: 0.3px;
-  }
-  .dd-grid-value {
-    font-size: 11px;
-    font-weight: 600;
-    margin-top: 2px;
-  }
+/* ============ GENERIC LIST TABLES ============ */
+.rowtable{width:100%;border-collapse:collapse;border-top:2px solid var(--ink);margin-bottom:20px}
+.rowtable th{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--grey);text-align:left;padding:9px 8px;border-bottom:1px solid var(--hairline)}
+.rowtable td{font-size:11px;padding:9px 8px;border-bottom:1px solid var(--hairline);vertical-align:top;line-height:1.5}
+.notebox{border:1px solid var(--hairline);background:#FBFAF6;padding:13px 16px;margin-bottom:20px;font-size:11px;line-height:1.6;color:#3A382F}
+.notebox .nk{font-weight:800;letter-spacing:.14em;font-size:9px;text-transform:uppercase;color:var(--gold)}
+.locked-item{border:1px solid var(--hairline);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
+.locked-item .num{font-size:11px;color:var(--grey);font-weight:800;width:24px}
+.locked-item .t{font-size:12.5px;font-weight:600;color:#3A382F}
+.locked-item .d{font-size:10.5px;color:var(--grey);margin-top:2px}
+.upgrade-cta{background:var(--gold-wash);border:1.5px solid var(--gold);padding:26px;text-align:center;margin-top:36px}
+.upgrade-cta .t{font-size:18px;font-weight:800;margin-bottom:8px}
+.upgrade-cta .s{font-size:12px;color:#3A382F}
+.disclaimer{font-size:9.5px;color:var(--grey);line-height:1.65}
 </style>
 </head>
 <body>
 
-{# ── Dynamic section numbering ─────────────────────────────── #}
-{% set ns = namespace(sec=1) %}
-
-<!-- ════════════════════════════════════════════════════════════
-     1. COVER PAGE
-     ════════════════════════════════════════════════════════════ -->
-<div class="cover">
-  <div class="cover-brand">P R O D C U L A T O R</div>
-  <div class="cover-divider"></div>
-  <div class="cover-title">{{ script_title }}</div>
-  <div class="cover-subtitle">Production Analysis Report</div>
-  <div class="cover-divider"></div>
-  <div class="cover-meta">
-    <span>{{ report_type | upper }}</span> &nbsp;&bull;&nbsp;
-    Generated {{ created_at[:10] if created_at else "N/A" }}
-  </div>
-  {% if is_preview %}
-  <div style="margin-top: 24px;">
-    <span class="trial-cover-badge">Trial Report</span>
-  </div>
-  <div style="margin-top: 10px; font-size: 9px; color: #888;">
-    Executive Summary included &mdash; upgrade at prodculator.com to unlock the full report
-  </div>
-  {% endif %}
+{# ══════════ macros ══════════ #}
+{% macro runhead(rh_right) -%}
+<div class="runhead">
+  {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Prodculator" style="height:20px">{% else %}<span class="wordmark">PRODCULATOR<span>&nbsp;·</span></span>{% endif %}
+  <span class="rh-right">{{ rh_right }}</span>
 </div>
+{%- endmacro %}
 
-<!-- ════════════════════════════════════════════════════════════
-     2. TABLE OF CONTENTS
-     ════════════════════════════════════════════════════════════ -->
-<div class="toc page-break">
-  <h1>Contents</h1>
-
-  {% set toc_ns = namespace(n=1) %}
-
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Executive Summary</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-
-  <div class="toc-item">
-    <span class="toc-number">{{ '%02d' % toc_ns.n }}</span>
-    <span class="toc-title">Production Location Strategy{% if is_preview %} &#128274;{% endif %}</span>
-  </div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-
-  {% if report.financialAnalysis %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Financial Analysis</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% elif is_preview %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Financial Analysis &#128274;</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  {% if report.territoryDeepDives %}
-  {% for dd in report.territoryDeepDives[:3] %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">{{ dd.name }} Territory Analysis</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endfor %}
-  {% endif %}
-
-  {% if report.incentiveEstimates or is_preview %}
-  <div class="toc-item">
-    <span class="toc-number">{{ '%02d' % toc_ns.n }}</span>
-    <span class="toc-title">Tax Incentive Analysis{% if is_preview %} &#128274;{% endif %}</span>
-  </div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  {% if report.crewInsights %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Crew Cost Estimates</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% elif is_preview %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Crew Cost Estimates &#128274;</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  {% if report.fundingOpportunities %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Grant &amp; Funding Opportunities</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% elif is_preview %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Grant &amp; Funding Opportunities &#128274;</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  {% if report.comparables %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Comparable Productions &amp; Festival Strategy</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% elif is_preview %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Comparable Productions &amp; Festival Strategy &#128274;</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  {% if report.weatherLogistics %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Weather &amp; Logistics</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% elif is_preview %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Weather &amp; Logistics &#128274;</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  {% if report.productionIntelligence %}
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Production Intelligence</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-  {% endif %}
-
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Next Steps &amp; Recommendations</span></div>
-  {% set toc_ns.n = toc_ns.n + 1 %}
-
-  <div class="toc-item"><span class="toc-number">{{ '%02d' % toc_ns.n }}</span><span class="toc-title">Disclaimers</span></div>
+{% macro dimbar(label, value) -%}
+{% if value is not none %}
+<div class="dim">
+  <div class="dk"><span>{{ label }}</span><span>{{ value }}</span></div>
+  <div class="dt"><div class="df" style="width:{{ [value, 100] | min }}%"></div></div>
 </div>
+{% endif %}
+{%- endmacro %}
 
-<!-- ════════════════════════════════════════════════════════════
-     EXECUTIVE SUMMARY
-     ════════════════════════════════════════════════════════════ -->
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Executive Summary</h2>
-  {% set ns.sec = ns.sec + 1 %}
+{% macro bankchip(label) -%}
+{% if label == 'BANKABLE' %}<span class="chip bank">Bankable</span>
+{% elif label == 'VERIFY FIRST' %}<span class="chip verify">Verify first</span>
+{% elif label == 'NOT BANKABLE' %}<span class="chip notbank">Not bankable</span>
+{% endif %}
+{%- endmacro %}
 
-  {% if is_preview %}
-  <div class="trial-banner">
-    <span class="trial-banner-label">Trial Report</span>
-    <span class="trial-banner-note">Upgrade to Professional at prodculator.com to unlock all sections</span>
-  </div>
+{#- Rebate waterfall. Bars follow the programme mechanism: tax-credit
+    programmes get a 4-bar chart (tax-treatment step), cash rebates 3 bars. -#}
+{% macro waterfall(sc, width, height, label_size) -%}
+{% set tb = sc.totalBudgetValue %}
+{% set gr = sc.grossRebateValue %}
+{% set nr = sc.netRebateValue %}
+{% set nb = sc.netBudgetValue %}
+{% if tb and gr is not none and nr is not none and nb is not none and tb > 0 %}
+{% set has_tax_step = sc.rateNetValue and sc.rateGrossValue and (sc.rateNetValue != sc.rateGrossValue) and (gr - nr) > 0.005 * tb %}
+{% set lo = [nb, tb - gr] | min %}
+{% set floor = lo - (tb - lo) * 0.14 %}
+{% set floor = 0 if floor < 0 else floor %}
+{% set span = tb - floor %}
+{% set top = 16 %}
+{% set base = height - 26 %}
+{% set ploth = base - top %}
+{% set n = 4 if has_tax_step else 3 %}
+{% set slot = width / n %}
+{% set bw = slot * 0.62 %}
+{% macro y(v) %}{{ '%.1f' | format(top + (tb - v) * ploth / span) }}{% endmacro %}
+<svg viewBox="0 0 {{ width }} {{ height }}" style="width:100%" xmlns="http://www.w3.org/2000/svg">
+  <line x1="6" y1="{{ base }}" x2="{{ width - 6 }}" y2="{{ base }}" stroke="#141414" stroke-width="1.2"/>
+  {# bar 1 — total budget #}
+  {% set x1 = slot * 0.5 - bw / 2 %}
+  <rect x="{{ '%.1f' | format(x1) }}" y="{{ y(tb) }}" width="{{ '%.1f' | format(bw) }}" height="{{ '%.1f' | format((tb - floor) * ploth / span) }}" fill="#141414"/>
+  <text x="{{ '%.1f' | format(slot * 0.5) }}" y="{{ (y(tb) | float) + 14 }}" text-anchor="middle" font-family="Montserrat" font-size="{{ label_size }}" font-weight="800" fill="#FDFCFA">{{ sc.currencySymbol }}{{ tb | money_compact }}</text>
+  {# bar 2 — gross rebate float #}
+  {% set x2 = slot * 1.5 - bw / 2 %}
+  <rect x="{{ '%.1f' | format(x2) }}" y="{{ y(tb) }}" width="{{ '%.1f' | format(bw) }}" height="{{ '%.1f' | format(gr * ploth / span) }}" fill="#D4AF37"/>
+  <line x1="{{ '%.1f' | format(x1 + bw) }}" y1="{{ y(tb) }}" x2="{{ '%.1f' | format(x2) }}" y2="{{ y(tb) }}" stroke="#6E6A61" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="{{ '%.1f' | format(slot * 1.5) }}" y="{{ (y(tb) | float) - 5 }}" text-anchor="middle" font-family="Montserrat" font-size="{{ label_size }}" font-weight="800" fill="#B8941F">&minus;{{ sc.currencySymbol }}{{ gr | money_compact }}</text>
+  {% if has_tax_step %}
+  {# bar 3 — tax treatment adds back (gross − net) #}
+  {% set x3 = slot * 2.5 - bw / 2 %}
+  <rect x="{{ '%.1f' | format(x3) }}" y="{{ y(nb) }}" width="{{ '%.1f' | format(bw) }}" height="{{ '%.1f' | format((gr - nr) * ploth / span) }}" fill="#DCD4BC"/>
+  <line x1="{{ '%.1f' | format(x2 + bw) }}" y1="{{ y(tb - gr) }}" x2="{{ '%.1f' | format(x3) }}" y2="{{ y(tb - gr) }}" stroke="#6E6A61" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="{{ '%.1f' | format(slot * 2.5) }}" y="{{ (y(nb) | float) - 5 }}" text-anchor="middle" font-family="Montserrat" font-size="{{ label_size }}" font-weight="800" fill="#6E6A61">+{{ sc.currencySymbol }}{{ (gr - nr) | money_compact }}</text>
+  {# bar 4 — net budget #}
+  {% set x4 = slot * 3.5 - bw / 2 %}
+  <rect x="{{ '%.1f' | format(x4) }}" y="{{ y(nb) }}" width="{{ '%.1f' | format(bw) }}" height="{{ '%.1f' | format((nb - floor) * ploth / span) }}" fill="#141414"/>
+  <line x1="{{ '%.1f' | format(x3 + bw) }}" y1="{{ y(nb) }}" x2="{{ '%.1f' | format(x4) }}" y2="{{ y(nb) }}" stroke="#6E6A61" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="{{ '%.1f' | format(slot * 3.5) }}" y="{{ (y(nb) | float) - 5 }}" text-anchor="middle" font-family="Montserrat" font-size="{{ label_size }}" font-weight="800" fill="#141414">{{ sc.currencySymbol }}{{ nb | money_compact }}</text>
+  {% else %}
+  {# bar 3 — net position (cash rebate: gross = net) #}
+  {% set x3 = slot * 2.5 - bw / 2 %}
+  <rect x="{{ '%.1f' | format(x3) }}" y="{{ y(nb) }}" width="{{ '%.1f' | format(bw) }}" height="{{ '%.1f' | format((nb - floor) * ploth / span) }}" fill="#141414"/>
+  <line x1="{{ '%.1f' | format(x2 + bw) }}" y1="{{ y(nb) }}" x2="{{ '%.1f' | format(x3) }}" y2="{{ y(nb) }}" stroke="#6E6A61" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="{{ '%.1f' | format(slot * 2.5) }}" y="{{ (y(nb) | float) - 5 }}" text-anchor="middle" font-family="Montserrat" font-size="{{ label_size }}" font-weight="800" fill="#141414">{{ sc.currencySymbol }}{{ nb | money_compact }}</text>
   {% endif %}
+  <g font-family="Montserrat" font-size="7.5" font-weight="700" fill="#6E6A61" letter-spacing="0.8">
+    <text x="{{ '%.1f' | format(slot * 0.5) }}" y="{{ base + 14 }}" text-anchor="middle">TOTAL BUDGET</text>
+    <text x="{{ '%.1f' | format(slot * 1.5) }}" y="{{ base + 14 }}" text-anchor="middle">GROSS REBATE{% if sc.rateGross %} {{ sc.rateGross }}{% endif %}</text>
+    {% if has_tax_step %}
+    <text x="{{ '%.1f' | format(slot * 2.5) }}" y="{{ base + 14 }}" text-anchor="middle">TAX TREATMENT</text>
+    <text x="{{ '%.1f' | format(slot * 3.5) }}" y="{{ base + 14 }}" text-anchor="middle">NET BUDGET</text>
+    {% else %}
+    <text x="{{ '%.1f' | format(slot * 2.5) }}" y="{{ base + 14 }}" text-anchor="middle">NET POSITION</text>
+    {% endif %}
+  </g>
+</svg>
+{% endif %}
+{%- endmacro %}
 
-  {# ── Production Brief ─────────────────────────────────────────────────── #}
-  {% if request_config %}
-  <div class="prod-brief avoid-break">
-    <div class="prod-brief-heading">Production Brief</div>
-    <div class="prod-brief-sub">The parameters submitted to generate this analysis</div>
-    <table>
-      {# Core fields — always present #}
-      {% if request_config.format %}
-      <tr><td>Production Format</td><td>{{ request_config.format }}</td></tr>
-      {% endif %}
-      {% if request_config.genre %}
-      <tr><td>Genre</td><td>{{ request_config.genre | join(", ") }}</td></tr>
-      {% endif %}
-      {% if request_config.budget_amount and request_config.budget_currency %}
-      <tr><td>Production Budget</td><td>{{ "{:,.0f}".format(request_config.budget_amount) }} {{ request_config.budget_currency }}</td></tr>
-      {% endif %}
-      {% if request_config.country %}
-      <tr><td>Base Country</td><td>{{ request_config.country }}</td></tr>
-      {% endif %}
-      {# Location strategy — human-readable label #}
-      {% if request_config.location_strategy %}
-      <tr>
-        <td>Location Strategy</td>
-        <td>
-          {% if request_config.location_strategy == "domestic" %}Domestic Only
-          {% elif request_config.location_strategy == "open" %}Open (All Territories)
-          {% elif request_config.location_strategy == "international" %}International
-          {% else %}{{ request_config.location_strategy | title }}{% endif %}
-        </td>
-      </tr>
-      {% endif %}
-      {# Production priority — human-readable label #}
-      {% if request_config.production_priority %}
-      <tr>
-        <td>Analysis Priority</td>
-        <td>
-          {% if request_config.production_priority == "incentive" %}Tax Incentive Optimised
-          {% elif request_config.production_priority == "full" %}Balanced Assessment
-          {% elif request_config.production_priority == "location" %}Location-First
-          {% else %}{{ request_config.production_priority | title }}{% endif %}
-        </td>
-      </tr>
-      {% endif %}
-      {# Optional fields — only rendered when present #}
-      {% if request_config.territories_considering %}
-      <tr><td>Territories Under Analysis</td><td>{{ request_config.territories_considering | join(", ") }}</td></tr>
-      {% endif %}
-      {% if request_config.filming_start_date %}
-      <tr><td>Filming Start Date</td><td>{{ request_config.filming_start_date }}</td></tr>
-      {% endif %}
-      {% if request_config.filming_duration %}
-      <tr><td>Filming Duration</td><td>{{ request_config.filming_duration }} weeks</td></tr>
-      {% endif %}
-      {% if request_config.language %}
-      <tr><td>Primary Language</td><td>{{ request_config.language }}</td></tr>
-      {% endif %}
-      {% if request_config.producer_country %}
-      <tr><td>Producer Jurisdiction</td><td>{{ request_config.producer_country }}</td></tr>
-      {% endif %}
-      {# Co-production status — human-readable #}
-      {% if request_config.co_production_status %}
-      <tr>
-        <td>Co-Production Structure</td>
-        <td>
-          {% if request_config.co_production_status == "sole_producer" %}Sole Producer
-          {% elif request_config.co_production_status == "co_production_treaty" %}Treaty Co-Production
-          {% elif request_config.co_production_status == "co_production_informal" %}Informal Co-Production
-          {% elif request_config.co_production_status == "undecided" %}Undecided
-          {% else %}{{ request_config.co_production_status | replace("_", " ") | title }}{% endif %}
-        </td>
-      </tr>
-      {% endif %}
-      {% if request_config.crew_size %}
-      <tr><td>Crew Size</td><td>{{ request_config.crew_size }}</td></tr>
-      {% endif %}
-      {% if request_config.principal_cast %}
-      <tr><td>Principal Cast</td><td>{{ request_config.principal_cast }}</td></tr>
-      {% endif %}
-      {% if request_config.supporting_cast %}
-      <tr><td>Supporting Cast</td><td>{{ request_config.supporting_cast }}</td></tr>
-      {% endif %}
-      {% if request_config.camera_equipment %}
-      <tr><td>Camera Equipment</td><td>{{ request_config.camera_equipment | join(", ") }}</td></tr>
-      {% endif %}
-      {% if request_config.target_audience %}
-      <tr><td>Target Audience</td><td>{{ request_config.target_audience }}</td></tr>
-      {% endif %}
-    </table>
-  </div>
-  {% endif %}
+{# ══════════ section registry (drives contents + numbering) ══════════ #}
+{% set rankings = report.locationRankings or [] %}
+{% set scenarios = (report.financialAnalysis or {}).get('budgetScenarios') or [] %}
+{% set grants_only = (report.fundingOpportunities or []) | selectattr('type', 'equalto', 'Fund') | list %}
+{% set secs = [] %}
+{% set _ = secs.append({'id': 'exec', 'title': 'Executive Summary', 'locked': false}) %}
+{% if report.scriptStats or report.genre %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': false}) %}{% endif %}
+{% set _ = secs.append({'id': 'strategy', 'title': 'Production Location Strategy', 'locked': is_preview}) %}
+{% if report.territoryDeepDives %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': true}) %}{% endif %}
+{% if scenarios and not is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': true}) %}{% endif %}
+{% if report.incentiveEstimates and not is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': true}) %}{% endif %}
+{% if grants_only and not is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': true}) %}{% endif %}
+{% if report.comparables and not is_preview %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': true}) %}{% endif %}
+{% if report.festivalRecommendations %}{% set _ = secs.append({'id': 'festivals', 'title': 'Where Your Film Could Be Seen — Festival Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'festivals', 'title': 'Festival Recommendations', 'locked': true}) %}{% endif %}
+{% if report.distributorRecommendations %}{% set _ = secs.append({'id': 'distributors', 'title': 'Who Could Buy Your Film — Distributor Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'distributors', 'title': 'Distributor Recommendations', 'locked': true}) %}{% endif %}
+{% if report.weatherLogistics and not is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': true}) %}{% endif %}
+{% set _ = secs.append({'id': 'next', 'title': 'Next Steps & Disclaimers', 'locked': false}) %}
+{% set num_map = {} %}
+{% for s in secs %}{% set _ = num_map.update({s.id: '%02d' % loop.index}) %}{% endfor %}
+{% set rh = script_title ~ ' · ' ~ ('Free Preview' if is_preview else 'Pro Report') %}
 
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.executive_summary %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.executive_summary }}
-  </div>
-  {% endif %}
-
-  {% if report._fallbackUsed %}
-  <div class="fallback-banner">
-    <strong>Limited Analysis</strong> &mdash; AI analysis was temporarily unavailable. Results below use estimated defaults based on project metadata. We recommend regenerating this report for full analysis.
-  </div>
-  {% endif %}
-
-  {# v3 Headline Net Budget #}
-  {% if not is_preview and report.executiveSummary and report.executiveSummary.headlineNetBudget %}
-  <div class="headline-budget">
-    <div class="headline-budget-label">Headline Net Budget (After Top Rebate)</div>
-    <div class="headline-budget-value">{{ report.executiveSummary.headlineNetBudget }}</div>
-    {% if report.executiveSummary.budget %}
-    <div class="headline-budget-detail">Total Budget: {{ report.executiveSummary.budget }}</div>
+<!-- ═══════════════ COVER ═══════════════ -->
+<div class="page first cover">
+  <div style="flex:1"></div>
+  <div class="band">{% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Prodculator" style="height:56px">{% else %}<span class="wordmark">PRODCULAT<span>O</span>R</span>{% endif %}</div>
+  <div style="padding:56px 0 0">
+    <div class="cover-kicker">Production Analysis Report{% if not is_preview %} · Pro{% endif %}</div>
+    <div class="cover-title">{{ script_title }}</div>
+    <div class="cover-rule"></div>
+    {% if is_preview %}
+    <div style="margin-top:22px"><span class="chip gold">Free preview — upgrade for the full report</span></div>
     {% endif %}
   </div>
-  {% endif %}
-
-  {# v3 Key Flags (max 3) #}
-  {% if not is_preview and report.executiveSummary and report.executiveSummary.keyFlags %}
-  <div class="key-flags">
-    {% for flag in report.executiveSummary.keyFlags[:3] %}
-    <div class="key-flag">
-      <div class="key-flag-icon">!</div>
-      <div>{{ flag }}</div>
+  <div style="flex:1"></div>
+  <div>
+    <div class="cover-bottom">
+      <span>Generated {{ created_at[:10] if created_at else 'N/A' }}</span>
+      <span class="conf">Prepared for production &amp; investment review</span>
     </div>
+    <div class="cover-foot">A Deo Media Limited product · prodculator.com</div>
+  </div>
+</div>
+
+<!-- ═══════════════ CONTENTS ═══════════════ -->
+<div class="page">
+  {{ runhead(rh) }}
+  <div class="eyebrow">Contents</div>
+  <div class="sectitle" style="margin-bottom:30px">What this report covers</div>
+  <table class="toc">
+    {% for s in secs %}
+    <tr>
+      <td class="n">{{ num_map[s.id] }}</td>
+      <td class="t{% if s.locked %} locked{% endif %}">
+        {% if s.locked %}{{ s.title }} &#128274;{% else %}<a href="#sec-{{ s.id }}">{{ s.title }}</a>{% endif %}
+      </td>
+      <td class="p">{% if not s.locked %}<a href="#sec-{{ s.id }}"></a>{% endif %}</td>
+    </tr>
     {% endfor %}
-  </div>
-  {% endif %}
-
-  {# Key Insights narrative — split into paragraphs #}
-  {% if report.executiveSummary and report.executiveSummary.keyInsights %}
-  <div style="margin-bottom: 20px;">
-    {% for paragraph in report.executiveSummary.keyInsights.split('\n\n') %}
-    {% set para = paragraph.strip().lstrip('-– •*').strip() %}
-    {% if para %}
-    <p style="font-size: 11px; line-height: 1.85; color: #1a1a1a; margin: 0 0 12px 0; text-align: justify;">{{ para }}</p>
-    {% endif %}
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {# Recommended Territory highlight #}
-  {% if report.executiveSummary and report.executiveSummary.recommendedTerritory %}
-  {% set es = report.executiveSummary %}
-  <h3>Recommended Territory</h3>
-  <div class="rec-card">
-    <div class="card-header">
-      <div>
-        <h4 style="margin: 0; font-size: 14px;">{{ es.recommendedTerritory }}</h4>
-        <span class="muted">TOP RECOMMENDATION</span>
-      </div>
-      <span class="gold" style="font-size: 22px; font-weight: 700;">{{ es.recommendedTerritoryScore }}/100</span>
-    </div>
-    <div class="rec-stats">
-      {% if not is_preview and es.recommendedTerritoryRebate %}
-      <div class="rec-stat">
-        <div class="rec-stat-label">Tax Rebate</div>
-        <div class="rec-stat-value">{{ es.recommendedTerritoryRebate }}</div>
-      </div>
-      {% endif %}
-      {% if es.recommendedTerritoryInfrastructure %}
-      <div class="rec-stat">
-        <div class="rec-stat-label">Infrastructure</div>
-        <div class="rec-stat-value">{{ es.recommendedTerritoryInfrastructure }}</div>
-      </div>
-      {% endif %}
-      {% if not is_preview and es.recommendedTerritoryPaymentSpeed %}
-      <div class="rec-stat">
-        <div class="rec-stat-label">Payment Speed</div>
-        <div class="rec-stat-value">{{ es.recommendedTerritoryPaymentSpeed }}</div>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-  {% elif report.locationRankings %}
-  {# Fallback: use top location ranking if no executiveSummary #}
-  {% set top = report.locationRankings[0] %}
-  <h3>Top Recommendation</h3>
-  <div class="card">
-    <div class="card-header">
-      <h4>{{ top.name }}, {{ top.country }}</h4>
-      <span class="gold" style="font-size: 18px; font-weight: 700;">{{ top.score }}/100</span>
-    </div>
-    <p>
-      {% for reason in top.reasoning[:3] %}
-        {{ reason }}{% if not loop.last %} &bull; {% endif %}
-      {% endfor %}
-    </p>
-  </div>
-  {% endif %}
-
-  {# Production Overview #}
-  <h3>Production Overview</h3>
-  <div class="stat-grid">
-    <div class="stat-box">
-      <div class="stat-label">Genre</div>
-      <div class="stat-value">{{ report.genre or "N/A" }}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">Tone</div>
-      <div class="stat-value">{{ report.tone or "N/A" }}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">Scale</div>
-      <div class="stat-value">{{ report.scale or "N/A" }}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">Complexity</div>
-      <div class="stat-value">{{ report.complexity or "N/A" }}</div>
-    </div>
-  </div>
-
-  {% if report.executiveSummary %}
-  {% set es = report.executiveSummary %}
-  <table>
-    <tr><th style="width: 180px;">Detail</th><th>Value</th></tr>
-    {% if es.shootDays %}<tr><td>Estimated Shoot Duration</td><td><strong>{{ es.shootDays }} weeks</strong></td></tr>{% endif %}
-    {% if es.budget %}<tr><td>Production Budget</td><td><strong>{{ es.budget }}</strong></td></tr>{% endif %}
-    <tr><td>Territories Analysed</td><td>{{ report.locationRankings | length }}</td></tr>
-    <tr><td>Report Type</td><td>{{ report_type | upper }}</td></tr>
   </table>
-
-  {% if es.primaryLocations %}
-  <h4>Primary Locations</h4>
-  <div style="margin-bottom: 14px;">
-    {% for loc in es.primaryLocations %}
-      <span class="tag tag-gold">{{ loc }}</span>
-    {% endfor %}
-  </div>
-  {% endif %}
-  {% else %}
-  <p>
-    This report analyses <strong>{{ script_title }}</strong> across
-    {{ report.locationRankings | length }} territor{{ "y" if report.locationRankings | length == 1 else "ies" }},
-    evaluating tax incentives, crew costs, infrastructure, and logistical considerations
-    to identify the optimal filming locations for this
-    {{ report.genre | lower if report.genre else "" }}
-    {{ report.scale | lower if report.scale else "" }} production.
-  </p>
-  {% endif %}
-
-  {# v3 Action Timeline #}
-  {% if is_preview %}
-  <h3>Action Timeline</h3>
-  <div class="card card-gold">
-    <p style="font-size: 10px; margin: 0;">
-      {% set urgent_count = report.previewUrgentActionCount|default(0) %}
-      {% if urgent_count and urgent_count > 0 %}
-      This production has {{ urgent_count }} time-sensitive action{{ "" if urgent_count == 1 else "s" }}. Upgrade to see the prioritised action plan.
-      {% else %}
-      This production has prioritised actions identified. Upgrade to see the full action plan.
-      {% endif %}
-    </p>
-  </div>
-  {% elif report.executiveSummary and report.executiveSummary.actionTimeline %}
-  <h3>Action Timeline</h3>
-  <div class="action-timeline">
-    {% for item in report.executiveSummary.actionTimeline %}
-    <div class="timeline-item">
-      <div class="timeline-date">{{ item.deadline if item.deadline is defined else "" }}</div>
-      <div class="timeline-action">{{ item.action if item.action is defined else "" }}</div>
-      <div class="timeline-owner">{{ item.owner if item.owner is defined else "" }}</div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
 </div>
 
-<!-- ════════════════════════════════════════════════════════════
-     PRODUCTION LOCATION STRATEGY
-     ════════════════════════════════════════════════════════════ -->
-{% if is_preview and not report.locationRankings %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <div class="locked-section">
-    <div>
-      <span class="locked-section-rule"></span>
-      <span style="font-size: 10px; color: #D4AF37; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">Locked</span>
-      <span class="locked-section-rule"></span>
+<!-- ═══════════════ EXECUTIVE SUMMARY ═══════════════ -->
+{% set es = report.executiveSummary or {} %}
+{% set top_sc = scenarios[0] if scenarios else none %}
+{% set top_rank = rankings[0] if rankings else none %}
+<div class="page" id="sec-exec">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['exec'] }} — Executive Summary</div>
+  <div class="sectitle">Where this production makes the most financial sense to shoot</div>
+  <p class="secsub">Every figure on this page is computed from verified programme data — the narrative explains it.</p>
+
+  <div class="idstrip" style="margin-bottom:28px">
+    {% if es.format or report.genre %}<div class="idc"><div class="k">Format</div><div class="v">{{ es.format or '' }}{% if es.format and report.genre %} · {% endif %}{{ report.genre or '' }}</div></div>{% endif %}
+    {% if report.tone %}<div class="idc"><div class="k">Tone</div><div class="v">{{ report.tone }}</div></div>{% endif %}
+    {% if report.scale or es.budget %}<div class="idc"><div class="k">Scale</div><div class="v">{{ report.scale or '' }}{% if report.scale and es.budget %} · {% endif %}{{ es.budget or '' }}</div></div>{% endif %}
+    {% if report.complexity %}<div class="idc"><div class="k">Complexity</div><div class="v">{{ report.complexity }}{% if es.shootDays %} · {{ es.shootDays }} wk shoot{% endif %}</div></div>{% endif %}
+  </div>
+
+  {% if not is_preview and es.headlineNetBudget %}
+  <div class="headline-net">
+    <div class="lbl">
+      <span>Estimated net budget after incentives{% if top_sc and top_sc.programme %} — under {{ top_sc.programme }}{% endif %}</span>
+      <span class="provchip">Computed</span>
     </div>
-    <div class="locked-section-headline">Production Location Strategy</div>
-    <div class="locked-section-sub">Territory rankings, scoring breakdowns, and location intelligence<br>for your production profile.</div>
-    <span class="locked-section-cta">Upgrade to unlock &mdash; prodculator.com</span>
-  </div>
-</div>
-{% else %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Production Location Strategy</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  {% if is_preview %}
-  <div class="section-explainer" style="border-color: rgba(212,175,55,0.5); background: rgba(212,175,55,0.05);">
-    Free Preview: Showing your top {{ report.locationRankings|length }} recommended territories. Upgrade to Professional for the full territory ranking.
-  </div>
-  {% endif %}
-
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.location_strategy %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.location_strategy }}
-  </div>
-  {% endif %}
-
-  {% if report.locationRankings %}
-
-  {# Summary comparison table #}
-  <h3>Territory Rankings &amp; Analysis</h3>
-  <p class="muted" style="margin-bottom: 10px;">Based on comprehensive analysis of tax incentives, infrastructure, crew availability, currency advantage, and incentive reliability.</p>
-
-  {# ── Scoring Methodology Explainer ── #}
-  {% if report.scoringMethodology %}
-  {% set sm = report.scoringMethodology %}
-  <div class="card" style="margin-bottom: 14px; border-left: 3px solid #b8860b;">
-    <h4 style="margin: 0 0 6px;">How We Score Territories</h4>
-    <p style="font-size: 10px; line-height: 1.5; margin: 0 0 8px;">{{ sm.overview }}</p>
-
-    <table style="margin-bottom: 8px;">
-      <tr><th style="width: 25%;">Dimension</th><th>What It Measures</th></tr>
-      {% for dim in sm.dimensions %}
-      <tr>
-        <td style="font-weight: 600;">{{ dim.name }}</td>
-        <td style="font-size: 9px;">{{ dim.description }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-
-    <p style="font-size: 9px; line-height: 1.5; margin: 0 0 6px;">{{ sm.weightingNote }}</p>
-
-    {% if sm.colorKey %}
-    <div class="stat-grid" style="margin-top: 4px;">
-      <div class="stat-box" style="flex: 1 1 120px; padding: 4px 8px; border-left: 3px solid #4CAF50;">
-        <div class="stat-label" style="font-size: 9px;">🟢 {{ sm.colorKey.green }}</div>
-      </div>
-      <div class="stat-box" style="flex: 1 1 120px; padding: 4px 8px; border-left: 3px solid #b8860b;">
-        <div class="stat-label" style="font-size: 9px;">🟡 {{ sm.colorKey.gold }}</div>
-      </div>
-      <div class="stat-box" style="flex: 1 1 120px; padding: 4px 8px; border-left: 3px solid #e74c3c;">
-        <div class="stat-label" style="font-size: 9px;">🔴 {{ sm.colorKey.red }}</div>
-      </div>
+    <div class="fig">{{ es.headlineNetBudget | replace('approximately ', '') }}
+      {% if es.recommendedTerritoryRebate %}<small>net of {{ es.recommendedTerritoryRebate }} rebate</small>{% endif %}
     </div>
+    {% if top_sc and top_sc.qualifyingSpend and top_sc.rateGross %}
+    <div class="sub">On {{ top_sc.qualifyingSpend }} qualifying spend at {{ top_sc.rateNet or top_sc.rateGross }} net{% if top_sc.rateNet and top_sc.rateGross and top_sc.rateNet != top_sc.rateGross %} ({{ top_sc.rateGross }} gross — the gross rate applies before tax treatment){% endif %}.</div>
     {% endif %}
   </div>
+
+  {% if top_sc and top_sc.totalBudgetValue %}
+  <div style="margin:-4px 0 24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--grey)">Where that number comes from — {{ top_sc.territory }}, Nº 1 ranked</span>
+      <span class="provchip">Computed</span>
+    </div>
+    {{ waterfall(top_sc, 660, 132, 10) }}
+    <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:6px">The full working behind each bar, and this chart for every ranked territory, is in Section {{ num_map.get('financial', '05') }} — with a plain-English key.</p>
+  </div>
+  {% endif %}
   {% endif %}
 
-  {% for loc in report.locationRankings[:10] %}
-  {% if loc.lockedPreview %}
-  <div class="card" style="border: 1px solid rgba(212,175,55,0.35);">
-    <div class="card-header">
-      <div>
-        <h3 style="margin: 0;">#{{ loop.index }} {{ loc.name }}</h3>
-        <span class="muted">Ranked comparison available in the full report</span>
-      </div>
-      <span class="locked-val">&#128274; Upgrade to unlock</span>
+  {% if es.recommendedTerritory %}
+  <div class="reco">
+    <div><div class="k">Recommended territory</div><div class="v">{{ es.recommendedTerritory }}{% if es.recommendedTerritoryScore %} <span class="score">· {{ es.recommendedTerritoryScore }}/100</span>{% endif %}</div></div>
+    {% if top_sc and top_sc.programme %}<div><div class="k">Programme</div><div class="v">{{ top_sc.programme }}</div></div>{% endif %}
+    {% if not is_preview and es.recommendedTerritoryRebate %}<div><div class="k">Net rebate</div><div class="v">{{ es.recommendedTerritoryRebate }}</div></div>{% endif %}
+    {% if top_rank and top_rank.bankabilityLabel %}<div><div class="k">Bankability</div><div class="v">{{ bankchip(top_rank.bankabilityLabel) }}</div></div>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if not is_preview and es.keyFlags %}
+  <div class="riskrow">
+    {% for flag in es.keyFlags[:3] %}
+    <div class="risk"><div class="rk">Flag</div><p>{{ flag }}</p></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if es.keyInsights %}
+  <div class="sumblock">
+    <h4>Summary <span class="provchip muted">Narrative</span></h4>
+    <div class="serif writtenrule">
+      {% for paragraph in es.keyInsights.split('\n\n') %}
+      {% set para = paragraph.strip() %}
+      {% if para %}<p style="margin-bottom:12px">{{ para }}</p>{% endif %}
+      {% endfor %}
     </div>
   </div>
-  {% else %}
-  <div class="card{% if loop.index == 1 %} card-gold{% endif %}">
-    <div class="card-header">
-      <div>
-        <h3 style="margin: 0;">
-          #{{ loop.index }} {{ loc.name }}
-          {% if loop.index == 1 %}<span class="tag tag-gold" style="margin-left: 6px;">RECOMMENDED</span>{% endif %}
-        </h3>
-        <span class="muted">{{ loc.country }}</span>
-      </div>
-      <div style="text-align: right;">
-        <span class="gold" style="font-size: 22px; font-weight: 700;">{{ loc.score }}</span>
-        <div class="muted">Overall Score</div>
-      </div>
-    </div>
+  {% endif %}
 
-    <div class="stat-grid" style="margin-bottom: 8px;">
-      {% if not is_preview and loc.rebatePercent %}
-      <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-label">Tax Rebate</div>
-        <div class="stat-value" style="font-size: 14px;">{{ loc.rebatePercent }}</div>
-      </div>
-      {% endif %}
-      {% if loc.rebateAmount %}
-      <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-label">Estimated Rebate</div>
-        <div class="stat-value" style="font-size: 14px;">{{ loc.rebateAmount }}</div>
-      </div>
-      {% endif %}
-      {% if loc.culturalTestLikelihood %}
-      <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-label">Cultural Test</div>
-        <div class="stat-value" style="font-size: 14px;">{{ loc.culturalTestLikelihood }}</div>
-      </div>
-      {% endif %}
-      {% if not is_preview and loc.paymentSpeed %}
-      <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-label">Payment Speed</div>
-        <div class="stat-value" style="font-size: 12px;">{{ loc.paymentSpeed }}</div>
-      </div>
-      {% endif %}
-      {% if loc.bankabilityLabel %}
-      <div class="stat-box" style="flex: 1 1 80px; padding: 6px 8px;">
-        <div class="stat-label">Bankability</div>
-        <div class="stat-value" style="font-size: 10px;">
-          <span class="bankability {% if loc.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif loc.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
-            {{ loc.bankabilityLabel }}
-          </span>
+  {% if is_preview %}
+  <div class="upgrade-cta">
+    <div class="t">See the full financial picture</div>
+    <div class="s">Professional unlocks full territory rankings, tax incentive rebates, financial analysis and your recommended production strategy.</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ═══════════════ SCRIPT INTELLIGENCE ═══════════════ -->
+{% set si = report.scriptStats %}
+{% if 'script' in num_map %}
+<div class="page" id="sec-script">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['script'] }} — Script Intelligence</div>
+  <div class="sectitle">What your script tells us</div>
+  <p class="secsub">Two readings of the same document: one counted, one understood.</p>
+
+  <div class="si-grid">
+    <div>
+      <h4>Parsed from your script <span class="provchip">Computed</span></h4>
+      <table class="datatable">
+        {% if si and si.sceneCount %}<tr><td>Scene count</td><td>{{ si.sceneCount }}</td></tr>{% endif %}
+        {% if si and si.interiorPct is not none %}<tr><td>Interior / Exterior</td><td>{{ si.interiorPct }}% / {{ si.exteriorPct }}%</td></tr>{% endif %}
+        {% if si and si.dayScenes is not none %}<tr><td>Day / Night</td><td>{{ si.dayScenes }} day · {{ si.nightScenes or 0 }} night{% if si.otherScenes %} · {{ si.otherScenes }} other{% endif %}</td></tr>{% endif %}
+        {% if si and si.estShootingDays %}<tr><td>Est. shooting days</td><td>{{ si.estShootingDays }}</td></tr>{% endif %}
+        {% if si and si.principalCast %}<tr><td>Principal cast</td><td>{{ si.principalCast }}</td></tr>{% endif %}
+        {% if si and si.crowdScenes %}<tr><td>Crowd scenes</td><td>{{ si.crowdScenes }} scenes</td></tr>{% endif %}
+        {% if si and si.languages %}<tr><td>Languages</td><td>{{ si.languages | join(', ') }}</td></tr>{% endif %}
+        {% if not si %}
+        {% if report.genre %}<tr><td>Genre</td><td>{{ report.genre }}</td></tr>{% endif %}
+        {% if report.tone %}<tr><td>Tone</td><td>{{ report.tone }}</td></tr>{% endif %}
+        {% if report.scale %}<tr><td>Scale</td><td>{{ report.scale }}</td></tr>{% endif %}
+        {% if report.complexity %}<tr><td>Complexity</td><td>{{ report.complexity }}</td></tr>{% endif %}
+        {% endif %}
+      </table>
+
+      {% if si and si.namedLocations %}
+      <div style="margin-top:22px">
+        <div class="h5label">Named locations · by scene share</div>
+        {% for loc in si.namedLocations %}
+        <div class="lb-row">
+          <span class="lb-name">{{ loc.name }}</span>
+          <div class="lb-track"><div class="lb-fill{% if not loop.first %} minor{% endif %}" style="width:{{ [loc.pct or 2, 100] | min }}%"></div></div>
+          <span class="lb-val">{{ loc.scenes }} scenes</span>
         </div>
+        {% endfor %}
       </div>
       {% endif %}
     </div>
 
-    <table>
-      <tr><th>Metric</th><th>Score</th><th></th></tr>
-      {% set metrics = [
-        ("Cost Efficiency", loc.costEfficiency|default(none)),
-        ("Crew Depth", loc.crewDepth|default(none)),
-        ("Infrastructure", loc.infrastructure|default(none)),
-        ("Incentive Strength", loc.incentiveStrength|default(none)),
-        ("Currency Advantage", loc.currencyAdvantage|default(none)),
-        ("Incentive Reliability", loc.incentiveReliability|default(none))
-      ] %}
-      {% for name, val in metrics %}
-      {% if val is not none %}
-      <tr>
-        <td>{{ name }}</td>
-        <td>{% if is_preview %}<span class="locked-val">&#128274; Upgrade</span>{% else %}{{ val }}/100{% endif %}</td>
-        <td>
-          <div class="score-bar">
-            <div class="score-bar-fill {% if val >= 70 %}score-high{% elif val >= 40 %}score-mid{% else %}score-low{% endif %}" style="width: {{ val }}%"></div>
-          </div>
-        </td>
-      </tr>
-      {% endif %}
-      {% endfor %}
-    </table>
-
-    {% if loc.reasoning and not is_preview %}
-    <h4>Reasoning</h4>
-    <ul style="padding-left: 16px; font-size: 10px;">
-      {% for r in loc.reasoning %}
-      <li>{{ r }}</li>
-      {% endfor %}
-    </ul>
-    {% elif is_preview %}
-    <div style="margin-top: 10px; padding: 10px 14px; border: 1px solid rgba(212,175,55,0.35); border-radius: 4px; text-align: center;">
-      <span style="font-size: 9px; color: #b8941f; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;">&#128274; Key Intelligence &mdash; Upgrade to unlock at prodculator.com</span>
-    </div>
-    {% endif %}
-  </div>
-  {% endif %}
-  {% endfor %}
-
-  {# Alternative Strategy #}
-  {% if not is_preview and report.alternativeStrategy %}
-  <div class="card card-gold" style="margin-top: 16px;">
-    <h4 class="gold" style="margin-top: 0;">Alternative Strategy</h4>
-    <p style="font-size: 10px;">{{ report.alternativeStrategy }}</p>
-  </div>
-  {% endif %}
-
-  {% else %}
-  <p class="muted">No territory rankings available.</p>
-  {% endif %}
-  {% if is_preview %}
-  <div style="text-align: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid #eee;">
-    <span class="locked-section-cta">Upgrade for full territory rankings &mdash; prodculator.com</span>
-  </div>
-  {% endif %}
-</div>
-{% endif %}{# end is_preview / location strategy #}
-
-<!-- ════════════════════════════════════════════════════════════
-     FINANCIAL ANALYSIS
-     ════════════════════════════════════════════════════════════ -->
-{% if report.financialAnalysis %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Financial Analysis</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.financial_analysis %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.financial_analysis }}
-  </div>
-  {% endif %}
-
-  {% if report.financialAnalysis.budgetScenarios %}
-  <h3>Budget Scenarios &amp; ROI Comparison</h3>
-  {% if report.executiveSummary and report.executiveSummary.budget %}
-  <p>Total Production Budget: <strong>{{ report.executiveSummary.budget }}</strong></p>
-  {% endif %}
-
-  {% if is_preview %}
-  {# Preview: show territory + programme, lock all financial values #}
-  <p class="muted" style="margin-bottom: 10px;">Rebate calculations and net budget projections are available on upgrade.</p>
-  {% for scenario in report.financialAnalysis.budgetScenarios %}
-  <div class="card" style="margin-bottom: 12px;">
-    <div class="card-header">
-      <h4 style="margin: 0;">{{ scenario.territory }}</h4>
-      {% if scenario.programme %}<span class="muted">{{ scenario.programme }}</span>{% endif %}
-    </div>
-    <div style="padding: 8px 0;">
-      {% for step in ["1. Total Budget", "2. Qualifying Spend", "3. ATL Deduction", "4. Net Qualifying Spend", "5. Gross Rebate", "6. Net Rebate", "Net Budget After Rebate"] %}
-      <div class="fin-step">
-        <span class="fin-step-label">{{ step }}</span>
-        <span><span class="locked-val">&#128274; Upgrade to unlock</span></span>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endfor %}
-  <div style="text-align: center; margin-top: 14px;">
-    <span class="locked-section-cta">Upgrade to unlock financial analysis &mdash; prodculator.com</span>
-  </div>
-
-  {% else %}
-  {# Full rendering for paid users #}
-  <p class="muted" style="margin-bottom: 10px;">The following scenarios show the full rebate calculation working for top territories.</p>
-  {% for scenario in report.financialAnalysis.budgetScenarios %}
-  <div class="card" style="margin-bottom: 12px;">
-    <div class="card-header">
-      <h4 style="margin: 0;">{{ scenario.territory }}</h4>
-      {% if scenario.programme %}
-      <span class="muted">{{ scenario.programme }}</span>
-      {% endif %}
-    </div>
-
-    {# v3 6-step financial working #}
-    {% if scenario.totalBudget or scenario.qualifyingSpend %}
-    <div style="padding: 8px 0;">
-      {% if scenario.totalBudget %}
-      <div class="fin-step">
-        <span class="fin-step-label">1. Total Budget</span>
-        <span class="fin-step-value">{{ scenario.totalBudget }}</span>
-      </div>
-      {% endif %}
-      {% if scenario.qualifyingSpendPct %}
-      <div class="fin-step">
-        <span class="fin-step-label">2. Qualifying Spend ({{ scenario.qualifyingSpendPct }})</span>
-        <span class="fin-step-value">{{ scenario.qualifyingSpend or "—" }}</span>
-      </div>
-      {% endif %}
-      {% if scenario.atlDeduction %}
-      <div class="fin-step">
-        <span class="fin-step-label">3. Less ATL Deduction (est. {{ scenario.atlDeductionPct or "15%" }})</span>
-        <span class="fin-step-value">-{{ scenario.atlDeduction }}</span>
-      </div>
-      {% endif %}
-      {% if scenario.netQualifyingSpend %}
-      <div class="fin-step">
-        <span class="fin-step-label">4. Net Qualifying Spend</span>
-        <span class="fin-step-value">{{ scenario.netQualifyingSpend }}</span>
-      </div>
-      {% endif %}
-      {% if scenario.rateGross %}
-      <div class="fin-step">
-        <span class="fin-step-label">5. Gross Rate / Net Rate</span>
-        <span class="fin-step-value">{{ scenario.rateGross }}{% if scenario.rateNet %} / {{ scenario.rateNet }}{% endif %}</span>
-      </div>
-      {% endif %}
-      <div class="fin-step">
-        <span class="fin-step-label">6. Gross Rebate</span>
-        <span class="fin-step-value fin-step-highlight">{{ scenario.grossRebate or "—" }}</span>
-      </div>
-      {% if scenario.netRebate %}
-      <div class="fin-step">
-        <span class="fin-step-label">&nbsp;&nbsp;&nbsp;Net Rebate</span>
-        <span class="fin-step-value fin-step-highlight">{{ scenario.netRebate }}</span>
-      </div>
-      {% endif %}
-      {% if scenario.netBudget %}
-      <div class="fin-step" style="border-top: 2px solid #D4AF37; margin-top: 4px; padding-top: 6px;">
-        <span class="fin-step-label" style="font-weight: 600; color: #1a1a1a;">Net Budget After Rebate</span>
-        <span class="fin-step-value fin-step-highlight" style="font-size: 14px;">{{ scenario.netBudget }}</span>
-      </div>
-      {% endif %}
-    </div>
-    {% if scenario.notes %}
-    <p class="muted" style="margin-top: 4px; font-style: italic;">{{ scenario.notes }}</p>
-    {% endif %}
-    {% else %}
-    {# Fallback to v2 simple display #}
-    <table style="margin-top: 8px; margin-bottom: 0;">
-      <tr><td class="muted">Local Spend</td><td><strong>{{ scenario.localSpend }}</strong></td></tr>
-      <tr><td class="muted">Rebate Rate</td><td>{{ scenario.rebateRate }}</td></tr>
-      <tr><td class="muted">Gross Rebate</td><td class="gold"><strong>{{ scenario.grossRebate }}</strong></td></tr>
-      <tr><td class="muted">Net Budget</td><td><strong>{{ scenario.netBudget }}</strong></td></tr>
-    </table>
-    {% endif %}
-  </div>
-  {% endfor %}
-  {% endif %}{# end paid budgetScenarios loop #}
-
-  {% endif %}{# end is_preview / budgetScenarios #}
-
-  {% if not is_preview and report.financialAnalysis.crewCostComparison %}
-  <h3>Crew Cost Comparison</h3>
-  {% set territories = [] %}
-  {% if report.financialAnalysis.crewCostComparison[0] %}
-    {% set territories = report.financialAnalysis.crewCostComparison[0].territories.keys() | list %}
-  {% endif %}
-  <table>
-    <tr>
-      <th>Role</th>
-      {% for t in territories %}
-      <th>{{ t }}</th>
-      {% endfor %}
-    </tr>
-    {% for row in report.financialAnalysis.crewCostComparison %}
-    <tr>
-      <td><strong>{{ row.role }}</strong></td>
-      {% for t in territories %}
-      <td>{{ row.territories.get(t, "N/A") if row.territories else "N/A" }}</td>
-      {% endfor %}
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-
-  {% if not is_preview %}
-  <div class="data-source">Data Source: Prodculator backend datasets</div>
-  {% endif %}
-</div>
-{% endif %}
-
-<!-- ════════════════════════════════════════════════════════════
-     TERRITORY DEEP DIVES
-     ════════════════════════════════════════════════════════════ -->
-{% if report.territoryDeepDives %}
-{% for dd in report.territoryDeepDives[:3] %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; {{ dd.name }} Territory Analysis</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  {# v3 Section Explainer (only on first deep dive) #}
-  {% if loop.index == 1 and report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.territory_deep_dives %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.territory_deep_dives }}
-  </div>
-  {% endif %}
-
-  <div class="dd-header">
     <div>
-      <h3 style="margin: 0; font-size: 16px;">{{ dd.name }}</h3>
-      <span class="muted">{{ dd.country }}</span>
-    </div>
-    <div style="text-align: right;">
-      <div class="dd-score">{{ dd.score }}/100</div>
-      <div class="dd-score-label">Overall Score</div>
+      <h4>Story reading <span class="provchip muted">Narrative</span></h4>
+      <div class="serif writtenrule" style="margin-bottom:20px">
+        <p>{{ report.genre or 'This production' }}{% if report.tone %} — {{ report.tone | lower }} in tone{% endif %}{% if report.scale %}, {{ report.scale | lower }} in scale{% endif %}.
+        {% if report.complexity %}Production complexity is assessed as {{ report.complexity | lower }}.{% endif %}</p>
+      </div>
+      {% if si and si.productionChallenges %}
+      <div style="border-top:1px solid var(--hairline);padding-top:16px">
+        <div class="h5label">Production challenges</div>
+        <ul class="challenges">
+          {% for c in si.productionChallenges[:6] %}<li>{{ c }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
     </div>
   </div>
+</div>
+{% endif %}
 
-  <div class="dd-grid">
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Tax Rebate</div>
-      <div class="dd-grid-value gold">{{ dd.rebate }}</div>
+<!-- ═══════════════ PRODUCTION LOCATION STRATEGY ═══════════════ -->
+{% if not is_preview and rankings %}
+<div class="page" id="sec-strategy">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['strategy'] }} — Production Location Strategy</div>
+  <div class="sectitle">Where the numbers point</div>
+  <p class="secsub">{{ rankings | length }} territor{{ 'y' if rankings | length == 1 else 'ies' }}, scored across six dimensions.</p>
+
+  {% if report.scoringMethodology and report.scoringMethodology.dimensions %}
+  <div style="border:1px solid var(--hairline);margin-bottom:14px">
+    <div style="padding:11px 16px;border-bottom:1px solid var(--hairline);font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)">What the six dimensions measure</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10.5px;line-height:1.55">
+      {% for dim in report.scoringMethodology.dimensions %}
+      <tr>
+        <td style="padding:8px 16px;border-bottom:1px solid var(--hairline);font-weight:700;width:150px;vertical-align:top">{{ dim.name }}</td>
+        <td style="padding:8px 16px 8px 0;border-bottom:1px solid var(--hairline);color:#3A382F">{{ dim.description }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% if report.scoringMethodology.weightingNote %}
+  <div class="notebox"><span class="nk">How we score&nbsp;&nbsp;</span>{{ report.scoringMethodology.overview }} {{ report.scoringMethodology.weightingNote }}</div>
+  {% endif %}
+  {% endif %}
+
+  {% for loc in rankings[:3] %}
+  {% if loop.first %}
+  <div class="tcard">
+    <div class="tcard-head">
+      <div><div class="rank">Nº 1 · Recommended</div><h3>{{ loc.name }}</h3></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        {{ bankchip(loc.bankabilityLabel) }}
+        {% if loc.score is not none %}<div class="bigscore"><div class="n">{{ loc.score }}</div><div class="d">/ 100</div></div>{% endif %}
+      </div>
     </div>
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Infrastructure</div>
-      <div class="dd-grid-value">{{ dd.infrastructure }}</div>
+    <div class="tcard-body">
+      <div class="dims">
+        {{ dimbar('Incentive value', loc.incentiveStrength) }}
+        {{ dimbar('Incentive reliability', loc.incentiveReliability) }}
+        {{ dimbar('Cost efficiency', loc.costEfficiency) }}
+        {{ dimbar('Currency advantage', loc.currencyAdvantage) }}
+        {{ dimbar('Crew depth', loc.crewDepth) }}
+        {{ dimbar('Infrastructure', loc.infrastructure) }}
+      </div>
+      <div class="tfacts">
+        {% set loc_sc = scenarios | selectattr('territory', 'equalto', loc.name) | first %}
+        {% if loc_sc and loc_sc.programme %}<div class="tfact"><span class="k">Programme</span><span class="v">{{ loc_sc.programme }}</span></div>{% endif %}
+        {% if loc.rebatePercent %}<div class="tfact"><span class="k">Rate</span><span class="v">{{ loc.rebatePercent }}</span></div>{% endif %}
+        {% if loc_sc and loc_sc.netRebate %}<div class="tfact"><span class="k">Est. net rebate</span><span class="v">{{ loc_sc.netRebate }}</span></div>{% endif %}
+        {% if loc.crewDepthTier %}<div class="tfact"><span class="k">Crew depth tier</span><span class="v">{{ loc.crewDepthTier }}</span></div>{% endif %}
+        {% if loc.paymentSpeed and loc.paymentSpeed != 'Data not available' %}<div class="tfact"><span class="k">Payment</span><span class="v">{{ loc.paymentSpeed | truncate(60) }}</span></div>{% endif %}
+      </div>
     </div>
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Payment Speed</div>
-      <div class="dd-grid-value">{{ dd.paymentSpeed }}</div>
-    </div>
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Cultural Test</div>
-      <div class="dd-grid-value">{{ dd.culturalTestLikelihood }}</div>
-    </div>
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Admin Complexity</div>
-      <div class="dd-grid-value">{{ dd.adminComplexity }}</div>
-    </div>
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Estimated Rebate</div>
-      <div class="dd-grid-value gold">{{ dd.estimatedRebate }}</div>
-    </div>
-    {% if dd.bankabilityLabel is defined and dd.bankabilityLabel %}
-    <div class="dd-grid-item">
-      <div class="dd-grid-label">Bankability</div>
-      <div class="dd-grid-value">
-        <span class="bankability {% if dd.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif dd.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
-          {{ dd.bankabilityLabel }}
-        </span>
+    {% if loc.reasoning %}
+    <div class="treason">
+      <h5>Why it ranks first <span class="provchip muted">Narrative · from computed inputs</span></h5>
+      <div class="serif" style="font-size:12.5px">
+        <p>{% if loc.reasoning is string %}{{ loc.reasoning }}{% else %}{{ loc.reasoning | join(' ') }}{% endif %}</p>
       </div>
     </div>
     {% endif %}
   </div>
+  {% endif %}
+  {% endfor %}
 
-  {% if dd.keyAdvantages %}
-  <h3 style="color: #16a34a;">Key Advantages</h3>
-  <ul style="padding-left: 16px; font-size: 10px; margin-bottom: 12px;">
-    {% for adv in dd.keyAdvantages %}
-    <li style="margin-bottom: 4px;">{{ adv }}</li>
+  {% if rankings | length > 1 %}
+  <div class="minicards">
+    {% for loc in rankings[1:3] %}
+    <div class="minicard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div class="rank">Nº {{ loop.index + 1 }}</div><h4>{{ loc.name }}</h4></div>
+        {% if loc.score is not none %}<div class="bigscore"><div class="n" style="font-size:22px">{{ loc.score }}</div></div>{% endif %}
+      </div>
+      <div class="sub">
+        {% if loc.rebatePercent %}{{ loc.rebatePercent }}{% endif %}
+        {% set loc_sc = scenarios | selectattr('territory', 'equalto', loc.name) | first %}
+        {% if loc_sc and loc_sc.netRebate %} · {{ loc_sc.netRebate }} est.{% endif %}
+        {{ bankchip(loc.bankabilityLabel) }}
+      </div>
+    </div>
     {% endfor %}
-  </ul>
+  </div>
   {% endif %}
 
-  {% if dd.keyRisks %}
-  <h3 style="color: #dc2626;">Key Risks</h3>
-  <ul style="padding-left: 16px; font-size: 10px; margin-bottom: 12px;">
-    {% for risk in dd.keyRisks %}
-    <li style="margin-bottom: 4px;">{{ risk }}</li>
-    {% endfor %}
-  </ul>
+  {% set origin = report.scriptOriginCallout %}
+  {% if origin %}
+  <div class="origin">
+    <div class="ok"><h4>Script-origin territory · {{ origin.territory }}</h4><span class="outside">Outside the ranking</span></div>
+    <div class="serif" style="font-size:12.5px">Your script is set in {{ origin.territory }} — {% if not origin.hasIncentiveProgramme %}but it offers no formal production incentive, so it cannot rank on financial dimensions. That is a fact about the incentive landscape, not about whether you should shoot there.{% else %}ranked separately here because it was not among the compared territories.{% endif %}</div>
+    <div class="ostats">
+      {% if origin.scenesPct %}<div class="os"><div class="n">{{ origin.scenesPct }}%</div><div class="l">of scenes set there</div></div>{% endif %}
+      <div class="os"><div class="n">{{ origin.programmeNote if origin.hasIncentiveProgramme else '—' }}</div><div class="l">{{ 'Programme' if origin.hasIncentiveProgramme else 'No incentive programme' }}</div></div>
+      {% if origin.currencyAdvantage is not none %}<div class="os"><div class="n">{{ origin.currencyAdvantage }}<span style="font-size:12px;color:var(--grey)">/100</span></div><div class="l">Currency advantage</div></div>{% endif %}
+      {% if origin.crewDepthTier %}<div class="os"><div class="n" style="font-size:16px">{{ origin.crewDepthTier }}</div><div class="l">Crew depth tier</div></div>{% endif %}
+    </div>
+    <div class="serif" style="font-size:12.5px">The case for shooting there is authenticity and purchasing power, not rebate value — weigh it as a creative and currency decision alongside the ranked financial options above.</div>
+  </div>
   {% endif %}
-
-  <h3>Additional Details</h3>
-  <table>
-    <tr><th style="width: 180px;">Detail</th><th>Value</th></tr>
-    <tr><td>Cultural Test Likelihood</td><td><strong>{{ dd.culturalTestLikelihood }}</strong></td></tr>
-    <tr><td>Admin Complexity</td><td>{{ dd.adminComplexity }}</td></tr>
-    <tr><td>Estimated Rebate</td><td class="gold"><strong>{{ dd.estimatedRebate }}</strong></td></tr>
-  </table>
 </div>
-{% endfor %}
 {% endif %}
 
-<!-- ════════════════════════════════════════════════════════════
-     TAX INCENTIVE ANALYSIS
-     ════════════════════════════════════════════════════════════ -->
-{% if report.incentiveEstimates %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Tax Incentive Analysis</h2>
-  {% set ns.sec = ns.sec + 1 %}
+<!-- ═══════════════ TERRITORY DEEP DIVES ═══════════════ -->
+{% if not is_preview and report.territoryDeepDives %}
+<div class="page" id="sec-deepdives">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['deepdives'] }} — Territory Analysis</div>
+  <div class="sectitle">The ranked territories in depth</div>
+  <p class="secsub">Full incentive, crew and infrastructure picture per territory.</p>
 
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.incentive_analysis %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.incentive_analysis }}
+  {% for dd in report.territoryDeepDives[:3] %}
+  <div class="tcard">
+    <div class="tcard-head">
+      <div><div class="rank">{{ dd.country }}</div><h3>{{ dd.name }}</h3></div>
+      <div class="bigscore"><div class="n">{{ dd.score }}</div><div class="d">/ 100</div></div>
+    </div>
+    <div class="tcard-body">
+      <div class="dims" style="width:50%">
+        <div class="tfact"><span class="k">Rebate</span><span class="v">{{ dd.rebate }}</span></div>
+        <div class="tfact"><span class="k">Est. rebate</span><span class="v">{{ dd.estimatedRebate }}</span></div>
+        <div class="tfact"><span class="k">Infrastructure</span><span class="v">{{ dd.infrastructure | truncate(60) }}</span></div>
+        <div class="tfact"><span class="k">Payment</span><span class="v">{{ dd.paymentSpeed | truncate(60) }}</span></div>
+        <div class="tfact"><span class="k">Cultural test</span><span class="v">{{ dd.culturalTestLikelihood }}</span></div>
+        <div class="tfact"><span class="k">Admin complexity</span><span class="v">{{ dd.adminComplexity }}</span></div>
+      </div>
+      <div class="tfacts">
+        {% if dd.keyAdvantages %}
+        <div class="h5label">Key advantages</div>
+        <ul class="challenges" style="margin-bottom:14px">
+          {% for adv in dd.keyAdvantages[:4] %}<li>{{ adv }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if dd.keyRisks %}
+        <div class="h5label" style="color:var(--amber)">Key risks</div>
+        <ul class="challenges">
+          {% for risk in dd.keyRisks[:4] %}<li>{{ risk }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════ FINANCIAL ANALYSIS ═══════════════ -->
+{% if not is_preview and scenarios %}
+<div class="page" id="sec-financial">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['financial'] }} — Financial Analysis</div>
+  <div class="sectitle">From budget to net position</div>
+  <p class="secsub">One chart per ranked territory — every figure traceable to its working. The chart shape follows the programme's mechanism.</p>
+
+  {% set main_sc = scenarios[0] %}
+  {% if main_sc.totalBudgetValue %}
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <span class="h5label" style="margin:0">Rebate waterfall — {{ main_sc.territory }}{% if main_sc.programme %} · {{ main_sc.programme }}{% endif %}</span>
+    <span class="provchip">Computed</span>
+  </div>
+  {{ waterfall(main_sc, 660, 220, 11) }}
+
+  <div style="border-top:1px solid var(--hairline);margin-top:10px;padding-top:14px;margin-bottom:8px">
+    <div style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--grey);margin-bottom:10px">How to read this chart</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:10px;line-height:1.55;color:#3A382F;font-weight:500">
+      <div><b>1 · Total budget</b> — the full cost of the production, before any incentive.</div>
+      <div><b>2 · Gross rebate</b> — the headline rate applies only to <i>qualifying spend</i>{% if main_sc.qualifyingSpend %}: the {{ main_sc.qualifyingSpend }} the programme counts, not the whole budget{% endif %}.</div>
+      {% if main_sc.rateNet and main_sc.rateGross and main_sc.rateNet != main_sc.rateGross %}
+      <div><b>3 · Tax treatment</b> — this credit is paid through the tax system, so part is taxed back. That is why the usable rate is {{ main_sc.rateNet }}, not {{ main_sc.rateGross }}.</div>
+      <div><b>4 · Net budget</b> — what the production effectively costs once the {{ main_sc.netRebate }} that actually lands is deducted.</div>
+      {% else %}
+      <div><b>3 · Net position</b> — cash rebates have no tax-treatment step: gross and net are the same, so the chart has one fewer bar.</div>
+      {% endif %}
+    </div>
+    {% if main_sc.notes %}<p style="font-size:9.5px;color:var(--grey);margin-top:10px;font-weight:500">{{ main_sc.notes }}</p>{% endif %}
   </div>
   {% endif %}
 
-  {% if is_preview %}
-  {# Preview: show territory + programme, lock financial values #}
-  {% for inc in report.incentiveEstimates %}
-  <div class="card">
-    <div class="card-header">
-      <h3 style="margin: 0;">{{ inc.territory }}</h3>
-      <span class="muted">{{ inc.program }}</span>
+  {% set other_scs = scenarios[1:3] | selectattr('totalBudgetValue') | list %}
+  {% if other_scs %}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:20px 0 4px">
+    {% for sc in other_scs %}
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--grey)">{{ sc.territory }}{% if sc.programme %} · {{ sc.programme | truncate(32) }}{% endif %}</span>
+        <span class="provchip">Computed</span>
+      </div>
+      {{ waterfall(sc, 300, 132, 9) }}
+      {% if sc.notes %}<p style="font-size:9px;color:var(--grey);font-weight:500;margin-top:4px;line-height:1.5">{{ sc.notes | truncate(160) }}</p>{% endif %}
     </div>
-    <table>
-      <tr><th style="width: 160px;">Detail</th><th>Value</th></tr>
-      <tr><td>Rate</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Cap</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Qualifying Spend</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Estimated Rebate</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-    </table>
+    {% endfor %}
   </div>
-  {% endfor %}
-  <div style="text-align: center; margin-top: 14px;">
-    <span class="locked-section-cta">Upgrade to unlock rebate calculations &mdash; prodculator.com</span>
-  </div>
+  {% endif %}
 
-  {% else %}
-  {# Full rendering for paid users #}
-  {% for inc in report.incentiveEstimates %}
-  <div class="card">
-    <div class="card-header">
-      <h3 style="margin: 0;">{{ inc.territory }} &mdash; {{ inc.program }}</h3>
-      {% if inc.bankabilityLabel %}
-      <span class="bankability {% if inc.bankabilityLabel == 'BANKABLE' %}bankability-bankable{% elif inc.bankabilityLabel == 'VERIFY FIRST' %}bankability-verify{% else %}bankability-not{% endif %}">
-        {{ inc.bankabilityLabel }}
-      </span>
-      {% endif %}
-    </div>
-    <table>
-      <tr><th style="width: 160px;">Detail</th><th>Value</th></tr>
-      <tr><td>Rate</td><td><strong>{{ inc.rate }}</strong></td></tr>
-      <tr><td>Cap</td><td>{{ inc.cap }}</td></tr>
-      <tr><td>Qualifying Spend</td><td>{{ inc.qualifyingSpend }}</td></tr>
-      <tr><td>Estimated Rebate</td><td class="gold"><strong>{{ inc.estimatedRebate }}</strong></td></tr>
-    </table>
-
-    {% if inc.requirements %}
-    <h4>Requirements</h4>
-    <ul style="padding-left: 16px; font-size: 10px;">
-      {% for req in inc.requirements %}
-      <li>{{ req }}</li>
+  {% set rebate_scs = scenarios | selectattr('netRebateValue') | list %}
+  {% set timing = (report.financialAnalysis or {}).get('paymentTiming') or [] %}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:36px;margin-top:24px">
+    {% if rebate_scs %}
+    {% set max_rebate = rebate_scs | map(attribute='netRebateValue') | max %}
+    <div>
+      <div class="h5label">Net rebate by territory</div>
+      {% for sc in rebate_scs[:5] %}
+      <div class="lb-row">
+        <span class="lb-name" style="width:95px">{{ sc.territory | truncate(16, true, '…') }}</span>
+        <div class="lb-track" style="height:18px"><div class="lb-fill{% if not loop.first %} minor{% endif %}" style="width:{{ '%.0f' | format(100 * sc.netRebateValue / max_rebate) if max_rebate else 0 }}%"></div></div>
+        <span class="lb-val" style="width:64px">{{ sc.currencySymbol }}{{ sc.netRebateValue | money_compact }}</span>
+      </div>
       {% endfor %}
+      <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:10px;line-height:1.5">Estimated net rebates on the spend stated in each scenario — not additive unless a multi-territory structure is adopted.</p>
+    </div>
+    {% endif %}
+    {% if timing %}
+    <div>
+      <div class="h5label">When the money arrives — payment timing</div>
+      {% set entries = timing[:4] %}
+      {% set max_weeks = entries | map(attribute='totalWeeksMax') | select() | list %}
+      {% set scale_max = (max_weeks | max) if max_weeks else 52 %}
+      {% set scale_max = [scale_max, 26] | max %}
+      <svg viewBox="0 0 300 {{ 24 + entries | length * 28 }}" style="width:100%" xmlns="http://www.w3.org/2000/svg">
+        {% set chart_x = 78 %}{% set chart_w = 214 %}
+        {% for entry in entries %}
+        {% set y0 = 10 + loop.index0 * 28 %}
+        <text x="2" y="{{ y0 + 10 }}" font-family="Montserrat" font-size="9" font-weight="700" fill="#141414">{{ entry.territory | truncate(11, true, '…') }}</text>
+        {% if entry.totalWeeksMax %}
+        {% set bx = chart_x + chart_w * (entry.totalWeeksMin or 0) / scale_max %}
+        {% set bw2 = chart_w * ((entry.totalWeeksMax - (entry.totalWeeksMin or 0)) or 2) / scale_max %}
+        <rect x="{{ '%.0f' | format(bx) }}" y="{{ y0 }}" width="{{ '%.0f' | format([bw2, 4] | max) }}" height="13" rx="1"
+              fill="{{ '#B3402E' if entry.suspended else ('#2E7D4F' if entry.totalWeeksMax <= 26 else '#B87A1F') }}"/>
+        <text x="{{ '%.0f' | format(bx + 4) }}" y="{{ y0 + 10 }}" font-family="Montserrat" font-size="7" font-weight="700" fill="#FDFCFA">{{ '%.0f' | format((entry.totalWeeksMin or 0) / 4.345) }}–{{ '%.0f' | format(entry.totalWeeksMax / 4.345) }} MO</text>
+        {% endif %}
+        {% endfor %}
+        {% set axis_y = 16 + entries | length * 28 %}
+        <line x1="{{ chart_x }}" y1="{{ axis_y - 6 }}" x2="{{ chart_x + chart_w }}" y2="{{ axis_y - 6 }}" stroke="#E7E3DA"/>
+        <g font-family="Montserrat" font-size="7.5" fill="#6E6A61" font-weight="600">
+          <text x="{{ chart_x }}" y="{{ axis_y + 4 }}">0</text>
+          <text x="{{ chart_x + chart_w * 0.5 }}" y="{{ axis_y + 4 }}" text-anchor="middle">{{ '%.0f' | format(scale_max / 2 / 4.345) }}mo</text>
+          <text x="{{ chart_x + chart_w }}" y="{{ axis_y + 4 }}" text-anchor="end">{{ '%.0f' | format(scale_max / 4.345) }}mo</text>
+        </g>
+      </svg>
+      <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:6px;line-height:1.5">Indicative certification-to-cash windows after completion, per programme terms and verified payment-timing data.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endif %}
+
+<!-- ═══════════════ TAX INCENTIVE ANALYSIS ═══════════════ -->
+{% if not is_preview and report.incentiveEstimates %}
+<div class="page" id="sec-incentives">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['incentives'] }} — Tax Incentive Analysis</div>
+  <div class="sectitle">Programme rates, caps and requirements</div>
+  <p class="secsub">Verified programme data — low-confidence records are flagged, never presented as certainties.</p>
+
+  {% for inc in report.incentiveEstimates[:6] %}
+  <div class="fcard">
+    <div class="fcard-top">
+      <div>
+        <h4>{{ inc.territory }} — {{ inc.program }}</h4>
+        <div class="meta">{{ inc.rate }}{% if inc.rateType %} · {{ inc.rateType | replace('_', ' ') }}{% endif %}{% if inc.cap %} · Cap: {{ inc.cap | truncate(60) }}{% endif %}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">{{ bankchip(inc.bankabilityLabel) }}</div>
+    </div>
+    <div style="display:flex;gap:24px;font-size:10.5px;color:#3A382F;font-weight:500;padding:8px 0;border-top:1px solid var(--hairline)">
+      {% if inc.estimatedRebate %}<span><b>Est. rebate:</b> {{ inc.estimatedRebate }}</span>{% endif %}
+      {% if inc.qualifyingSpend %}<span><b>Qualifying spend:</b> {{ inc.qualifyingSpend }}</span>{% endif %}
+      {% if inc.paymentSpeed %}<span><b>Payment:</b> {{ inc.paymentSpeed | truncate(50) }}</span>{% endif %}
+    </div>
+    {% if inc.requirements %}
+    <ul class="challenges" style="margin-top:8px">
+      {% for req in inc.requirements[:3] %}<li>{{ req }}</li>{% endfor %}
     </ul>
     {% endif %}
-
-    {% if inc.disclaimer %}
-    <p class="disclaimer" style="margin-top: 8px;"><em>{{ inc.disclaimer }}</em></p>
-    {% endif %}
-
-    <div class="data-source">
-      Data Source: {{ inc.dataSource or "Prodculator backend datasets" }}
-      {% if inc.lastUpdated %}&nbsp;&bull;&nbsp; Last Verified: {{ inc.lastUpdated[:10] }}{% endif %}
+    {% if inc.warnings %}
+    <div style="margin-top:8px;font-size:10px;color:var(--amber);font-weight:600">
+      {% for w in inc.warnings[:2] %}⚠ {{ w }}<br>{% endfor %}
     </div>
+    {% endif %}
+    {% if inc.stackingNote %}<div style="margin-top:6px;font-size:10px;color:var(--grey);font-weight:500">{{ inc.stackingNote }}</div>{% endif %}
   </div>
   {% endfor %}
-  {% endif %}
+  <p class="disclaimer" style="margin-top:10px">Estimates only. Final eligibility depends on official approval by the relevant authorities.</p>
 </div>
 {% endif %}
 
-<!-- ════════════════════════════════════════════════════════════
-     CREW COST ESTIMATES
-     ════════════════════════════════════════════════════════════ -->
-{% if report.crewInsights %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Crew Cost Estimates</h2>
-  {% set ns.sec = ns.sec + 1 %}
+<!-- ═══════════════ GRANTS ═══════════════ -->
+{% if not is_preview and grants_only %}
+<div class="page" id="sec-grants">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['grants'] }} — Grant &amp; Funding Opportunities</div>
+  <div class="sectitle">Matched funds and deadlines</div>
+  <p class="secsub">Funds whose territory and format criteria this production meets.</p>
 
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.crew_costs %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.crew_costs }}
+  <table class="rowtable">
+    <tr><th style="width:36%">Fund</th><th>Territory</th><th>Amount</th><th>Deadline</th></tr>
+    {% for opp in grants_only[:10] %}
+    <tr>
+      <td style="font-weight:600">{{ opp.name }}
+        {% for badge in opp.badges or [] %}<br><span class="chip {{ 'notbank' if badge == 'LEGISLATIVE RISK' else ('verify' if badge != 'CLOSING SOON' else 'gold') }}" style="margin-top:4px">{{ badge }}</span>{% endfor %}
+      </td>
+      <td>{{ opp.territory }}</td>
+      <td>{{ opp.notes | truncate(46) }}</td>
+      <td>{{ opp.deadline or 'Rolling' }}</td>
+    </tr>
+    {% if opp.whyMatched %}
+    <tr><td colspan="4" style="font-family:var(--serif);font-size:11px;color:#26241F;font-style:italic">{{ opp.whyMatched }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  <p class="disclaimer">Eligibility criteria are summarised — confirm current guidelines with each fund before applying.</p>
+</div>
+{% endif %}
+
+<!-- ═══════════════ COMPARABLES ═══════════════ -->
+{% if not is_preview and report.comparables %}
+<div class="page" id="sec-comparables">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['comparables'] }} — Comparable Productions</div>
+  <div class="sectitle">Films that made similar choices</div>
+  <p class="secsub">Matched on genre, budget tier and territory relevance.</p>
+
+  <table class="rowtable">
+    <tr><th style="width:30%">Title</th><th>Genre</th><th>Budget</th><th>Location</th><th>Year</th></tr>
+    {% for comp in report.comparables[:8] %}
+    <tr>
+      <td style="font-weight:600">{{ comp.title }}</td>
+      <td>{{ comp.genre }}</td>
+      <td>{{ comp.budgetRange }}</td>
+      <td>{{ comp.location }}</td>
+      <td>{{ comp.year }}</td>
+    </tr>
+    {% if comp.relevanceDescription %}
+    <tr><td colspan="5" style="font-family:var(--serif);font-size:11.5px;color:#26241F;border-bottom:1px solid var(--hairline)">{{ comp.relevanceDescription }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<!-- ═══════════════ FESTIVALS ═══════════════ -->
+{% if report.festivalRecommendations %}
+<div class="page" id="sec-festivals">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['festivals'] }} — Festival Recommendations</div>
+  <div class="sectitle">Where your film could be seen</div>
+  <p class="secsub">Matched on format, timing, genre and territory — never inferred.</p>
+
+  {% for fest in report.festivalRecommendations %}
+  <div class="fcard">
+    <div class="fcard-top">
+      <div>
+        <h4>{{ fest.name }}</h4>
+        <div class="meta">{{ fest.location }}{% if fest.tier %} · {{ fest.tier }}{% endif %}{% if fest.oscarQualifying %} · Oscar-qualifying{% endif %}</div>
+      </div>
+      {% if fest.deadlinePattern %}
+      <div class="deadline"><div class="d">{{ fest.deadlinePattern | truncate(70) }}</div><div class="l">Submission pattern</div></div>
+      {% endif %}
+    </div>
+    {% if fest.whyMatched %}<div class="whym">{{ fest.whyMatched }}</div>{% endif %}
   </div>
-  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════ DISTRIBUTORS ═══════════════ -->
+{% if report.distributorRecommendations %}
+<div class="page" id="sec-distributors">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['distributors'] }} — Distributor Recommendations</div>
+  <div class="sectitle">Who could buy your film</div>
+  <p class="bridge" style="margin-top:14px">Distributors are ranked partly on whether they actively scout the festivals recommended above — a distributor who attends your premiere is worth more than one who matches on paper.</p>
+
+  {% for dist in report.distributorRecommendations %}
+  <div class="fcard">
+    {% if dist.scoutsRecommendedFestivals %}
+    <div class="linkage">Scouts {{ dist.scoutsRecommendedFestivals[0] }}{% if dist.scoutsRecommendedFestivals | length > 1 %} +{{ dist.scoutsRecommendedFestivals | length - 1 }}{% endif %} · your recommended premiere</div>
+    {% endif %}
+    <div class="fcard-top">
+      <div>
+        <h4>{{ dist.name }}</h4>
+        <div class="meta">{{ dist.primaryMarket }}{% if dist.rightsType %} · {{ dist.rightsType | replace('_', ' ') }}{% endif %}{% if dist.verified %} · Verified{% endif %}</div>
+      </div>
+    </div>
+    {% if dist.whyMatched %}<div class="whym">{{ dist.whyMatched }}{% if dist.submissionProcess %} <span class="sig">{{ dist.submissionProcess }}</span>{% endif %}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════ WEATHER & LOGISTICS ═══════════════ -->
+{% if not is_preview and report.weatherLogistics %}
+<div class="page" id="sec-weather">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['weather'] }} — Weather &amp; Logistics</div>
+  <div class="sectitle">Shoot-window risk by territory</div>
+  <p class="secsub">Climate data and travel practicalities for the ranked territories.</p>
+
+  {% for w in report.weatherLogistics[:4] %}
+  <div class="fcard">
+    <div class="fcard-top">
+      <div>
+        <h4>{{ w.territory }}</h4>
+        <div class="meta">Best months: {{ w.bestMonths | join(', ') }}{% if w.avgTempRange %} · {{ w.avgTempRange }}{% endif %}</div>
+      </div>
+      <span class="chip {{ 'bank' if w.weatherRisk == 'Low' else ('verify' if w.weatherRisk == 'Medium' else 'notbank') }}">{{ w.weatherRisk }} risk</span>
+    </div>
+    <div style="font-size:11px;line-height:1.6;color:#3A382F;font-weight:500;padding-top:8px;border-top:1px solid var(--hairline)">
+      {% if w.shootWindowRisk %}<b>{{ w.shootWindowRisk }}</b><br>{% endif %}
+      {% if w.seasonalConsiderations %}{{ w.seasonalConsiderations }}<br>{% endif %}
+      {% if w.contingencyBudget %}Contingency: {{ w.contingencyBudget }} · {% endif %}
+      {% if w.travelVisa %}Visas: {{ w.travelVisa | truncate(120) }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══════════════ NEXT STEPS & DISCLAIMERS ═══════════════ -->
+<div class="page" id="sec-next">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['next'] }} — Next Steps &amp; Disclaimers</div>
+  <div class="sectitle">What to do with this report</div>
 
   {% if is_preview %}
-  {# Preview: territory name visible, all cost/quality values locked #}
-  <table>
+  <p class="secsub">The sections below are available on paid plans.</p>
+  {% for s in secs %}{% if s.locked %}
+  <div class="locked-item">
+    <div class="num">{{ num_map[s.id] }}</div>
+    <div><div class="t">&#128274; {{ s.title }}</div></div>
+  </div>
+  {% endif %}{% endfor %}
+  <div class="upgrade-cta">
+    <div class="t">Unlock the full report</div>
+    <div class="s">Full territory rankings, tax incentive rebates, financial analysis, festival &amp; distributor strategy — at prodculator.com.</div>
+  </div>
+  {% else %}
+  {% if es.actionTimeline %}
+  <div class="h5label" style="margin-top:8px">Action timeline</div>
+  <table class="rowtable">
+    <tr><th style="width:55%">Action</th><th>Deadline</th><th>Note</th></tr>
+    {% for item in es.actionTimeline[:8] %}
     <tr>
-      <th>Territory</th>
-      <th>Availability</th>
-      <th>Cost vs USD</th>
-      <th>Quality</th>
-      <th>Specialties</th>
-      <th>Trade-off</th>
-    </tr>
-    {% for crew in report.crewInsights %}
-    <tr class="avoid-break">
-      <td><strong>{{ crew.territory }}</strong></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
+      <td style="font-weight:600">{{ item.action }}</td>
+      <td>{{ item.deadline or '—' }}</td>
+      <td>{{ item.note or '' }}</td>
     </tr>
     {% endfor %}
   </table>
-  <div style="text-align: center; margin-top: 14px;">
-    <span class="locked-section-cta">Upgrade to unlock crew cost data &mdash; prodculator.com</span>
-  </div>
-
-  {% else %}
-  {# Full rendering for paid users #}
-  <table>
-    <tr>
-      <th>Territory</th>
-      <th>Availability</th>
-      <th>Cost vs USD</th>
-      <th>Quality</th>
-      <th>Specialties</th>
-      <th>Trade-off</th>
-    </tr>
-    {% for crew in report.crewInsights %}
-    <tr class="avoid-break">
-      <td><strong>{{ crew.territory }}</strong></td>
-      <td>
-        <span class="{% if crew.availability == 'High' %}risk-low{% elif crew.availability == 'Medium' %}risk-medium{% else %}risk-high{% endif %}">
-          {{ crew.availability }}
-        </span>
-      </td>
-      <td>{{ crew.costVsUSD }}</td>
-      <td>{{ crew.qualityRating }}/5</td>
-      <td>
-        {% for s in crew.specialties[:4] %}
-          <span class="tag">{{ s }}</span>
-        {% endfor %}
-      </td>
-      <td style="font-size: 9px;">{{ crew.tradeoff }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  <div class="data-source">Data Source: Prodculator backend datasets</div>
-  {% endif %}
-</div>
-{% endif %}
-
-<!-- ════════════════════════════════════════════════════════════
-     GRANT & FUNDING OPPORTUNITIES
-     ════════════════════════════════════════════════════════════ -->
-{% if report.fundingOpportunities %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Grant &amp; Funding Opportunities</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.funding_opportunities %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.funding_opportunities }}
-  </div>
   {% endif %}
 
-  <p class="muted" style="margin-bottom: 12px;">Based on your production's profile, here are relevant funding opportunities across top territories.</p>
-
-  {% set funds = report.fundingOpportunities | selectattr("type", "equalto", "Fund") | list %}
-  {% if funds %}
-  {% for f in funds %}
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <h4 style="margin: 0;">{{ f.name }}</h4>
-        <span class="muted">{{ f.genre | join(", ") if f.genre else "" }}</span>
-      </div>
-      <span class="tag tag-gold">{{ f.tier or "Grant" }}</span>
-    </div>
-    <table style="margin-bottom: 0;">
-      <tr><td class="muted" style="width: 100px;">Amount</td><td><strong>{{ f.notes or "N/A" }}</strong></td></tr>
-      <tr><td class="muted">Deadline</td><td>{{ f.deadline or "N/A" }}</td></tr>
-      {% if f.website %}<tr><td class="muted">Website</td><td style="font-size: 9px;">{{ f.website }}</td></tr>{% endif %}
-    </table>
-  </div>
-  {% endfor %}
-  {% else %}
-  <p class="muted">No matching funds identified.</p>
+  {% if report.alternativeStrategy %}
+  <div class="h5label">Alternative strategy</div>
+  <div class="serif writtenrule" style="margin-bottom:24px"><p>{{ report.alternativeStrategy }}</p></div>
+  {% endif %}
   {% endif %}
 
-  <h3>Festivals</h3>
-  {% set festivals = report.fundingOpportunities | selectattr("type", "equalto", "Festival") | list %}
-  {% if festivals %}
-  {% for f in festivals %}
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <h4 style="margin: 0;">{{ f.name }}</h4>
-        <span class="muted">{{ f.genre | join(", ") if f.genre else "" }}</span>
-      </div>
-      {% if f.tier %}<span class="tag tag-gold">{{ f.tier }}</span>{% endif %}
-    </div>
-    <table style="margin-bottom: 0;">
-      <tr><td class="muted" style="width: 100px;">Deadline</td><td>{{ f.deadline or "N/A" }}</td></tr>
-      {% if f.notes %}<tr><td class="muted">Notes</td><td style="font-size: 9px;">{{ f.notes }}</td></tr>{% endif %}
-      {% if f.website %}<tr><td class="muted">Website</td><td style="font-size: 9px;">{{ f.website }}</td></tr>{% endif %}
-    </table>
-  </div>
-  {% endfor %}
-  {% else %}
-  <p class="muted">No matching festivals identified.</p>
-  {% endif %}
-
-  <div class="card" style="background: #f9f9f9; border-color: #D4AF37; margin-top: 12px;">
-    <p style="font-size: 9px; color: #666; margin: 0;">
-      <strong class="gold">Pro Tip:</strong> Applications for grants typically require 3-6 months lead time. Start preparation early and consider engaging a local producer familiar with the application process.
+  <div style="margin-top:auto;padding-top:26px">
+    {% if report.attributions %}
+    <div class="h5label">Data sources</div>
+    <p class="disclaimer" style="margin-bottom:14px">
+      {% for attr in report.attributions[:8] %}{{ attr.territory }}: {{ attr.text }}{% if not loop.last %} · {% endif %}{% endfor %}
     </p>
-  </div>
-
-  <div class="data-source">Data Source: Prodculator backend datasets</div>
-</div>
-{% elif is_preview %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Grant &amp; Funding Opportunities</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <p class="muted" style="margin-bottom: 12px;">Matched grants, co-production funds, and festival submission deadlines relevant to your production profile.</p>
-  {% for item in [("Fund", "tag-gold"), ("Festival", ""), ("Fund", "tag-gold"), ("Festival", "")] %}
-  <div class="card">
-    <div class="card-header">
-      <div style="height: 12px; width: 55%; background: #eee; border-radius: 2px;"></div>
-      <span class="tag {{ item[1] }}">{{ item[0] }}</span>
-    </div>
-    <table style="margin-bottom: 0;">
-      <tr><td class="muted" style="width: 100px;">Amount</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td class="muted">Deadline</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-    </table>
-  </div>
-  {% endfor %}
-  <div style="text-align: center; margin-top: 14px;">
-    <span class="locked-section-cta">Upgrade to unlock funding intelligence &mdash; prodculator.com</span>
-  </div>
-</div>
-{% endif %}
-
-<!-- ════════════════════════════════════════════════════════════
-     COMPARABLE PRODUCTIONS & FESTIVAL STRATEGY
-     ════════════════════════════════════════════════════════════ -->
-{% if report.comparables %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Comparable Productions &amp; Festival Strategy</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  <h3>Comparable Productions</h3>
-  <p class="muted" style="margin-bottom: 10px;">Similar films that have successfully navigated production and distribution:</p>
-
-  {% for comp in report.comparables %}
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <h4 style="margin: 0;">{{ comp.title }}{% if comp.year %} ({{ comp.year }}){% endif %}</h4>
-        <span class="muted">{{ comp.genre }}</span>
-      </div>
-      <span class="tag tag-gold">{{ comp.budgetRange }}</span>
-    </div>
-    <table style="margin-bottom: 0;">
-      <tr><td class="muted" style="width: 100px;">Territory</td><td>{{ comp.location }}</td></tr>
-      {% if comp.relevanceDescription %}<tr><td class="muted">Relevance</td><td style="font-size: 9px;">{{ comp.relevanceDescription }}</td></tr>{% endif %}
-      {% if comp.source %}<tr><td class="muted">Source</td><td style="font-size: 9px;">{{ comp.source }}</td></tr>{% endif %}
-    </table>
-  </div>
-  {% endfor %}
-
-  <div class="data-source">Data Source: Prodculator backend datasets</div>
-</div>
-{% elif is_preview %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Comparable Productions &amp; Festival Strategy</h2>
-  {% set ns.sec = ns.sec + 1 %}
-  <h3>Comparable Productions</h3>
-  <p class="muted" style="margin-bottom: 10px;">Films comparable by budget, genre, and territory — plus a tailored festival submission strategy.</p>
-  <table>
-    <tr>
-      <th>Title</th><th>Genre</th><th>Budget</th><th>Territory</th><th>Year</th>
-    </tr>
-    {% for _ in range(4) %}
-    <tr>
-      <td><span class="locked-val">&#128274; Upgrade</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-      <td><span class="locked-val">&#128274;</span></td>
-    </tr>
-    {% endfor %}
-  </table>
-  <div style="text-align: center; margin-top: 14px;">
-    <span class="locked-section-cta">Upgrade to unlock comparable productions &mdash; prodculator.com</span>
-  </div>
-</div>
-{% endif %}
-
-<!-- ════════════════════════════════════════════════════════════
-     WEATHER & LOGISTICS
-     ════════════════════════════════════════════════════════════ -->
-{% if report.weatherLogistics %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Weather &amp; Logistics</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  {# v3 Section Explainer #}
-  {% if report.scriptAnalysis and report.scriptAnalysis.sectionExplainers and report.scriptAnalysis.sectionExplainers.weather_logistics %}
-  <div class="section-explainer">
-    {{ report.scriptAnalysis.sectionExplainers.weather_logistics }}
-  </div>
-  {% endif %}
-
-  {% if is_preview %}
-  {# Preview: territory name visible, all weather/logistics values locked #}
-  {% for wl in report.weatherLogistics %}
-  <div class="card">
-    <div class="card-header">
-      <h3 style="margin: 0;">{{ wl.territory }}</h3>
-      <span class="locked-val">Risk &#128274;</span>
-    </div>
-    <table>
-      <tr><th style="width: 160px;">Factor</th><th>Detail</th></tr>
-      <tr><td>Best Months</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Temperature Range</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Daylight Hours</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Infrastructure</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-      <tr><td>Travel &amp; Visa</td><td><span class="locked-val">&#128274; Upgrade to unlock</span></td></tr>
-    </table>
-  </div>
-  {% endfor %}
-  <div style="text-align: center; margin-top: 14px;">
-    <span class="locked-section-cta">Upgrade to unlock weather &amp; logistics &mdash; prodculator.com</span>
-  </div>
-
-  {% else %}
-  {# Full rendering for paid users #}
-  {% for wl in report.weatherLogistics %}
-  <div class="card">
-    <div class="card-header">
-      <h3 style="margin: 0;">{{ wl.territory }}</h3>
-      <span class="{% if wl.weatherRisk == 'Low' %}risk-low{% elif wl.weatherRisk == 'Medium' %}risk-medium{% else %}risk-high{% endif %}">
-        {{ wl.weatherRisk }} Risk
-      </span>
-    </div>
-
-    <table>
-      <tr>
-        <th style="width: 160px;">Factor</th><th>Detail</th>
-      </tr>
-      <tr><td>Best Months</td><td>{{ wl.bestMonths | join(", ") if wl.bestMonths else "N/A" }}</td></tr>
-      {% if wl.avgTempRange %}<tr><td>Temperature Range</td><td>{{ wl.avgTempRange }}</td></tr>{% endif %}
-      {% if wl.avgRainfall %}<tr><td>Avg Rainfall</td><td>{{ wl.avgRainfall }}</td></tr>{% endif %}
-      {% if wl.daylightHours %}<tr><td>Daylight Hours</td><td>{{ wl.daylightHours }}</td></tr>{% endif %}
-      {% if wl.seasonalConsiderations %}<tr><td>Seasonal Notes</td><td>{{ wl.seasonalConsiderations }}</td></tr>{% endif %}
-      <tr><td>Infrastructure</td><td>{{ wl.infrastructure or "N/A" }}</td></tr>
-      <tr><td>Travel &amp; Visa</td><td>{{ wl.travelVisa or "N/A" }}</td></tr>
-    </table>
-  </div>
-  {% endfor %}
-  <div class="data-source">Data Source: Prodculator backend datasets</div>
-  {% endif %}
-</div>
-{% endif %}
-
-<!-- ════════════════════════════════════════════════════════════
-     PRODUCTION INTELLIGENCE (B2B only)
-     ════════════════════════════════════════════════════════════ -->
-{% if report.productionIntelligence %}
-{% set pi = report.productionIntelligence %}
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Production Intelligence</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  {% if pi.marketTrends %}
-  <h3>Market Trends</h3>
-
-  {% if pi.marketTrends.cameraEquipmentDemand %}
-  <h4>Camera &amp; Equipment Demand</h4>
-  <table>
-    <tr><th>Equipment</th><th>Demand</th><th>Trend</th></tr>
-    {% for eq in pi.marketTrends.cameraEquipmentDemand %}
-    <tr><td>{{ eq.equipment }}</td><td>{{ eq.demand }}</td><td>{{ eq.trend }}</td></tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-
-  {% if pi.marketTrends.crewAvailability %}
-  <h4>Crew Availability by Territory</h4>
-  <table>
-    <tr><th>Territory</th><th>Availability</th><th>Rate</th></tr>
-    {% for ca in pi.marketTrends.crewAvailability %}
-    <tr><td>{{ ca.territory }}</td><td>{{ ca.availability }}</td><td>{{ ca.rate }}</td></tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-
-  {% if pi.marketTrends.territoryDemand %}
-  <h4>Territory Demand</h4>
-  <table>
-    <tr><th>Territory</th><th>Demand Level</th><th>Forecast</th></tr>
-    {% for td in pi.marketTrends.territoryDemand %}
-    <tr><td>{{ td.territory }}</td><td>{{ td.demandLevel }}</td><td>{{ td.forecast }}</td></tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-  {% endif %}
-
-  {% if pi.competitiveAnalysis %}
-  <h3>Competitive Analysis</h3>
-  <div class="stat-grid">
-    <div class="stat-box">
-      <div class="stat-label">Similar Projects in Production</div>
-      <div class="stat-value">{{ pi.competitiveAnalysis.similarProjectsInProduction or 0 }}</div>
-    </div>
-  </div>
-  <p>{{ pi.competitiveAnalysis.territoryCompetition or "" }}</p>
-  {% if pi.competitiveAnalysis.recommendations %}
-  <h4>Recommendations</h4>
-  <ul style="padding-left: 16px; font-size: 10px;">
-    {% for rec in pi.competitiveAnalysis.recommendations %}
-    <li>{{ rec }}</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  {% endif %}
-
-  {% if pi.riskAssessment %}
-  <h3>Risk Assessment</h3>
-  {% if pi.riskAssessment.overallRiskScore is defined %}
-  <div class="stat-grid">
-    <div class="stat-box">
-      <div class="stat-label">Overall Risk Score</div>
-      <div class="stat-value">{{ pi.riskAssessment.overallRiskScore }}/100</div>
-    </div>
-  </div>
-  {% endif %}
-
-  {% if pi.riskAssessment.incentiveStability %}
-  <h4>Incentive Stability</h4>
-  <table>
-    <tr><th>Territory</th><th>Risk</th><th>Note</th></tr>
-    {% for is in pi.riskAssessment.incentiveStability %}
-    <tr>
-      <td>{{ is.territory }}</td>
-      <td><span class="risk-{{ is.risk | lower }}">{{ is.risk }}</span></td>
-      <td>{{ is.note }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-
-  {% if pi.riskAssessment.crewCostVolatility %}
-  <h4>Crew Cost Volatility</h4>
-  <table>
-    <tr><th>Territory</th><th>Volatility</th></tr>
-    {% for cv in pi.riskAssessment.crewCostVolatility %}
-    <tr><td>{{ cv.territory }}</td><td>{{ cv.volatility }}</td></tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-  {% endif %}
-</div>
-{% endif %}
-
-<!-- ════════════════════════════════════════════════════════════
-     NEXT STEPS & RECOMMENDATIONS
-     ════════════════════════════════════════════════════════════ -->
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Next Steps &amp; Recommendations</h2>
-  {% set ns.sec = ns.sec + 1 %}
-
-  <div class="card">
-    <h3>Recommended Actions</h3>
-    {% if report_type == "preview" %}
-    <p style="font-size: 10px; line-height: 1.6;">
-      {% set urgent_count = report.previewUrgentActionCount|default(0) %}
-      {% if urgent_count and urgent_count > 0 %}
-      {{ urgent_count }} urgent action{{ "" if urgent_count == 1 else "s" }} identified for this production. Upgrade to see the specific actions, deadlines, and reasons.
-      {% else %}
-      Actions have been identified for this production. Upgrade to see the specific actions, deadlines, and reasons.
-      {% endif %}
-    </p>
-    {% else %}
-    <ol style="padding-left: 20px; line-height: 2;">
-      {# Urgent / time-sensitive actions from actionTimeline come first #}
-      {% if report.executiveSummary and report.executiveSummary.actionTimeline %}
-        {% for item in report.executiveSummary.actionTimeline %}
-          <li>
-            {% if item.deadline %}<strong>[{{ item.deadline }}]</strong> {% endif %}
-            {{ item.action }}
-            {% if item.note %} — <em>{{ item.note }}</em>{% endif %}
-          </li>
-        {% endfor %}
-      {% endif %}
-      {% if report.locationRankings %}
-      <li>Explore incentive pre-qualification with <strong>{{ report.locationRankings[0].name }}</strong> film commission</li>
-      {% endif %}
-      <li>Engage local line producers in top-ranked territories for budgeting validation</li>
-      <li>Begin crew availability checks for preferred shooting windows</li>
-      {% if report.incentiveEstimates %}
-      <li>Verify incentive programme eligibility criteria with relevant authorities</li>
-      {% endif %}
-      {% if report.fundingOpportunities %}
-      <li>Prepare grant applications for identified funding opportunities before stated deadlines</li>
-      {% endif %}
-      <li>Commission detailed location scouts in shortlisted territories</li>
-      <li>Review comparable production budgets and adjust financial model accordingly</li>
-    </ol>
     {% endif %}
-  </div>
-
-  {% if report_type == "preview" %}
-  <div class="card card-gold">
-    <h3 class="gold">Upgrade to Full Report</h3>
-    <p>
-      This preview report provides a high-level assessment. The full Prodculator report includes
-      detailed crew cost analysis, comparable productions, weather &amp; logistics data,
-      funding opportunities, and comprehensive territory breakdowns.
+    <div class="h5label">Disclaimer</div>
+    <p class="disclaimer">
+      This report is produced by Prodculator's analysis engine from verified programme data and the
+      declared attributes of your production. All rebate figures are estimates; final eligibility and
+      values depend on official approval by the relevant authorities and the production's actual
+      qualifying expenditure. Incentive programmes change — verify current terms before financial
+      commitments. This report does not constitute financial, legal or tax advice.
+      Generated {{ created_at[:10] if created_at else '' }} · © Deo Media Limited.
     </p>
-  </div>
-  {% endif %}
-</div>
-
-<!-- ════════════════════════════════════════════════════════════
-     DISCLAIMERS
-     ════════════════════════════════════════════════════════════ -->
-<div class="page-break">
-  <h2>{{ '%02d' % ns.sec }} &mdash; Disclaimers</h2>
-
-  <div class="disclaimer">
-    <h4>Not Professional Advice</h4>
-    <p>This report is provided for informational purposes only and does not constitute professional financial, tax, legal, or production advice. Always consult qualified professionals before making production decisions based on this analysis.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Data Accuracy</h4>
-    <p>While every effort has been made to ensure the accuracy of the data presented, Prodculator makes no warranties or representations regarding the completeness, accuracy, or currency of the information. Data is sourced from publicly available databases, government publications, and industry sources, and may be subject to change without notice.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Tax Incentive Estimates</h4>
-    <p>All tax incentive figures, rebate estimates, and financial projections are approximate and based on publicly available programme guidelines. Actual amounts may differ based on project specifics, eligibility determinations, and programme changes. Final eligibility and amounts are subject to official approval by the relevant authorities.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Intellectual Property &amp; Script Analysis</h4>
-    <p>Script content uploaded for analysis is processed solely for the purpose of generating this report. Prodculator does not retain, share, or use script content beyond the scope of this analysis.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Crew Costs</h4>
-    <p>Crew cost estimates are indicative and based on aggregated industry data. Actual costs will vary based on crew experience, union agreements, shooting schedules, and local market conditions at the time of production.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Limitation of Liability</h4>
-    <p>Prodculator, its officers, directors, employees, and agents shall not be liable for any direct, indirect, incidental, consequential, or punitive damages arising from the use of or reliance on this report or the information contained herein.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>User Responsibilities</h4>
-    <p>Users are responsible for independently verifying all information presented in this report before making production, financial, or legal decisions. This report should be used as one of several inputs in a comprehensive decision-making process.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Data Sources</h4>
-    <p>This report draws on data from government film commission publications, industry databases, publicly available incentive programme documentation, and Prodculator's proprietary datasets. Individual data sources are attributed within each section where applicable.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Governing Law</h4>
-    <p>This report and any dispute arising from its use shall be governed by and construed in accordance with applicable laws. By using this report, you agree to these terms and conditions.</p>
-  </div>
-
-  <div class="disclaimer">
-    <h4>Support</h4>
-    <p>For questions about this report or to request corrections, please contact the Prodculator team at support@prodculator.com.</p>
-  </div>
-
-  <div style="margin-top: 30px; text-align: center; color: #ccc; font-size: 9px;">
-    <div style="width: 40px; height: 2px; background: #D4AF37; margin: 0 auto 10px;"></div>
-    Generated by <strong style="color: #D4AF37;">PRODCULATOR</strong> &nbsp;&bull;&nbsp; {{ created_at[:10] if created_at else "" }}
   </div>
 </div>
 

@@ -267,22 +267,31 @@ class ReportValidator:
         qualifying_spend_note: str | None = None
 
         if qs_type == "labour":
-            labour_pct = _to_float(db_row.get("qualifying_spend_labour_pct")) or 35.0
+            # No fabricated ratios (handoff \u00a76): a labour-only credit needs a
+            # SOURCED labour share to compute a number. Without one there is no
+            # honest rebate figure \u2014 the programme is presented without a
+            # computed working rather than with a confident wrong number.
+            labour_pct = _to_float(db_row.get("qualifying_spend_labour_pct"))
+            if labour_pct is None:
+                return None
             qualifying_spend = budget_gbp * (labour_pct / 100.0)
             qualifying_spend_pct = labour_pct
             qualifying_spend_note = (
                 f"Labour-only credit: rate applies to qualifying labour expenditure "
-                f"(estimated at {labour_pct:.0f}% of total budget). "
+                f"(sourced at {labour_pct:.0f}% of total budget). "
                 f"Actual credit depends on your specific payroll split \u2014 "
                 f"verify with a production accountant before including in investor documents."
             )
         elif qs_type == "pdv":
-            pdv_pct = _to_float(db_row.get("qualifying_spend_labour_pct")) or 15.0
+            # Same rule for PDV/VFX-only credits \u2014 no sourced share, no number.
+            pdv_pct = _to_float(db_row.get("qualifying_spend_labour_pct"))
+            if pdv_pct is None:
+                return None
             qualifying_spend = budget_gbp * (pdv_pct / 100.0)
             qualifying_spend_pct = pdv_pct
             qualifying_spend_note = (
                 f"PDV credit: rate applies to qualifying post-production, VFX, and digital "
-                f"work only (estimated at {pdv_pct:.0f}% of total budget). "
+                f"work only (sourced at {pdv_pct:.0f}% of total budget). "
                 f"Does not apply to principal photography costs."
             )
         else:

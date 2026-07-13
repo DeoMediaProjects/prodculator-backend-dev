@@ -10,7 +10,7 @@ import sqlmodel
 
 
 revision = 'c0f8fa0737aa'
-down_revision = None
+down_revision = '000000000001'  # baseline_core_tables — see that revision's docstring
 branch_labels = None
 depends_on = None
 

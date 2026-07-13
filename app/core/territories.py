@@ -66,7 +66,7 @@ class Territory(enum.Enum):
     CANADA = _TerritoryInfo(
         label="Canada",
         iso="CA",
-        aliases=("CA",),
+        aliases=("CA", "Canada (Federal)"),
         parent=None,
     )
     FRANCE = _TerritoryInfo(
@@ -199,6 +199,18 @@ class Territory(enum.Enum):
         label="South Korea",
         iso="KR",
         aliases=("KR", "Korea", "Republic of Korea"),
+        parent=None,
+    )
+    MEXICO = _TerritoryInfo(
+        label="Mexico",
+        iso="MX",
+        aliases=("MX", "México"),
+        parent=None,
+    )
+    BRAZIL = _TerritoryInfo(
+        label="Brazil",
+        iso="BR",
+        aliases=("BR", "Brasil"),
         parent=None,
     )
 
