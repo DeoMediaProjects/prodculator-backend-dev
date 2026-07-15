@@ -72,18 +72,56 @@ class ProductionSignal(SQLModel, table=True):
     __tablename__: ClassVar[str] = "production_signals"  # type: ignore[assignment]
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    script_id: str | None = Field(default=None, index=True)
+    # script_id is the dedupe key: one signal per script, latest submission wins (Decision 1).
+    script_id: str | None = Field(default=None, index=True, unique=True)
+
+    # --- Territory semantics (Decision 2): three distinct fields ---
+    # home_country: declared production-company base country.
+    home_country: str | None = Field(default=None, index=True)
+    # territories_considered: declared by the user at intake.
+    territories_considered: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    # territories_recommended: engine output (top-ranked territories).
+    territories_recommended: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    # Legacy single field retained for backward compatibility during migration; mirrors home_country.
     territory: str | None = Field(default=None, index=True)
     state: str | None = None
+
     submission_date: date | None = Field(default=None, index=True)
+    # completion_window: YYYY-MM month string derived from completion_date (festival/market timing).
+    completion_window: str | None = Field(default=None, index=True)
+
     camera_equipment: list[str] | None = Field(default=None, sa_column=Column(JSON))
     crew_size: int | None = None
     principal_cast: int | None = None
     supporting_cast: int | None = None
     background_extras: int | None = None
+
+    # --- Budget (Decision: FX-normalised, R-1) ---
+    # budget_range is now derived from a GBP-normalised amount, never the raw figure.
     budget_range: str | None = None
+    budget_amount_gbp: float | None = None
+    budget_currency: str | None = None
+    fx_rate_date: date | None = None
+
     format: str | None = None
     genres: list[str] | None = Field(default=None, sa_column=Column(JSON))
+
+    # --- Audience (Decision 9 seed): stored, never scored ---
+    target_audience: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    audience_segments: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    audience_skew: str | None = None
+    primary_languages: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    co_production_interest: bool | None = None
+
+    # --- Governance / hygiene ---
+    # b2b_consent (CRIT-2): signal is only aggregated when True. NULL/False are excluded from all reads.
+    b2b_consent: bool = Field(default=False, index=True)
+    # is_internal (R-9): owner/test rows excluded from customer-facing aggregation.
+    is_internal: bool = Field(default=False, index=True)
+    # report_runs (Decision 1): how many times this script was run; engagement signal, not a demand count.
+    report_runs: int = Field(default=1)
+    schema_version: int = Field(default=2)
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

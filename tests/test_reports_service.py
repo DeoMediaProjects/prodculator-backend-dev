@@ -358,22 +358,37 @@ def _sample_script_analysis() -> ScriptAnalysisResult:
 
 
 class CaptureUpsertQuery:
+    """Captures the v2 signal write chain: a select-for-existing lookup followed
+    by insert (no prior row) or update (dedupe path)."""
+
     def __init__(self):
         self.upsert_payload: dict | None = None
-        self.on_conflict: str | None = None
+        self.deleted: bool = False
 
-    def upsert(self, payload, on_conflict=None):
+    def insert(self, payload):
         self.upsert_payload = payload
-        self.on_conflict = on_conflict
+        return self
+
+    def update(self, payload):
+        self.upsert_payload = payload
+        return self
+
+    def delete(self):
+        self.deleted = True
         return self
 
     def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
         return self
 
     def single(self):
         return self
 
     def execute(self):
+        # First call (existing-row lookup) sees upsert_payload=None -> no prior
+        # row; the write call then returns the captured payload.
         return FakeResult(self.upsert_payload)
 
 
@@ -403,6 +418,7 @@ def test_upsert_production_signal_prefers_request_metadata_values():
             "supporting_cast": 35,
             "genre": ["Action", "Thriller"],
             "format": "Feature Film",
+            "b2b_consent": True,  # v2: un-consented signals are never persisted
         },
         script_analysis=analysis,
     )
@@ -410,9 +426,10 @@ def test_upsert_production_signal_prefers_request_metadata_values():
     payload = supabase.query.upsert_payload
     assert result is not None
     assert payload is not None
-    assert supabase.query.on_conflict == "id"
     assert payload["id"] == "report-123"
     assert payload["script_id"] == "report-123"
+    # v2: territory mirrors home_country (legacy compatibility)
+    assert payload["home_country"] == "United Kingdom"
     assert payload["territory"] == "United Kingdom"
     assert payload["state"] == "England"
     assert payload["submission_date"] == "2026-04-01"
@@ -422,8 +439,11 @@ def test_upsert_production_signal_prefers_request_metadata_values():
     assert payload["supporting_cast"] == 35
     assert payload["background_extras"] == 500
     assert payload["budget_range"] == "medium"
-    assert payload["format"] == "Feature Film"
-    assert payload["genres"] == ["Action", "Thriller"]
+    # v2: format and genres are canonicalised on write
+    assert payload["format"] == "feature"
+    assert payload["genres"] == ["action", "thriller"]
+    assert payload["b2b_consent"] is True
+    assert payload["schema_version"] == 2
 
 
 def test_upsert_production_signal_falls_back_to_analysis_values():
@@ -434,7 +454,7 @@ def test_upsert_production_signal_falls_back_to_analysis_values():
     result = service.upsert_production_signal(
         report_id="report-456",
         report_row={"id": "report-456", "created_at": "2026-02-10T09:00:00Z"},
-        request_metadata={"country": "United Kingdom"},
+        request_metadata={"country": "United Kingdom", "b2b_consent": True},
         script_analysis=analysis,
     )
 
@@ -448,7 +468,8 @@ def test_upsert_production_signal_falls_back_to_analysis_values():
     assert payload["supporting_cast"] == 35
     assert payload["background_extras"] == 500
     assert payload["format"] == "feature"
-    assert payload["genres"] == ["Drama", "Thriller"]
+    # v2: genres are canonicalised (lowercased) on write
+    assert payload["genres"] == ["drama", "thriller"]
 
 
 def test_upsert_production_signal_without_script_analysis_uses_report_and_metadata_fallbacks():
@@ -472,6 +493,7 @@ def test_upsert_production_signal_without_script_analysis_uses_report_and_metada
         request_metadata={
             "country": "United Kingdom",
             "budget_amount": 2_000_000,
+            "b2b_consent": True,
         },
         script_analysis=None,
     )
@@ -482,7 +504,10 @@ def test_upsert_production_signal_without_script_analysis_uses_report_and_metada
     assert payload["submission_date"] == "2026-03-20"
     assert payload["territory"] == "United Kingdom"
     assert payload["budget_range"] == "low"
-    assert payload["format"] == "Feature Film"
-    assert payload["genres"] == ["Mystery"]
+    # v2: GBP amount stored alongside the band (currency defaults to GBP)
+    assert payload["budget_amount_gbp"] == 2_000_000
+    # v2: format and genres are canonicalised on write
+    assert payload["format"] == "feature"
+    assert payload["genres"] == ["mystery"]
     assert payload["crew_size"] == 60
     assert payload["principal_cast"] == 12

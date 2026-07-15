@@ -340,3 +340,48 @@ def test_analyze_with_meta_records_chunked_fallback(monkeypatch):
     assert meta["fallbackUsed"] is True
     assert meta["mode"] == "single_pass_fallback"
     assert meta["reason"] == "chunked_analysis_failed"
+
+
+# --- characters array (hallucinated-names fix) ---
+
+
+def test_aggregate_chunk_results_collects_characters_by_frequency():
+    service = ScriptAnalysisService(_build_settings())
+    chunk_results = [
+        {"characters": ["AMARA", "Dele", "amara"], "locations": []},
+        {"characters": ["AMARA", "KEMI"], "locations": []},
+        {"characters": [" ", "", "AMARA"], "locations": []},
+    ]
+    result = service._aggregate_chunk_results(
+        chunk_results,
+        script_title="Test",
+        total_chunks=3,
+        failed_chunks=0,
+    )
+    # Deduped case-insensitively, first casing kept, most frequent first
+    assert result.characters[0] == "AMARA"
+    assert set(result.characters) == {"AMARA", "Dele", "KEMI"}
+
+
+def test_aggregate_chunk_results_without_characters_yields_empty_list():
+    service = ScriptAnalysisService(_build_settings())
+    result = service._aggregate_chunk_results(
+        [{"locations": []}],
+        script_title="Test",
+        total_chunks=1,
+        failed_chunks=0,
+    )
+    assert result.characters == []
+
+
+def test_sanitize_passes_characters_through_and_caps_at_30():
+    service = ScriptAnalysisService(_build_settings())
+    result = service._sanitize({"characters": [f"NAME{i}" for i in range(40)]})
+    assert len(result.characters) == 30
+    assert result.characters[0] == "NAME0"
+
+
+def test_sanitize_defaults_characters_to_empty():
+    service = ScriptAnalysisService(_build_settings())
+    result = service._sanitize({})
+    assert result.characters == []

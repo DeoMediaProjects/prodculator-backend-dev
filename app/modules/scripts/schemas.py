@@ -78,6 +78,11 @@ class ScriptAnalysisResult(BaseModel):
     equipment: Equipment
     metadata: Metadata
     challenges: Challenges
+    # Named speaking characters extracted verbatim from the script (dialogue cues).
+    # Feeds the narrative prompt's script_characters array so creativeRecognition
+    # can only reference real names instead of inventing them. Empty when no
+    # script was provided or extraction found none.
+    characters: list[str] = []
     rawResponse: str | None = None
 
 

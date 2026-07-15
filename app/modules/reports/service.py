@@ -7,11 +7,17 @@ from uuid import uuid4
 
 from sqlalchemy.exc import NoSuchTableError
 
+from app.core.config import get_settings
 from app.core.database_client import DatabaseClient
 from app.core.territories import (
     resolve_territory,
     territory_to_iso as _build_territory_to_iso,
     iso_to_territory as _build_iso_to_territory,
+)
+from app.modules.b2b.signal_normalise import (
+    canonical_format,
+    canonical_genres,
+    gbp_band,
 )
 from app.modules.fx.service import FXService
 from app.modules.scripts.schemas import ScriptAnalysisResult
@@ -79,6 +85,10 @@ _EXTRAS_SCALE_TO_COUNT = {
     "extra_large": 500,
 }
 
+# NOTE (R-1): budget banding for B2B signals is now FX-normalised to GBP via
+# app.modules.b2b.signal_normalise.gbp_band. The old raw-amount USD buckets below
+# are retained ONLY as a fallback for legacy report_data that already carries a
+# pre-computed band string; they are never applied to a raw foreign-currency amount.
 _BUDGET_BUCKETS_USD = (
     (500_000, "micro"),
     (5_000_000, "low"),
@@ -251,25 +261,135 @@ class ReportService:
             genres = self._coerce_string_list(analysis_genres)
         if genres is None:
             genres = self._coerce_string_list(production_details.get("genres"))
+        genres = canonical_genres(genres)
 
-        budget_range = analysis_budget_range or self._budget_amount_to_range(request_metadata.get("budget_amount"))
+        # --- Budget: FX-normalise to GBP before banding (R-1) ---
+        budget_range, budget_amount_gbp, budget_currency, fx_rate_date = self._normalise_budget(
+            request_metadata=request_metadata,
+            report_data=report_data if isinstance(report_data, dict) else {},
+            analysis_budget_range=analysis_budget_range,
+        )
+
+        # --- Territory semantics: three distinct fields (R-2) ---
+        home_country = request_metadata.get("production_country") or request_metadata.get("country")
+        territories_considered = self._coerce_string_list(
+            request_metadata.get("territories_considering")
+            or request_metadata.get("territories_considered")
+        )
+        territories_recommended = self._extract_recommended_territories(report_data)
+
+        # --- Format: canonical value only (R-10) ---
+        fmt = canonical_format(
+            request_metadata.get("format") or analysis_format or production_details.get("format")
+        )
+
+        # --- Audience (stored, never scored) ---
+        target_audience = self._coerce_string_list(request_metadata.get("target_audience"))
+        audience_segments = self._coerce_string_list(request_metadata.get("audience_segments"))
+        primary_languages = self._coerce_string_list(
+            request_metadata.get("primary_languages") or request_metadata.get("language")
+        )
+        co_pro = request_metadata.get("co_production_interest")
+        co_pro = bool(co_pro) if co_pro is not None else None
+
+        # --- Governance flags ---
+        consent = bool(
+            request_metadata.get("b2b_consent")
+            or request_metadata.get("data_consent")
+        )
+        is_internal = bool(request_metadata.get("is_internal"))
 
         return {
-            "id": report_id,
             "script_id": report_row.get("id") or report_id,
-            "territory": request_metadata.get("country"),
+            "home_country": home_country,
+            "territory": home_country,  # legacy mirror during migration
+            "territories_considered": territories_considered,
+            "territories_recommended": territories_recommended,
             "state": request_metadata.get("state_province"),
             "submission_date": self._derive_submission_date(report_row.get("created_at")),
+            "completion_window": self._month_key(request_metadata.get("completion_date")),
             "camera_equipment": camera_equipment,
             "crew_size": crew_size,
             "principal_cast": principal_cast,
             "supporting_cast": supporting_cast,
             "background_extras": background_extras,
             "budget_range": budget_range,
-            "format": request_metadata.get("format") or analysis_format or production_details.get("format"),
+            "budget_amount_gbp": budget_amount_gbp,
+            "budget_currency": budget_currency,
+            "fx_rate_date": fx_rate_date,
+            "format": fmt,
             "genres": genres,
+            "target_audience": target_audience,
+            "audience_segments": audience_segments,
+            "audience_skew": request_metadata.get("audience_skew"),
+            "primary_languages": primary_languages,
+            "co_production_interest": co_pro,
+            "b2b_consent": consent,
+            "is_internal": is_internal,
+            "schema_version": 2,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    def _normalise_budget(
+        self,
+        *,
+        request_metadata: dict[str, Any],
+        report_data: dict[str, Any],
+        analysis_budget_range: str | None,
+    ) -> tuple[str | None, float | None, str | None, str | None]:
+        """Return (band, amount_gbp, currency, fx_rate_date_iso).
+
+        Converts the declared budget to GBP via FXService before banding. Falls back to
+        any pre-computed band only when no usable amount is present.
+        """
+        amount = request_metadata.get("budget_amount")
+        currency = (request_metadata.get("budget_currency") or "GBP").upper()
+        try:
+            amount_f = float(amount) if amount is not None else None
+        except (TypeError, ValueError):
+            amount_f = None
+
+        if amount_f and amount_f > 0:
+            if currency == "GBP":
+                return gbp_band(amount_f), round(amount_f, 2), "GBP", None
+            try:
+                fx = FXService(get_settings()) if callable(get_settings) else None
+            except Exception:  # pragma: no cover - settings unavailable
+                fx = None
+            if fx is not None:
+                try:
+                    conv = fx.convert_budget(amount_f, currency, "GBP")
+                    gbp = conv["converted"]
+                    return gbp_band(gbp), gbp, currency, conv.get("rate_date")
+                except Exception:
+                    logger.warning("FX conversion failed for B2B signal budget; storing currency only")
+                    return None, None, currency, None
+            return None, None, currency, None
+
+        # No amount: use any pre-computed band string as a last resort.
+        return analysis_budget_range, None, currency, None
+
+    @staticmethod
+    def _extract_recommended_territories(report_data: Any) -> list[str] | None:
+        if not isinstance(report_data, dict):
+            return None
+        rankings = report_data.get("locationRankings") or report_data.get("location_rankings")
+        if not isinstance(rankings, list):
+            return None
+        out: list[str] = []
+        for item in rankings[:5]:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("territory")
+                if name:
+                    out.append(str(name).strip())
+        return out or None
+
+    @staticmethod
+    def _month_key(value: Any) -> str | None:
+        if value is None:
+            return None
+        raw = str(value).strip()
+        return raw[:7] if len(raw) >= 7 else None
 
     def upsert_production_signal(
         self,
@@ -285,14 +405,51 @@ class ReportService:
             request_metadata=request_metadata,
             script_analysis=script_analysis,
         )
+
+        # Consent gate (CRIT-2): never persist a signal the user did not consent to
+        # aggregate. If a prior run for this script was consented and this run is not,
+        # remove the earlier row so consent withdrawal is honoured.
+        script_id = payload.get("script_id")
+        if not payload.get("b2b_consent"):
+            if script_id:
+                try:
+                    self.supabase.table("production_signals").delete().eq(
+                        "script_id", script_id
+                    ).execute()
+                except NoSuchTableError:
+                    pass
+                except Exception:
+                    logger.warning("Could not remove un-consented signal for script %s", script_id)
+            return None
+
         try:
-            result = (
+            # Dedupe on script_id (Decision 1): one signal per script, latest wins.
+            existing = (
                 self.supabase.table("production_signals")
-                .upsert(payload, on_conflict="id")
-                .select("*")
-                .single()
+                .select("id,report_runs")
+                .eq("script_id", script_id)
                 .execute()
             )
+            prior = (existing.data or [None])[0] if getattr(existing, "data", None) else None
+            if prior:
+                payload["report_runs"] = int(prior.get("report_runs") or 1) + 1
+                result = (
+                    self.supabase.table("production_signals")
+                    .update(payload)
+                    .eq("script_id", script_id)
+                    .select("*")
+                    .single()
+                    .execute()
+                )
+            else:
+                payload["id"] = report_id
+                result = (
+                    self.supabase.table("production_signals")
+                    .insert(payload)
+                    .select("*")
+                    .single()
+                    .execute()
+                )
             return result.data
         except NoSuchTableError:
             logger.warning("production_signals table is missing; skipping signal write")

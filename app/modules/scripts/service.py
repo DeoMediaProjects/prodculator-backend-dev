@@ -63,6 +63,7 @@ No inference, no assumption. Count what is written.
 
 Return ONLY valid JSON (no markdown fences, no extra text) with these top-level keys:
 - "locations": array of {name, country, territory, frequency (int), isMainLocation (bool)}
+- "characters": array of strings — named speaking characters in this chunk, copied VERBATIM from the dialogue cues (the uppercase name above a dialogue block). Exclude generic cues (MAN, WOMAN, VOICE, CROWD, GUARD #2). Never invent, complete, or normalise a name.
 - "budgetEstimate": {range, indicators (array of strings)}
 - "productionScale": {crewSize, principalCast, supportingCast, backgroundExtras, estimatedShootingDays (int)}
 - "equipment": {cameraEquipment, specialEquipment (array), vfxRequirements}
@@ -83,6 +84,10 @@ SCRIPT_CHUNK_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
+        "characters": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
         "locations": {
             "type": "array",
             "items": {
@@ -762,6 +767,9 @@ class ScriptAnalysisService:
         all_languages: list[str] = []
         voice_overs_seen = False
         named_locations_agg: dict[str, int] = {}
+        # Character name -> chunks seen in; casing of first occurrence is kept.
+        character_counts: Counter[str] = Counter()
+        character_casing: dict[str, str] = {}
         conflict_type_values: list[str] = []
         irresolution_values: list[bool] = []
         section_signal_counts = {
@@ -778,6 +786,16 @@ class ScriptAnalysisService:
         generated_chunks = generated_chunks if isinstance(generated_chunks, int) else total_chunks
 
         for chunk in chunk_results:
+            chunk_characters = chunk.get("characters", [])
+            if isinstance(chunk_characters, list):
+                for name in chunk_characters:
+                    cleaned = str(name).strip()
+                    if not cleaned or len(cleaned) > 60:
+                        continue
+                    key = cleaned.lower()
+                    character_counts[key] += 1
+                    character_casing.setdefault(key, cleaned)
+
             locations = chunk.get("locations", []) if isinstance(chunk.get("locations"), list) else []
             if locations:
                 section_signal_counts["locations"] += 1
@@ -990,8 +1008,15 @@ class ScriptAnalysisService:
             challenge_true_counts=challenge_true_counts,
         )
 
+        # Most-recurring characters first (protagonists appear in the most chunks).
+        characters = [
+            character_casing[key]
+            for key, _count in character_counts.most_common(30)
+        ]
+
         payload = {
             "locations": location_rows[:20],
+            "characters": characters,
             "budgetEstimate": {
                 "range": budget_range,
                 "minUSD": budget_min,
@@ -1701,7 +1726,18 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             script_payload = self._trim_value_for_prompt(
                 script_analysis.model_dump(exclude={"rawResponse"})
             )
+            # The narrative rules reference "script_characters" by name — surface the
+            # extracted characters under that exact key so creativeRecognition can
+            # only use real names.
+            if isinstance(script_payload, dict):
+                script_payload["script_characters"] = list(script_analysis.characters or [])
             parts.append(json.dumps(script_payload, default=str, separators=(",", ":")))
+            if not script_analysis.characters:
+                parts.append(
+                    "NOTE: script_characters is EMPTY — no character names were extracted. "
+                    "Do NOT name or invent any character; write creativeRecognition without "
+                    "personal names (refer to 'the protagonist' etc.)."
+                )
         else:
             parts.append("\n=== SCRIPT ANALYSIS ===")
             parts.append("No script provided. Generate narratives from project metadata only.")
@@ -2223,8 +2259,14 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             if isinstance(loc, dict)
         ]
 
+        characters_raw = data.get("characters", [])
+        if not isinstance(characters_raw, list):
+            characters_raw = []
+        characters = [str(c).strip() for c in characters_raw if str(c).strip()][:30]
+
         return ScriptAnalysisResult(
             locations=locations,
+            characters=characters,
             budgetEstimate=BudgetEstimate(
                 range=budget_raw.get("range", "medium"),
                 minUSD=budget_raw.get("minUSD", 5_000_000),
