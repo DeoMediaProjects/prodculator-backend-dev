@@ -18,7 +18,7 @@ from app.modules.reports.pdf_service import PDFService
 
 logger = logging.getLogger(__name__)
 
-PRIVACY_MIN_OVERALL = 5
+PRIVACY_MIN_OVERALL = 10
 PRIVACY_MIN_SEGMENT = 5
 
 
@@ -679,14 +679,29 @@ class B2BService:
             },
         )
 
-    def _load_signals(self, period_start: date, period_end: date) -> list[dict[str, Any]]:
-        result = (
+    def _load_signals(
+        self,
+        period_start: date,
+        period_end: date,
+        *,
+        include_internal: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Load consented, non-internal signals for the period.
+
+        Consent gate (CRIT-2) and internal exclusion (R-9) are applied here so that
+        EVERY downstream section — standard product or bespoke — inherits them and no
+        composition can bypass them.
+        """
+        query = (
             self.db.table("production_signals")
             .select("*")
             .gte("submission_date", period_start)
             .lte("submission_date", period_end)
-            .execute()
+            .eq("b2b_consent", True)
         )
+        if not include_internal:
+            query = query.eq("is_internal", False)
+        result = query.execute()
         return result.data or []
 
     def _distribution_section(

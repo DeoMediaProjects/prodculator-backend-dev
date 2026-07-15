@@ -143,3 +143,68 @@ async def download_request_pdf(
             "Content-Length": str(len(pdf_bytes)),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Package assembly (admin data-pull layer)
+# ---------------------------------------------------------------------------
+from datetime import date as _date  # noqa: E402
+
+from pydantic import BaseModel  # noqa: E402
+
+from app.modules.b2b.package_service import PackageService  # noqa: E402
+
+
+def get_package_service(
+    service: B2BService = Depends(get_b2b_service),
+) -> PackageService:
+    return PackageService(service)
+
+
+class PackagePreviewRequest(BaseModel):
+    section_keys: list[str]
+    period_start: _date
+    period_end: _date
+
+
+class BespokeGenerateRequest(BaseModel):
+    subscription_id: str | None = None
+    title: str
+    section_keys: list[str]
+    period_start: _date
+    period_end: _date
+    client_name: str | None = None
+
+
+@router.get("/package/library")
+async def package_library(
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    pkg: PackageService = Depends(get_package_service),
+):
+    """The full section catalogue an admin can compose from (signals + market context)."""
+    return {"sections": pkg.library()}
+
+
+@router.get("/package/template/{product_type}")
+async def package_template(
+    product_type: str,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    pkg: PackageService = Depends(get_package_service),
+):
+    """Ordered default section list for a standard product."""
+    return {"product_type": product_type, "section_keys": pkg.product_template(product_type)}
+
+
+@router.post("/package/preview")
+async def package_preview(
+    body: PackagePreviewRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    pkg: PackageService = Depends(get_package_service),
+):
+    """Sufficiency preview: which sections/segments WOULD render for the period,
+    before anything is generated or delivered."""
+    return pkg.preview(
+        section_keys=body.section_keys,
+        period_start=body.period_start,
+        period_end=body.period_end,
+    )

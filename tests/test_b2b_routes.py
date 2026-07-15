@@ -93,6 +93,13 @@ def _seed_signals(db: DatabaseClient, count: int, *, territory: str = "United Ki
                 "id": f"signal-{territory}-{index}",
                 "script_id": f"script-{territory}-{index}",
                 "territory": territory,
+                "home_country": territory,
+                # v2 governance flags: seeded signals are consented, non-internal —
+                # the read gate (CRIT-2 / R-9) excludes anything else.
+                "b2b_consent": True,
+                "is_internal": False,
+                "report_runs": 1,
+                "schema_version": 2,
                 "submission_date": date(2026, 1, 10),
                 "camera_equipment": ["ARRI Alexa"],
                 "crew_size": 30 + index,
@@ -214,7 +221,8 @@ def test_b2b_metrics_apply_overall_and_segment_privacy_thresholds():
         )
         assert insufficient["insufficient_data"] is True
         assert insufficient["source_signal_count"] == 4
-        assert insufficient["thresholds"]["minimum_overall_records"] == 5
+        # v2 privacy floors: 10 overall (raised from 5 by the B2B handoff contract)
+        assert insufficient["thresholds"]["minimum_overall_records"] == 10
 
         _clear_tables()
         _seed_signals(db, 6, territory="United Kingdom")

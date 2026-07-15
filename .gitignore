@@ -42,3 +42,5 @@ alembic/versions/__pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+seed_admin.py

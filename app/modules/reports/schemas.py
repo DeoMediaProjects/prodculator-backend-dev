@@ -73,6 +73,13 @@ class CreateReportRequest(BaseModel):
     representation_minority: list[str] | None = None
     language: str | None = None
 
+    # Business Intelligence consent (CRIT-2) — explicit opt-in captured at intake.
+    # Defaults to False: without it the report path never persists a production
+    # signal for aggregation, and a prior consented signal for the same script is
+    # removed (consent withdrawal). Checkbox copy on the frontend is a marked
+    # placeholder until the solicitor wording arrives.
+    b2b_consent: bool = False
+
     # Producer eligibility (for nationality / co-production checks)
     producer_country: str | None = None  # Jurisdiction of production company (ISO code, e.g. "GB")
     co_production_status: Literal[
