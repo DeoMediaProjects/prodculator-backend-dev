@@ -1,0 +1,1582 @@
+{
+ "_meta": {
+  "dataset": "distributors",
+  "record_count": 57,
+  "extracted": "2026-07-07",
+  "source": "own sites + trade coverage; v2 merge 07 Jul",
+  "notes": "57 records (superset of prior 28); 5 provisional-flagged pending own-site verification; fields incl. active_status/primary_market/format_focus/oscar_qualifying/bafta_qualifying"
+ },
+ "records": [
+  {
+   "name": "A24",
+   "source_url": "https://a24films.com/",
+   "specialty_genres": [
+    "drama",
+    "horror",
+    "thriller",
+    "psychological",
+    "surreal"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "global"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Cannes Film Festival",
+    "Toronto International Film Festival (TIFF)"
+   ],
+   "rights_type": "all_rights_typical",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Primarily via sales agents/festivals, not blind submission",
+   "notes": "Confirmed via Hollywood Scout Report/Saturation.io as a real, currently-active gold-standard indie distributor known for daring, high-quality projects.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Neon",
+   "source_url": "https://neonrated.com/",
+   "specialty_genres": [
+    "drama",
+    "horror",
+    "thriller",
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "global"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Cannes Film Festival"
+   ],
+   "rights_type": "all_rights_typical",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Primarily via sales agents/festivals",
+   "notes": "Confirmed real, currently active (Saturation.io) — known for savvy marketing of festival-acquired prestige indies.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Magnolia Pictures",
+   "source_url": "https://www.magpictures.com/",
+   "specialty_genres": [
+    "documentary",
+    "drama",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "global"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "SXSW (South by Southwest)",
+    "Toronto International Film Festival (TIFF)",
+    "Cannes Film Festival"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Works with sales agencies; reviews unsolicited where bandwidth allows",
+   "notes": "Confirmed via Film Impact Georgia's own distributor interview: explicitly lists Sundance/Berlinale/SXSW/Tribeca/Cannes/Toronto/Fantastic Fest/Hamptons/AFM as its scouting festivals — a genuinely reliable real signal for matching.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "IFC Films",
+   "source_url": "https://www.ifcfilms.com/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Cannes Film Festival",
+    "Toronto International Film Festival (TIFF)"
+   ],
+   "rights_type": "theatrical_and_digital",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Primarily via sales agents/festivals",
+   "notes": "Confirmed real, active arthouse/indie distributor (Hollywood Scout Report).",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Breaking Glass Pictures",
+   "source_url": "https://www.breakingglasspictures.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "lgbtq+",
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "North America",
+    "international sales branch"
+   ],
+   "scouts_festivals": [
+    "Frameline (San Francisco International LGBTQ+ Film Festival)",
+    "Outfest Los Angeles"
+   ],
+   "rights_type": "all_rights",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Accepts submissions from producers, sales agents, and other distributors directly",
+   "notes": "CEO Richard Wolff confirmed (Media Play News, 2026) acquiring 40+ films annually across action, documentary, drama, horror, LGBTQ+, thrillers, international cinema — real, current, explicit underrepresented-voices focus (Hollywood Scout Report).",
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "lgbtq_audience"
+   ],
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Indican Pictures",
+   "source_url": "https://www.indicanpictures.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "racial_ethnic_minority",
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "Toronto International Film Festival (TIFF)"
+   ],
+   "rights_type": "varies",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Partners with Lionsgate, Giant Pictures, Criterion, Magnolia for 20-30 releases/year",
+   "notes": "President Shaun Hill confirmed (Media Play News, 2026): staff 85% diverse across DEI representation, catalog of 450+ films amplifying bold voices worldwide. Recent release Seeds (Native American horror-comedy) was TIFF-selected.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Dark Sky Films",
+   "source_url": "https://darkskyfilms.com/",
+   "specialty_genres": [
+    "horror",
+    "thriller"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "varies",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real, active genre specialist for horror/thriller (Hollywood Scout Report).",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Women Make Movies",
+   "source_url": "https://www.wmm.com/",
+   "specialty_genres": [
+    "documentary",
+    "all"
+   ],
+   "specialty_representation": [
+    "women"
+   ],
+   "territory_reach": [
+    "North America",
+    "international via festival/broadcaster partnerships"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "educational_and_community_distribution",
+   "budget_tier_fit": "micro_indie",
+   "submission_process": "Direct submission via own site",
+   "notes": "Confirmed real, established (nearly 700-film collection) distributor specifically for work by women filmmakers — also maintains its own public distributor/festival resource lists used as a real source for this database.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Entertainment One (eOne)",
+   "source_url": "https://www.entertainmentone.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "global",
+    "500+ broadcast partners across 150+ territories"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "all_rights",
+   "budget_tier_fit": "mid_indie_to_studio_adjacent",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real (Wrapbook) — 'the reach of a studio and the flexibility of an indie', strong fit for productions genuinely needing wide multi-territory reach (e.g. UK/Nigeria/South Africa co-productions).",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Gravitas Ventures",
+   "source_url": "https://gravitasventures.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "global VOD"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "all_rights",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Accepts submissions from filmmakers and indie producers directly",
+   "notes": "Confirmed real (Wrapbook), all-rights VOD-strong distributor connecting to a stated audience of over a billion people.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Kino Lorber",
+   "source_url": "https://www.kinolorber.com/",
+   "specialty_genres": [
+    "documentary",
+    "drama",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "global educational/institutional"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)"
+   ],
+   "rights_type": "theatrical_home_entertainment_educational",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real (Claims Conference Film Grants resource page) — 35 theatrical titles/year, 4,000+ title library, 7 Academy Award nominations in a decade.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Music Box Films",
+   "source_url": "https://musicboxfilms.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real (Claims Conference/Women Make Movies) — dedicated to a diverse international repertoire, partnered with Chicago's Music Box Theatre.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Grasshopper Film",
+   "source_url": "https://grasshopperfilm.com/",
+   "specialty_genres": [
+    "documentary",
+    "drama"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "micro_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real (Claims Conference) — founded 2015, dedicated to independent/foreign/documentary film.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Zeitgeist Films",
+   "source_url": "https://www.zeitgeistfilms.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "North America"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "varies",
+   "budget_tier_fit": "micro_indie",
+   "submission_process": "Does not accept unsolicited films — one-page description via email only",
+   "notes": "Confirmed real (Bellingham Film, Women Make Movies) — since 1988, best international cinema, distributes only 5-6 films/year, most acquired at festivals.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "First Run Features",
+   "source_url": "https://firstrunfeatures.com/",
+   "specialty_genres": [
+    "documentary",
+    "drama"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "North America",
+    "educational institutions worldwide"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "theatrical_educational_broadcast",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real (Wrapbook, Women Make Movies) — established 1979, one of the largest independent distributors in North America, 15-20 theatrical + 30-40 educational releases/year.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Abramorama",
+   "source_url": "https://abramorama.com/",
+   "specialty_genres": [
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "global options available"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "theatrical_direct_to_consumer_event_cinema",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real (Wrapbook) — specializes in social-impact documentary media, self-describes as innovator in niche/direct-to-consumer distribution.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Bleecker Street",
+   "source_url": "https://www.bleeckerstreetmedia.com/",
+   "specialty_genres": [
+    "drama",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real, currently active (Media Play News, 2026) — recently brought home entertainment distribution in-house, manages Apple/Amazon Prime/Fandango at Home partnerships.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "BayView Entertainment",
+   "source_url": "https://www.bayviewentertainment.com/",
+   "specialty_genres": [
+    "horror",
+    "documentary",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "global catalog distributor"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival"
+   ],
+   "rights_type": "theatrical_home_entertainment_digital",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Not confirmed this session — verify directly",
+   "notes": "Confirmed real, currently active (Media Play News, 2026) — founded 2005, 3,500+ title catalog, secures international deals at Cannes Film Market, expanded via UK distributor Vipco acquisition.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Curzon Artificial Eye",
+   "source_url": "https://www.curzonartificialeye.com/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "documentary",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom",
+    "Ireland"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Venice Film Festival",
+    "London Film Festival (BFI LFF)",
+    "Toronto International Film Festival (TIFF)"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Via sales agent; company operates Curzon cinema chain providing theatrical platform",
+   "notes": "Confirmed active UK theatrical distributor with own cinema chain. Specialises in European arthouse and prestige international films. Source: curzonartificialeye.com distributor profile and BFI industry listings.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK"
+  },
+  {
+   "name": "Dogwoof",
+   "source_url": "https://dogwoof.com/",
+   "specialty_genres": [
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom",
+    "international_sales"
+   ],
+   "scouts_festivals": [
+    "Hot Docs Canadian International Documentary Festival",
+    "Sundance Film Festival",
+    "Sheffield DocFest",
+    "IDFA (International Documentary Film Festival Amsterdam)"
+   ],
+   "rights_type": "theatrical_and_digital",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Accepts submissions via dogwoof.com/submit; also acquires at festival markets",
+   "notes": "UK's leading documentary distributor. Confirmed active via own site submission page. Also operates international sales arm. Source: dogwoof.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK"
+  },
+  {
+   "name": "New Wave Films",
+   "source_url": "https://newwavefilms.co.uk/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "foreign-language",
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "London Film Festival (BFI LFF)"
+   ],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via sales agent or festival acquisition",
+   "notes": "UK theatrical distributor specialising in European and world cinema. Source: newwavefilms.co.uk.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK"
+  },
+  {
+   "name": "Peccadillo Pictures",
+   "source_url": "https://peccapics.com/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "all"
+   ],
+   "specialty_representation": [
+    "lgbtq+",
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom",
+    "Ireland"
+   ],
+   "scouts_festivals": [
+    "BFI Flare: London LGBTIQ+ Film Festival",
+    "Frameline San Francisco International LGBTQ+ Film Festival",
+    "London Film Festival (BFI LFF)"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via peccapics.com/contact or festival acquisition",
+   "notes": "UK distributor with strong LGBTQ+ catalogue focus. Source: peccapics.com distributor profile.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK"
+  },
+  {
+   "name": "Thunderbird Releasing",
+   "source_url": "https://www.thunderbirdreleasing.co.uk/",
+   "specialty_genres": [
+    "drama",
+    "thriller",
+    "foreign-language",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom"
+   ],
+   "scouts_festivals": [
+    "Berlin International Film Festival (Berlinale)",
+    "Cannes Film Festival",
+    "London Film Festival (BFI LFF)"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Via sales agent",
+   "notes": "UK theatrical distributor for international art-house and genre films. Source: thunderbirdreleasing.co.uk.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK"
+  },
+  {
+   "name": "Wild Bunch International",
+   "source_url": "https://www.wildbunch.eu/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "documentary",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "France",
+    "Europe",
+    "global_sales"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Venice Film Festival",
+    "Toronto International Film Festival (TIFF)"
+   ],
+   "rights_type": "international_sales_and_theatrical",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Via international sales arm at major markets (Cannes, Berlin, AFM)",
+   "notes": "Major European sales and distribution company. Distributes theatrically in France; international sales arm covers global. Source: wildbunch.eu.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "France/Europe"
+  },
+  {
+   "name": "Pyramide Distribution",
+   "source_url": "https://www.pyramidefilms.com/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "France"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Venice Film Festival"
+   ],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Via sales agent; acquires at major European markets",
+   "notes": "French theatrical distributor for international art-house cinema. Source: pyramidefilms.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "France"
+  },
+  {
+   "name": "Cinéart",
+   "source_url": "https://www.cineart.be/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Belgium",
+    "Netherlands"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Ghent International Film Festival"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Via sales agent",
+   "notes": "Leading Benelux arthouse distributor. Source: cineart.be.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Belgium/Netherlands"
+  },
+  {
+   "name": "Filmrise (African Acquisitions)",
+   "source_url": "https://filmrise.com/",
+   "specialty_genres": [
+    "documentary",
+    "drama",
+    "all"
+   ],
+   "specialty_representation": [
+    "racial_ethnic_minority",
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "global_streaming"
+   ],
+   "scouts_festivals": [
+    "FESPACO (Pan-African Film and Television Festival)",
+    "Pan African Film & Arts Festival (PAFF)",
+    "African International Film Festival (AFRIFF)"
+   ],
+   "rights_type": "digital_and_streaming",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via filmrise.com/acquisitions",
+   "notes": "US digital distributor with documented acquisitions of African and diaspora content. Streaming-first model. Source: filmrise.com acquisitions page.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/Global Digital"
+  },
+  {
+   "name": "Pan African Film Network",
+   "source_url": "https://pafn.tv/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "all"
+   ],
+   "specialty_representation": [
+    "racial_ethnic_minority"
+   ],
+   "territory_reach": [
+    "Africa",
+    "African_diaspora_global"
+   ],
+   "scouts_festivals": [
+    "FESPACO (Pan-African Film and Television Festival)",
+    "Durban International Film Festival",
+    "African International Film Festival (AFRIFF)"
+   ],
+   "rights_type": "digital_and_streaming",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via pafn.tv/submit",
+   "notes": "African streaming and distribution platform serving continental Africa and diaspora audiences. Source: pafn.tv. Note: emerging distributor — verify current acquisition activity before matching to high-budget productions.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "emerging_verify_before_match",
+   "primary_market": "Africa/Diaspora"
+  },
+  {
+   "name": "African Film Festival Inc. (AFF)",
+   "source_url": "https://www.africanfilmny.org/",
+   "specialty_genres": [
+    "documentary",
+    "drama",
+    "all"
+   ],
+   "specialty_representation": [
+    "racial_ethnic_minority"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "FESPACO (Pan-African Film and Television Festival)",
+    "Pan African Film & Arts Festival (PAFF)"
+   ],
+   "rights_type": "theatrical_and_educational",
+   "budget_tier_fit": "micro_indie",
+   "submission_process": "Via festival submission process; note: also functions as educational distributor",
+   "notes": "New York-based African film distributor and festival organisation. Source: africanfilmny.org.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/African diaspora"
+  },
+  {
+   "name": "MUBI",
+   "source_url": "https://mubi.com/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "documentary",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "global"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Venice Film Festival",
+    "Toronto International Film Festival (TIFF)",
+    "Sundance Film Festival"
+   ],
+   "rights_type": "streaming_svod",
+   "budget_tier_fit": "micro_indie_to_prestige",
+   "submission_process": "Via mubi.com/submit or festival acquisition. MUBI also finances and produces originals — different submission path.",
+   "notes": "Global arthouse SVOD with 17M+ members. Acquires theatrically via MUBI GO (UK) and streams globally. Confirmed active acquisition slate. Source: mubi.com and Variety/Screen Daily trade coverage. Note: not a traditional theatrical distributor — streaming rights only unless theatrical deal separately negotiated.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Global/Streaming"
+  },
+  {
+   "name": "Criterion Channel",
+   "source_url": "https://www.criterionchannel.com/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "documentary",
+    "foreign-language",
+    "classic"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada"
+   ],
+   "scouts_festivals": [
+    "Cannes Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "New York Film Festival (NYFF)"
+   ],
+   "rights_type": "streaming_svod",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Via Criterion Collection — does not accept unsolicited submissions; acquires via Janus Films relationship and direct licensing deals",
+   "notes": "Premium SVOD for arthouse and world cinema. Does not take unsolicited submissions — rights acquired via Janus Films sister company or pre-existing licensing. Source: criterionchannel.com and Criterion Collection FAQ. Include only for prestige arthouse matching where direct festival acquisition is the realistic path.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/Canada Streaming"
+  },
+  {
+   "name": "Flix Premiere",
+   "source_url": "https://flixpremiere.com/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "thriller",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "global"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "vod_tvod",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via flixpremiere.com/submit-your-film",
+   "notes": "Global VOD platform with filmmaker-friendly revenue share. Accepts submissions directly. Source: flixpremiere.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Global/Streaming"
+  },
+  {
+   "name": "GKIDS",
+   "source_url": "https://gkids.com/",
+   "specialty_genres": [
+    "animation"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada"
+   ],
+   "scouts_festivals": [
+    "Annecy International Animation Film Festival",
+    "Toronto International Film Festival (TIFF)",
+    "New York Film Festival (NYFF)"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Via gkids.com/contact or festival acquisition; note: specialises in non-English animation for English-speaking markets",
+   "notes": "North America's leading adult animated film distributor. Best known for Studio Ghibli, but actively acquires festival animation. Source: gkids.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/Canada"
+  },
+  {
+   "name": "Shout! Studios",
+   "source_url": "https://www.shoutfactory.com/studios",
+   "specialty_genres": [
+    "animation",
+    "documentary",
+    "horror",
+    "family"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada"
+   ],
+   "scouts_festivals": [
+    "Annecy International Animation Film Festival",
+    "Sundance Film Festival"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via shoutfactory.com/about/contact",
+   "notes": "US distributor with dedicated animation and genre catalogue. Source: shoutfactory.com/studios.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/Canada"
+  },
+  {
+   "name": "AMC Networks / Sundance Now",
+   "source_url": "https://www.amcnetworks.com/brands/sundance-now/",
+   "specialty_genres": [
+    "drama",
+    "thriller",
+    "documentary",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada",
+    "United Kingdom"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Toronto International Film Festival (TIFF)",
+    "Tribeca Film Festival"
+   ],
+   "rights_type": "streaming_svod_and_linear",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Via AMC Networks content acquisition; Sundance Now primarily acquires series and limited series",
+   "notes": "AMC Networks acquires series and limited series for its Sundance Now streaming platform. Source: amcnetworks.com. Relevant for TV Series and Limited Series intake formats.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/UK",
+   "format_focus": [
+    "tv_series",
+    "limited_series"
+   ]
+  },
+  {
+   "name": "BFI Distribution",
+   "source_url": "https://www.bfi.org.uk/distribution",
+   "specialty_genres": [
+    "documentary",
+    "drama",
+    "arthouse",
+    "archive"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom"
+   ],
+   "scouts_festivals": [
+    "London Film Festival (BFI LFF)",
+    "Edinburgh International Film Festival",
+    "Sheffield DocFest"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "micro_indie_to_mid_indie",
+   "submission_process": "Via bfi.org.uk/distribution — BFI Distribution is a non-profit arm, focuses on culturally significant UK and international work",
+   "notes": "BFI's own distribution arm. Focuses on British and international cinema with cultural or educational significance. Source: bfi.org.uk/distribution.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK"
+  },
+  {
+   "name": "Variance Films",
+   "source_url": "https://variancefilms.com/",
+   "specialty_genres": [
+    "comedy",
+    "drama",
+    "documentary",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "SXSW (South by Southwest)",
+    "Tribeca Film Festival"
+   ],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via variancefilms.com/contact or festival acquisition",
+   "notes": "US theatrical distributor with experience across comedy and event cinema. Source: variancefilms.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Dark Matter Studios",
+   "source_url": "https://darkmatterstudios.com/",
+   "specialty_genres": [
+    "horror",
+    "sci-fi",
+    "thriller",
+    "genre"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada"
+   ],
+   "scouts_festivals": [
+    "Fantasia International Film Festival",
+    "Sitges Film Festival",
+    "Fantastic Fest"
+   ],
+   "rights_type": "digital_and_home_entertainment",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via submissions@darkmatterstudios.com",
+   "notes": "Genre specialist distributor. Source: darkmatterstudios.com. Note: verify current acquisition status at time of matching — genre micro-distributors have higher turnover risk than studio-adjacent companies.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "verify_current_status",
+   "primary_market": "US/Canada"
+  },
+  {
+   "name": "Oscilloscope Laboratories",
+   "source_url": "https://oscilloscope.net/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "music-documentary",
+    "arthouse"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "SXSW (South by Southwest)",
+    "Tribeca Film Festival"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via oscilloscope.net/contact or festival acquisition",
+   "notes": "US arthouse distributor with strong music documentary track record. Founded by Beastie Boys' Adam Yauch. Source: oscilloscope.net.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Freestyle Digital Media",
+   "source_url": "https://freestyledigitalmedia.tv/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "family",
+    "faith",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "digital_and_vod",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via freestyledigitalmedia.tv/acquisitions",
+   "notes": "Digital distributor placing films across iTunes, Amazon, Google Play, cable VOD. Accepts broad range including faith and family content. Source: freestyledigitalmedia.tv.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US/Canada"
+  },
+  {
+   "name": "Monterey Media",
+   "source_url": "https://www.montereymediadist.com/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "family",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Tribeca Film Festival"
+   ],
+   "rights_type": "home_entertainment_and_digital",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via montereymediadist.com/contact",
+   "notes": "US home entertainment and digital distributor with family and general catalogue. Source: montereymediadist.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Taskovski Films",
+   "source_url": "https://www.taskovskifilms.com/",
+   "specialty_genres": [
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Europe",
+    "international_sales"
+   ],
+   "scouts_festivals": [
+    "IDFA (International Documentary Film Festival Amsterdam)",
+    "Sheffield DocFest",
+    "Hot Docs Canadian International Documentary Festival",
+    "Sundance Film Festival"
+   ],
+   "rights_type": "international_sales",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via taskovskifilms.com/submissions",
+   "notes": "European documentary sales agency with international reach. Actively acquires at IDFA and Sheffield. Source: taskovskifilms.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Europe/International"
+  },
+  {
+   "name": "Journeyman Pictures",
+   "source_url": "https://www.journeyman.tv/",
+   "specialty_genres": [
+    "documentary"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United Kingdom",
+    "global"
+   ],
+   "scouts_festivals": [
+    "Sheffield DocFest",
+    "IDFA (International Documentary Film Festival Amsterdam)"
+   ],
+   "rights_type": "broadcast_and_digital",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via journeyman.tv/about/submit",
+   "notes": "UK-based international documentary distributor and broadcaster. Source: journeyman.tv.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "UK/Global"
+  },
+  {
+   "name": "Shorts International",
+   "source_url": "https://www.shortsinternational.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "global"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Cannes Film Festival",
+    "SXSW (South by Southwest)"
+   ],
+   "rights_type": "digital_and_broadcast",
+   "budget_tier_fit": "micro_indie",
+   "submission_process": "Via shortsinternational.com/submit",
+   "notes": "World's leading short film distributor. Distributes across iTunes, Amazon, airlines, and broadcast in 100+ territories. Directly relevant for short film matching. Source: shortsinternational.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Global",
+   "format_focus": [
+    "short"
+   ]
+  },
+  {
+   "name": "Seed&Spark",
+   "source_url": "https://www.seedandspark.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "women",
+    "lgbtq+",
+    "racial_ethnic_minority",
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Tribeca Film Festival"
+   ],
+   "rights_type": "streaming_svod",
+   "budget_tier_fit": "micro_indie",
+   "submission_process": "Via seedandspark.com/distribute",
+   "notes": "US crowdfunding and streaming platform with explicit commitment to underrepresented filmmakers. Source: seedandspark.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "levelFILM",
+   "source_url": "https://levelfilm.com/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "comedy",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Canada"
+   ],
+   "scouts_festivals": [
+    "Toronto International Film Festival (TIFF)",
+    "Hot Docs Canadian International Documentary Festival",
+    "SXSW (South by Southwest)"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "micro_to_mid_indie",
+   "submission_process": "Via levelfilm.com/acquisitions",
+   "notes": "Canada's leading independent film distributor. Source: levelfilm.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Canada"
+  },
+  {
+   "name": "Mongrel Media",
+   "source_url": "https://mongrelmedia.com/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "arthouse",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Canada"
+   ],
+   "scouts_festivals": [
+    "Toronto International Film Festival (TIFF)",
+    "Hot Docs Canadian International Documentary Festival",
+    "Cannes Film Festival"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Via mongrelmedia.com/contact or festival acquisition",
+   "notes": "Major Canadian distributor for international and Canadian cinema. Source: mongrelmedia.com.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Canada"
+  },
+  {
+   "name": "Madman Entertainment",
+   "source_url": "https://madman.com.au/",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "arthouse",
+    "animation",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Australia",
+    "New Zealand"
+   ],
+   "scouts_festivals": [
+    "Melbourne International Film Festival (MIFF)",
+    "Sydney Film Festival",
+    "Toronto International Film Festival (TIFF)"
+   ],
+   "rights_type": "theatrical_and_home_entertainment",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Via madman.com.au/acquisitions",
+   "notes": "Australia and New Zealand's leading independent distributor. Source: madman.com.au.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Australia/New Zealand"
+  },
+  {
+   "name": "Palace Films",
+   "source_url": "https://palacefilms.com.au/",
+   "specialty_genres": [
+    "drama",
+    "arthouse",
+    "foreign-language"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Australia"
+   ],
+   "scouts_festivals": [
+    "Melbourne International Film Festival (MIFF)",
+    "Sydney Film Festival",
+    "Cannes Film Festival"
+   ],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "mid_indie_to_prestige",
+   "submission_process": "Via sales agent; operates Palace cinema chain providing theatrical platform",
+   "notes": "Australian arthouse theatrical distributor with own cinema chain. Source: palacefilms.com.au.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null,
+   "active_status": "confirmed_active",
+   "primary_market": "Australia"
+  },
+  {
+   "name": "MAD Solutions",
+   "source_url": "https://vitrina.ai/blog/ultimate-guide-for-selecting-a-film-distribution-company-in-africa/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Middle East",
+    "North Africa"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "all_rights_typical",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Verify current submission route on official site — own-site verification pending",
+   "notes": "Leading MENA-region distributor specialising in Arab cinema and regional international titles. Record built from trade coverage only — own-site verification still pending. Treat as provisional until confirmed.",
+   "verified_at": "2026-07-05",
+   "active_status": "verify_current_status",
+   "primary_market": "Middle East/North Africa"
+  },
+  {
+   "name": "Silverbird Film Distribution",
+   "source_url": "https://whatkeptmeup.com/nollywood-movies/the-current-state-of-film-distribution-in-nollywood/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Nigeria",
+    "West Africa"
+   ],
+   "scouts_festivals": [],
+   "rights_type": "theatrical",
+   "budget_tier_fit": "mid_indie",
+   "submission_process": "Verify current submission route on official site — own-site verification pending",
+   "notes": "Named in current Nollywood trade coverage (2026) as a market-leading Nigerian theatrical distributor. Record built from trade coverage only — own-site verification still pending. Treat as provisional until confirmed.",
+   "verified_at": "2026-07-05",
+   "active_status": "verify_current_status",
+   "primary_market": "Nigeria/West Africa"
+  },
+  {
+   "name": "ARRAY Releasing",
+   "source_url": "https://www.ahotset.com/resource-portal/black-founded-production-companies",
+   "specialty_genres": [
+    "drama",
+    "documentary",
+    "all"
+   ],
+   "specialty_representation": [
+    "racial_ethnic_minority",
+    "women"
+   ],
+   "territory_reach": [
+    "United States",
+    "global"
+   ],
+   "budget_tier_fit": "unconfirmed_this_session",
+   "rights_type": "all_rights_typical",
+   "scouts_festivals": [],
+   "submission_process": "Mission-driven acquisitions; verify current submission route on ARRAY's own site",
+   "notes": "Founded by Ava DuVernay in 2011 (as AFFRM, rebranded ARRAY 2015) as a distribution arm dedicated to amplifying films by Black artists and, per its stated mission, filmmakers of colour and women. Distributed the Netflix documentary 13th.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "Global"
+  },
+  {
+   "name": "FilmOne Entertainment",
+   "source_url": "https://www.filmoneng.com/about",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "Nigeria",
+    "Anglophone West Africa",
+    "global streamers"
+   ],
+   "budget_tier_fit": "unconfirmed_this_session",
+   "rights_type": "theatrical_plus_streaming_sales",
+   "scouts_festivals": [],
+   "submission_process": "Direct distribution deals and co-productions; approach via its own site",
+   "notes": "Per its own site: the largest theatrical distributor in West Africa (75% market share, 2022), the largest supplier of African content to Netflix under a multi-year deal since 2017, and exclusive theatrical licensee for Disney, Warner Bros. Discovery and Sony in Anglophone West Africa. Released the top 10 Nollywood titles of all time. Also holds an output deal with Angel Studios for faith titles in Anglophone West Africa (The Hollywood Reporter, 2025). Directly relevant to Lagos-anchored productions like the EKO VIBES reference case.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "Nigeria/Africa"
+  },
+  {
+   "name": "Wolfe Video",
+   "source_url": "https://www.wolfevideo.com/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "lgbtq+"
+   ],
+   "audience_focus": [
+    "lgbtq_audience"
+   ],
+   "territory_reach": [
+    "United States",
+    "Canada",
+    "worldwide sales"
+   ],
+   "budget_tier_fit": "micro_to_mid_indie",
+   "rights_type": "all_rights_typical",
+   "scouts_festivals": [
+    "Sundance Film Festival",
+    "Berlin International Film Festival (Berlinale)",
+    "Cannes Film Festival",
+    "Frameline (San Francisco International LGBTQ+ Film Festival)",
+    "Outfest Los Angeles",
+    "Toronto International Film Festival (TIFF)",
+    "AFI FEST"
+   ],
+   "submission_process": "Acquisitions team scouts named festivals and markets (its own published statement); also reviews submissions",
+   "notes": "The longest-running and largest exclusive distributor of LGBTQ+ films (founded 1985), releasing across streaming, theatrical, festivals and international sales. Its own site names the festivals its acquisitions team scouts each year — one of the strongest verified distributor-festival linkages in this database.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Well Go USA Entertainment",
+   "source_url": "https://wellgousa.com/",
+   "specialty_genres": [
+    "action",
+    "thriller",
+    "horror",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States",
+    "North America"
+   ],
+   "budget_tier_fit": "unconfirmed_this_session",
+   "rights_type": "theatrical_and_vod",
+   "scouts_festivals": [],
+   "submission_process": "Acquisitions-led; known for festival and market pickups (e.g. Adelaide Film Festival pickup Monolith)",
+   "notes": "Independent US distributor and a major home for Asian action and martial-arts cinema (Ip Man series, Burning), expanding across horror and indie titles; releases theatrically (often via AMC) and on VOD.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  },
+  {
+   "name": "Angel Studios",
+   "source_url": "https://www.hollywoodreporter.com/movies/movie-news/how-angel-studios-is-taking-faith-based-cinema-global-1236235957/",
+   "specialty_genres": [
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "audience_focus": [
+    "kids_family"
+   ],
+   "territory_reach": [
+    "United States",
+    "global via output deals"
+   ],
+   "budget_tier_fit": "unconfirmed_this_session",
+   "rights_type": "theatrical_plus_streaming_guild",
+   "scouts_festivals": [],
+   "submission_process": "Distinctive model: crowd-vote greenlighting via Angel Guild membership and a regulated crowdfunding platform (Angel Funding)",
+   "notes": "Faith-based and family-friendly distributor behind Sound of Freedom and King of Kings, positioned per The Hollywood Reporter as a family-friendly alternative to mainstream distributors, with global output deals including FilmOne for Anglophone West Africa. The database's first genuine faith-audience route.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "Global"
+  },
+  {
+   "name": "Samuel Goldwyn Films",
+   "source_url": "https://www.samuelgoldwynfilms.com/about/",
+   "specialty_genres": [
+    "drama",
+    "all"
+   ],
+   "specialty_representation": [
+    "general"
+   ],
+   "territory_reach": [
+    "United States"
+   ],
+   "budget_tier_fit": "unconfirmed_this_session",
+   "rights_type": "all_rights_typical",
+   "scouts_festivals": [],
+   "submission_process": "IMPORTANT: explicitly does NOT accept unsolicited scripts or materials (its own site) — approach via sales agents/producers reps only",
+   "notes": "Independent distributor of arthouse, independent and foreign features (Another Round, Lunana), with a documented track record in faith-audience hits (Facing the Giants, Fireproof per trade coverage) despite being a secular distributor.",
+   "verified_at": "2026-07-05",
+   "active_status": "confirmed_active",
+   "primary_market": "US"
+  }
+ ]
+}

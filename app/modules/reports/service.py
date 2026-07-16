@@ -289,8 +289,15 @@ class ReportService:
         primary_languages = self._coerce_string_list(
             request_metadata.get("primary_languages") or request_metadata.get("language")
         )
-        co_pro = request_metadata.get("co_production_interest")
-        co_pro = bool(co_pro) if co_pro is not None else None
+        # Intake sends yes/no/undecided; the signal stores a tri-state bool
+        # (None = undecided/unanswered). bool("no") would be True — map strings.
+        co_pro_raw = request_metadata.get("co_production_interest")
+        if isinstance(co_pro_raw, str):
+            co_pro = {"yes": True, "no": False}.get(co_pro_raw.strip().lower())
+        elif co_pro_raw is not None:
+            co_pro = bool(co_pro_raw)
+        else:
+            co_pro = None
 
         # --- Governance flags ---
         consent = bool(

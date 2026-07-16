@@ -1,0 +1,4730 @@
+{
+ "_meta": {
+  "dataset": "festivals",
+  "record_count": 177,
+  "extracted": "2026-07-07",
+  "source": "Academy 98th qualifying list + own sites",
+  "notes": "ONLY 1 record accepts tv_series — TV circuit (Series Mania, Canneseries, Banff, Monte-Carlo) is a BLOCKING expansion for episodic reports; 165 bafta_qualifying nulls outstanding"
+ },
+ "records": [
+  {
+   "name": "Sundance Film Festival",
+   "source_url": "https://festival.sundance.org/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Opens ~10 months before Jan festival dates; early/regular/late submission windows",
+   "budget_notes": "Agnostic — historically championed no/low-budget breakthrough work alongside larger indies",
+   "notes": "The premier US launchpad for independent film — real, direct pipeline to acquisition by distributors including A24, Neon, Magnolia (confirmed via Media Play News/Film Impact Georgia distributor interviews).",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Cannes Film Festival",
+   "source_url": "https://www.festival-cannes.com/en/",
+   "territory": "France",
+   "continent": "Europe",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 6,
+   "deadline_pattern": "Submissions open ~Jan/Feb for May festival; strict recency requirement",
+   "budget_notes": "Agnostic, though Official Selection skews toward established/mid-to-high budget work",
+   "notes": "World's most prestigious festival and adjoining market (Marche du Film) — major international sales/distribution hub.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Berlin International Film Festival (Berlinale)",
+   "source_url": "https://www.berlinale.de/en/home.html",
+   "territory": "Germany",
+   "continent": "Europe",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 8,
+   "deadline_pattern": "Submissions open autumn prior year for Feb festival",
+   "budget_notes": "Agnostic",
+   "notes": "A-list festival with a real, adjoining market (EFM) heavily used by distributors and sales agents.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Toronto International Film Festival (TIFF)",
+   "source_url": "https://tiff.net/",
+   "territory": "Canada",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 10,
+   "deadline_pattern": "Submissions open spring for Sept festival",
+   "budget_notes": "Agnostic — People's Choice Award is a real Oscar predictor",
+   "notes": "Major North American market and sales venue, strong platform for African diaspora and international co-production narratives.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "SXSW (South by Southwest)",
+   "source_url": "https://www.sxsw.com/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "comedy",
+    "sci-fi",
+    "horror",
+    "documentary",
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "tv_series"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 10,
+   "deadline_pattern": "Opens autumn prior year for March festival",
+   "budget_notes": "Strong track record with genre and comedy breakthroughs specifically",
+   "notes": "Real, confirmed as a distributor-scouted festival (Media Play News). Strong fit for genre-forward and tech-adjacent narratives.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Africa International Film Festival (AFRIFF)",
+   "source_url": "https://afriff.com/",
+   "territory": "Nigeria",
+   "continent": "Africa",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 18,
+   "deadline_pattern": "Feature submissions typically close ~2 months before Nov festival",
+   "budget_notes": "Agnostic, strong Nollywood/African cinema focus",
+   "notes": "Nigeria's premier festival — natural fit for Lagos-set or Nollywood-adjacent narratives.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Durban International Film Festival (DIFF)",
+   "source_url": "https://www.durbanfilmfest.co.za/",
+   "territory": "South Africa",
+   "continent": "Africa",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 18,
+   "deadline_pattern": "Feature submissions typically close ~3 months before Jul festival",
+   "budget_notes": "Agnostic, strong pan-African industry networking",
+   "notes": "Africa's premier pan-African festival, strong for African diaspora/co-production narratives.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Frameline (San Francisco International LGBTQ+ Film Festival)",
+   "source_url": "https://www.frameline.org/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "lgbtq+"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "deadline_pattern": "Submissions typically open ~Jan for June festival",
+   "budget_notes": "Agnostic",
+   "notes": "The longest-running queer film festival in the world (confirmed via Women Make Movies distributor resource page) — real, established platform for LGBTQ+ narratives.",
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "lgbtq_audience"
+   ],
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Outfest Los Angeles",
+   "source_url": "https://www.outfest.org/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "lgbtq+"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "deadline_pattern": "Rolling, multiple deadlines through spring",
+   "budget_notes": "Agnostic",
+   "notes": "Major LA-based LGBTQ+ festival with real industry development programs (Screenwriting Lab, Producers Lab) alongside screenings.",
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "lgbtq_audience"
+   ],
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "International Queer Women of Color Film Festival (QWOCFF)",
+   "source_url": "https://qwocmap.org/festival/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "lgbtq+",
+    "racial_ethnic_minority"
+   ],
+   "tier": "Niche",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 36,
+   "deadline_pattern": "Free submission window through Dec 31, small late fee through mid-Jan",
+   "budget_notes": "Explicitly considers access to industry resources — built for filmmakers with fewer prior opportunities",
+   "notes": "Requires films be created by LBTQIA+ BIPOC filmmakers specifically (confirmed via the festival's own submission page) — free to submit, accepts films up to 3 years old.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Bentonville Film Festival",
+   "source_url": "https://bentonvillefilm.org/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "women",
+    "lgbtq+",
+    "racial_ethnic_minority",
+    "disability"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 18,
+   "deadline_pattern": "Submissions typically open autumn prior year for June festival",
+   "budget_notes": "Agnostic",
+   "notes": "Chaired by Geena Davis, explicit mission for inclusive storytelling — films by/about women, non-binary, LGBTQIA+, BIPOC, and disabled people (confirmed via Women Make Movies).",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Athena Film Festival",
+   "source_url": "https://athenafilmfestival.com/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "women"
+   ],
+   "tier": "Niche",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "deadline_pattern": "Submissions typically open autumn for spring festival",
+   "budget_notes": "Agnostic",
+   "notes": "Barnard College-hosted festival centered on stories of women leaders — real, established (9+ years, 30,000+ attendees per Women Make Movies).",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "London Film Festival (BFI LFF)",
+   "source_url": "https://www.bfi.org.uk/london-film-festival",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 10,
+   "deadline_pattern": "Submissions typically close June for Oct festival",
+   "budget_notes": "Agnostic",
+   "notes": "UK's premier festival, strong awards-season positioning, natural UK premiere platform for UK-shot or UK-co-produced work.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Fantastic Fest",
+   "source_url": "https://fantasticfest.com/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "horror",
+    "sci-fi",
+    "thriller",
+    "fantasy"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Submissions typically close spring for Sept festival",
+   "budget_notes": "Agnostic within genre",
+   "notes": "Confirmed via Wikipedia as one of the three largest/most prestigious genre festivals globally (with Sitges and Fantasia).",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "SITGES — International Fantastic Film Festival of Catalonia",
+   "source_url": "https://sitgesfilmfestival.com/",
+   "territory": "Spain",
+   "continent": "Europe",
+   "genre_tags": [
+    "horror",
+    "sci-fi",
+    "fantasy",
+    "thriller"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Rolling deadlines through the year, festival held October",
+   "budget_notes": "Agnostic within genre",
+   "notes": "Confirmed via Wikipedia — one of the three largest/most prestigious genre festivals globally, founded 1968.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Fantasia International Film Festival",
+   "source_url": "https://fantasiafestival.com/",
+   "territory": "Canada",
+   "continent": "Americas",
+   "genre_tags": [
+    "horror",
+    "sci-fi",
+    "fantasy",
+    "action"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Last deadline mid-April for July/Aug festival",
+   "budget_notes": "Agnostic within genre",
+   "notes": "Confirmed via Adrian Tofei's genre festival guide and Wikipedia — Montreal-based, one of the three largest genre festivals globally.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "FrightFest (London)",
+   "source_url": "https://www.frightfest.co.uk/",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "genre_tags": [
+    "horror"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 10,
+   "deadline_pattern": "Rolling submissions, festival held August (London) + separate Glasgow edition",
+   "budget_notes": "Agnostic within horror",
+   "notes": "Confirmed via Adrian Tofei's genre guide, founded 2000, real UK horror-specific platform.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Molins Horror Film Festival (TerrorMolins)",
+   "source_url": "https://terrormolins.com/",
+   "territory": "Spain",
+   "continent": "Europe",
+   "genre_tags": [
+    "horror"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Niche",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 18,
+   "deadline_pattern": "Early Jul, Regular Oct, Late Dec, Extended Jan deadlines",
+   "budget_notes": "Agnostic within horror",
+   "notes": "Founded 1973, near Barcelona — confirmed via Adrian Tofei's genre festival guide.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Hot Docs Canadian International Documentary Festival",
+   "source_url": "https://hotdocs.ca/",
+   "territory": "Canada",
+   "continent": "Americas",
+   "genre_tags": [
+    "documentary"
+   ],
+   "eligible_formats": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 14,
+   "deadline_pattern": "Submissions typically close Dec for April/May festival",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — largest documentary film festival in North America, strong industry attendance.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "DOC NYC",
+   "source_url": "https://www.docnyc.net/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "documentary"
+   ],
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Submissions typically close summer for Nov festival",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — America's largest documentary festival, active industry community.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Annecy International Animated Film Festival",
+   "source_url": "https://www.annecy.org/",
+   "territory": "France",
+   "continent": "Europe",
+   "genre_tags": [
+    "animation"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 14,
+   "deadline_pattern": "Submissions typically close Feb for June festival",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via Wikipedia — the oldest (founded 1960) and most prestigious animation-dedicated festival globally.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Hiroshima International Animation Festival",
+   "source_url": "http://hiroanim.jp/",
+   "territory": "Japan",
+   "continent": "Asia",
+   "genre_tags": [
+    "animation"
+   ],
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "deadline_pattern": "Biennial — verify current cycle directly",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — major international animation showcase with strong artistic/experimental focus. NOTE (2026-07): the Academy's 98th qualifying list names the successor event 'Hiroshima Animation Season' — this record needs review/renaming before the flag can be set.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": false,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "HollyShorts Film Festival",
+   "source_url": "https://www.hollyshorts.com/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Jan 30 (Early, $55) through June 1 (Extended, $85)",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — Oscar-qualifying in 4 categories (Best Short, Best Live Action, Best Animation, Best Documentary Short), requires LA premiere.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Palm Springs International ShortFest",
+   "source_url": "https://psfilmfest.org/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "short"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Verify current cycle directly",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — largest short-film-focused festival in North America, 300+ films annually.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Seattle International Film Festival (SIFF)",
+   "source_url": "https://www.siff.net/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 14,
+   "deadline_pattern": "Festival held May, submissions close prior winter",
+   "budget_notes": "Agnostic; real launchpad for films lacking US distribution",
+   "notes": "Confirmed via IndieWire — 2026 edition showcased 203 films from 71 countries, explicit focus on diverse voices/regions/storytelling.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Chicago International Film Festival",
+   "source_url": "https://www.chicagofilmfestival.com/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "all"
+   ],
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "A-List",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 12,
+   "deadline_pattern": "Festival held October",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via Wikipedia — North America's longest-running competitive film festival (founded 1964), 175+ films from 50+ countries, includes a dedicated Black Perspectives section.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Ann Arbor Film Festival",
+   "source_url": "https://www.aafilmfest.org/",
+   "territory": "United States",
+   "continent": "Americas",
+   "genre_tags": [
+    "experimental"
+   ],
+   "eligible_formats": [
+    "short",
+    "experimental"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Niche",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 18,
+   "deadline_pattern": "Festival dates late March",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — 60+ years running, Oscar-qualifying, ~$38,000 in prizes, ideal for genre-blurring experimental work.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "Oberhausen International Short Film Festival",
+   "source_url": "https://www.kurzfilmtage.de/en/",
+   "territory": "Germany",
+   "continent": "Europe",
+   "genre_tags": [
+    "experimental"
+   ],
+   "eligible_formats": [
+    "short",
+    "experimental"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "tier": "Mid-tier",
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 18,
+   "deadline_pattern": "Verify current cycle directly",
+   "budget_notes": "Agnostic",
+   "notes": "Confirmed via CMS Productions — one of the oldest and most respected platforms for experimental/avant-garde short work in Europe.",
+   "verified_at": "2026-07-05",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null
+  },
+  {
+   "name": "AFI FEST",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://fest.afi.com/",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "ALCINE — Festival de Cine de Alcalá de Henares",
+   "territory": "Spain",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.alcine.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Alexandria Short Film Festival",
+   "territory": "Egypt",
+   "continent": "Africa",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.alex-sff.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "AmDocs — American Documentary and Animation Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "documentary",
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary",
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.amdocfilmfest.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "American Black Film Festival (ABFF)",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Leading US festival for Black cinema and creators of colour. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.abff.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Anifilm — International Festival of Animated Films",
+   "territory": "Czech Republic",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short",
+    "feature"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.anifilm.cz",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Anima — Brussels Animation Film Festival",
+   "territory": "Belgium",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short",
+    "feature"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animafestival.be/en",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Animation Dingle",
+   "territory": "Ireland",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animationdingle.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Animator International Animated Film Festival",
+   "territory": "Poland",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animator-festival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Animayo",
+   "territory": "Spain",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animayo.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Animest International Animation Film Festival",
+   "territory": "Romania",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animest.ro",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Aspen Shortsfest",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all",
+    "comedy"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Runs a dedicated Best Comedy award alongside drama, animation and documentary — a rare genuine comedy-specific qualifying route. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.aspenfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Athens International Film + Video Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "experimental",
+    "animation"
+   ],
+   "genre_tags": [
+    "all",
+    "experimental"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.athensfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Atlanta Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.atlantafilmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Austin Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Also runs one of the best-known screenwriting competitions in the US — directly relevant to the planned script-only submission category. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.austinfilmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Balinale — Bali International Film Festival",
+   "territory": "Indonesia",
+   "continent": "Asia",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.balinale.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Beirut Shorts International Film Festival",
+   "territory": "Lebanon",
+   "continent": "Asia",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.beirutshorts.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Bengaluru International Short Film Festival",
+   "territory": "India",
+   "continent": "Asia",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bisff.in",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Big Sky Documentary Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bigskyfilmfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "BitBang International Animation Festival",
+   "territory": "Argentina",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bitbangclub.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "BlackStar Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary",
+    "feature"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Celebrates work by Black, Brown and Indigenous filmmakers. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.blackstarfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Bogoshorts — Bogotá Short Film Festival",
+   "territory": "Colombia",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bogoshorts.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "BronzeLens Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "feature",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Atlanta festival championing filmmakers of colour. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bronzelens.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Brussels Short Film Festival",
+   "territory": "Belgium",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bsff.be",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Bucheon International Animation Festival (BIAF)",
+   "territory": "South Korea",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short",
+    "feature"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.biaf.or.kr",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Busan International Short Film Festival",
+   "territory": "South Korea",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.bisff.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cairo International Film Festival",
+   "territory": "Egypt",
+   "continent": "Africa",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "One of Africa's and the Arab world's longest-running major festivals. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.ciff.org.eg",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Calgary International Film Festival",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.ciffcalgary.ca",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Camden International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.pointsnorthinstitute.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cartagena de Indias International Film Festival (FICCI)",
+   "territory": "Colombia",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.ficcifestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Chicago International Children's Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "feature"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Longest-running children's film festival in North America — a direct match route for family-audience productions. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.facets.org/cicff",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "kids_family"
+   ]
+  },
+  {
+   "name": "Chilemonos International Animation Festival",
+   "territory": "Chile",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.chilemonos.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cinanima — International Animated Film Festival of Espinho",
+   "territory": "Portugal",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.cinanima.pt",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cinequest Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.cinequest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Clermont-Ferrand International Short Film Festival",
+   "territory": "France",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The world's largest festival dedicated to short film. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.clermont-filmfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cleveland International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.clevelandfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cork International Film Festival",
+   "territory": "Ireland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.corkfilmfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "CPH:DOX — Copenhagen International Documentary Film Festival",
+   "territory": "Denmark",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.cphdox.dk",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Curtas Vila do Conde International Film Festival",
+   "territory": "Portugal",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://festival.curtas.pt",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Dallas International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.dallasfilm.org/diff",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "deadCenter Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.deadcenterfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "DMZ International Documentary Film Festival",
+   "territory": "South Korea",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.dmzdocs.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Doc Edge Festival",
+   "territory": "New Zealand",
+   "continent": "Oceania",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.docedge.nz",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Docaviv International Documentary Film Festival",
+   "territory": "Israel",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.docaviv.co.il",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Doclisboa International Film Festival",
+   "territory": "Portugal",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short",
+    "feature"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.doclisboa.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Docville International Documentary Film Festival",
+   "territory": "Belgium",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.docville.be",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Drama International Short Film Festival",
+   "territory": "Greece",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.dramafilmfestival.gr/en/",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Edmonton International Film Festival",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.edmontonfilmfest.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "EnergaCAMERIMAGE International Film Festival",
+   "territory": "Poland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The leading festival dedicated to the art of cinematography. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.camerimage.pl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "FESPACO — Pan African Film and Television Festival of Ouagadougou",
+   "territory": "Burkina Faso",
+   "continent": "Africa",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The flagship pan-African festival. IMPORTANT eligibility restriction to surface prominently: competition is open to African and African-diaspora filmmakers. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.fespaco.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Festival du Nouveau Cinéma",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.nouveaucinema.ca",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Cinelebu — Festival Internacional de Cine de Lebu",
+   "territory": "Chile",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.cinelebu.cl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "FICX — Gijón International Film Festival",
+   "territory": "Spain",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.gijonfilmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Flickerfest International Short Film Festival",
+   "territory": "Australia",
+   "continent": "Oceania",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.flickerfest.com.au",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Florida Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.floridafilmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Foyle Film Festival",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Northern Ireland's Oscar-qualifying festival, based in Derry. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.foylefilmfestival.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Friss Hús Budapest International Short Film Festival",
+   "territory": "Hungary",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://frisshusbudapest.com/en",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Full Frame Documentary Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.fullframefest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Galway Film Fleadh",
+   "territory": "Ireland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.galwayfilmfleadh.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Go Short — International Short Film Festival Nijmegen",
+   "territory": "Netherlands",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.goshort.nl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Göteborg Film Festival",
+   "territory": "Sweden",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The largest film festival in the Nordics. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.goteborgfilmfestival.se",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Guadalajara International Film Festival (FICG)",
+   "territory": "Mexico",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.ficg.mx",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Guanajuato International Film Festival (GIFF)",
+   "territory": "Mexico",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.giff.mx",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Haifa International Film Festival",
+   "territory": "Israel",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.haifaff.co.il",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Hamptons International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Named by Magnolia Pictures among festivals it actively scouts (existing distributor record). On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.hamptonsfilmfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Hawaii International Film Festival (HIFF)",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.hiff.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Hong Kong International Film Festival",
+   "territory": "Hong Kong",
+   "continent": "Asia",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.hkiff.org.hk",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Hot Springs Documentary Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.hsdfi.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Huesca International Film Festival",
+   "territory": "Spain",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.huesca-filmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "IDFA — International Documentary Film Festival Amsterdam",
+   "territory": "Netherlands",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The world's leading documentary festival and market. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.idfa.nl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Imaginaria Film Festival",
+   "territory": "Italy",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.imaginaria.eu",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "imagineNATIVE Film + Media Arts Festival",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "feature",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The world's largest showcase of Indigenous-made screen content. IMPORTANT eligibility restriction to surface prominently: work must be by Indigenous creators. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.imaginenative.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "In The Palace International Short Film Festival",
+   "territory": "Bulgaria",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.inthepalace.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Indy Shorts International Film Festival (Heartland Film)",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.heartlandfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Interfilm International Short Film Festival Berlin",
+   "territory": "Germany",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.interfilm.de",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "International Documentary and Short Film Festival of Kerala (IDSFFK)",
+   "territory": "India",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.idsffk.in",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Sheffield DocFest",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The UK's leading documentary festival and marketplace. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sheffdocfest.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Zinebi — International Festival of Documentary and Short Film of Bilbao",
+   "territory": "Spain",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.zinebi.eus",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "DOK Leipzig — International Leipzig Festival for Documentary and Animated Film",
+   "territory": "Germany",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "documentary",
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary",
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.dok-leipzig.de",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Internationale Kurzfilmtage Winterthur",
+   "territory": "Switzerland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.kurzfilmtage.ch",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "It's All True — International Documentary Film Festival",
+   "territory": "Brazil",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.etudoverdade.com.br",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Izmir International Short Film Festival",
+   "territory": "Turkey",
+   "continent": "Asia",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.izmirkisafilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Jerusalem Film Festival",
+   "territory": "Israel",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.jff.org.il",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Ji.hlava International Documentary Film Festival",
+   "territory": "Czech Republic",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.ji-hlava.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Kaboom Animation Festival",
+   "territory": "Netherlands",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.kaboomfestival.nl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Krakow Film Festival",
+   "territory": "Poland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.krakowfilmfestival.pl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "LA Shorts International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.lashortsfest.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Leeds International Film Festival",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.leedsfilmcity.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Leuven International Short Film Festival",
+   "territory": "Belgium",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.kortfilmfestival.be",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Locarno Film Festival",
+   "territory": "Switzerland",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.pardo.ch",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Los Angeles Asian Pacific Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.vcmedia.org/festival",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "LALIFF — Los Angeles Latino International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.laliff.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Manchester Animation Festival",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.manchesteranimationfestival.co.uk",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Melbourne International Film Festival (MIFF)",
+   "territory": "Australia",
+   "continent": "Oceania",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.miff.com.au",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Millennium Docs Against Gravity",
+   "territory": "Poland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://mdag.pl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Morelia International Film Festival",
+   "territory": "Mexico",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.moreliafilmfest.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Mountainfilm",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Adventure, outdoor and environment-focused documentary festival — the closest current route for sport/adventure subject matter. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.mountainfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Movies That Matter",
+   "territory": "Netherlands",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Human-rights and social-issue focused — a direct route for Social/Issue-Based projects. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.moviesthatmatter.nl/en/festival",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Nashville Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.nashvillefilmfestival.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "New Hampshire Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.nhfilmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "New Orleans Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.neworleansfilmfestival.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "New York International Children's Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "feature"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "North America's largest festival of film for children and teens — a direct match route for family-audience productions. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.nyicff.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "kids_family"
+   ]
+  },
+  {
+   "name": "Nordisk Panorama Film Festival",
+   "territory": "Sweden",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Covers the five Nordic countries; entry restricted to Nordic productions — surface this eligibility restriction prominently. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.nordiskpanorama.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "The Norwegian Short Film Festival (Kortfilmfestivalen)",
+   "territory": "Norway",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.kortfilmfestivalen.no",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "OFF — Odense International Film Festival",
+   "territory": "Denmark",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.filmfestival.dk",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Ottawa International Animation Festival",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short",
+    "feature"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "One of the largest animation festivals in the world. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animationfestival.ca",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Out On Film — Atlanta's International LGBTQ Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "feature",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "lgbtq+"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.outonfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "lgbtq_audience"
+   ]
+  },
+  {
+   "name": "Pan African Film & Arts Festival (PAFF)",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The largest Black film festival in the United States. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.paff.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Provincetown International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "General festival with a dedicated Best Queer Short Film award and long-standing LGBTQ+ programming strength. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.provincetownfilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05",
+   "audience_focus": [
+    "lgbtq_audience"
+   ]
+  },
+  {
+   "name": "Raindance Film Festival",
+   "territory": "United Kingdom",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The UK's largest independent film festival. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.raindance.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Reel Sisters of the Diaspora Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "women",
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Dedicated to films by women of colour. IMPORTANT eligibility restriction to surface prominently. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.reelsisters.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "REGARD — Saguenay International Short Film Festival",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.festivalregard.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Curta Cinema — Rio de Janeiro International Short Film Festival",
+   "territory": "Brazil",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.curtacinema.com.br",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "RiverRun International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.riverrunfilm.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Martha's Vineyard African American Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.mvaaff.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "St Kilda Film Festival",
+   "territory": "Australia",
+   "continent": "Oceania",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.stkildafilmfestival.com.au",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "St. Louis International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.cinemastlouis.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "San Francisco International Film Festival (SFFILM)",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sffilm.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "San Francisco Jewish Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The world's first and largest Jewish film festival — strong cultural/heritage subject-matter route. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.jfi.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "San Jose International Short Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sjsff.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "San Luis Obispo International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.slofilmfest.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Santa Barbara International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sbiff.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Santa Fe International Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.santafe.film",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Sarajevo Film Festival",
+   "territory": "Bosnia and Herzegovina",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The leading festival of Southeast Europe. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sff.ba",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Sebastopol Documentary Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sebastopolfilmfestival.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Short Shorts Film Festival & Asia",
+   "territory": "Japan",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Festival homepage to be confirmed in verification pass — the Academy list entry carries no URL, so the qualifying-list PDF is cited as source. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Show Me Shorts Film Festival",
+   "territory": "New Zealand",
+   "continent": "Oceania",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.showmeshorts.co.nz",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Singapore International Film Festival (SGIFF)",
+   "territory": "Singapore",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sgiff.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Slamdance Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.slamdance.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Spark Animation",
+   "territory": "Canada",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sparkcg.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Stuttgart Festival of Animated Film (ITFS)",
+   "territory": "Germany",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.itfs.de",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Sydney Film Festival",
+   "territory": "Australia",
+   "continent": "Oceania",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.sff.org.au",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Taipei Golden Horse Film Festival",
+   "territory": "Taiwan",
+   "continent": "Asia",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The most prestigious awards platform in Chinese-language cinema. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.goldenhorse.org.tw",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Tallinn Black Nights Film Festival (PÖFF)",
+   "territory": "Estonia",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.poff.ee",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Tampere Film Festival",
+   "territory": "Finland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.tamperefilmfestival.fi",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Tasveer Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short",
+    "feature",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "South Asian film festival based in Seattle. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.tasveerfestival.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Thessaloniki International Documentary Film Festival",
+   "territory": "Greece",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.filmfestival.gr",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Tirana International Film Festival",
+   "territory": "Albania",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.tiranafilmfest.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Tribeca Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Named by Magnolia Pictures among festivals it actively scouts (existing distributor record). On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.tribecafilm.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Uppsala International Short Film Festival",
+   "territory": "Sweden",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.shortfilmfestival.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Urbanworld Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "racial_ethnic_minority"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "Major multicultural festival in New York. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.urbanworld.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Venice International Film Festival",
+   "territory": "Italy",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "The world's oldest film festival. On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.labiennale.org/en/cinema",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Vienna Shorts",
+   "territory": "Austria",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "short",
+    "animation",
+    "documentary"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.viennashorts.com",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Vilnius Short Film Festival",
+   "territory": "Lithuania",
+   "continent": "Europe",
+   "tier": "Niche",
+   "eligible_formats": [
+    "short"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://filmshorts.lt",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Visions du Réel",
+   "territory": "Switzerland",
+   "continent": "Europe",
+   "tier": "A-List",
+   "eligible_formats": [
+    "documentary",
+    "short"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.visionsdureel.ch",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Warsaw International Film Festival",
+   "territory": "Poland",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.wff.pl",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Woodstock Film Festival",
+   "territory": "United States",
+   "continent": "Americas",
+   "tier": "Niche",
+   "eligible_formats": [
+    "feature",
+    "short",
+    "documentary",
+    "animation"
+   ],
+   "genre_tags": [
+    "all"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.woodstockfilmfestival.org",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Animafest Zagreb — World Festival of Animated Film",
+   "territory": "Croatia",
+   "continent": "Europe",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "animation",
+    "short",
+    "feature"
+   ],
+   "genre_tags": [
+    "animation"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.animafest.hr",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  },
+  {
+   "name": "Yamagata International Documentary Film Festival",
+   "territory": "Japan",
+   "continent": "Asia",
+   "tier": "Mid-tier",
+   "eligible_formats": [
+    "documentary"
+   ],
+   "genre_tags": [
+    "documentary"
+   ],
+   "representation_focus": [
+    "general"
+   ],
+   "min_months_after_completion": 0,
+   "max_months_after_completion": 24,
+   "completion_window_verified": false,
+   "deadline_pattern": "Verify current submission windows on the official site — not yet independently checked",
+   "notes": "On the Academy's official 98th Awards qualifying festival list (short-film categories, and documentary feature where the list notes it) — flag scope is shorts/doc qualification, not feature Oscar qualification.",
+   "source_url": "https://www.yidff.jp",
+   "qualifying_list_source": "https://www.oscars.org/sites/oscars/files/2024-11/98th_qualifying_festival_list_all_shorts.pdf",
+   "oscar_qualifying": true,
+   "bafta_qualifying": null,
+   "verified_at": "2026-07-05"
+  }
+ ]
+}
