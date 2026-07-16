@@ -1,0 +1,283 @@
+# Prodculator — Client Changelog
+
+Running record of changes delivered under PROD-SOW-003, for Deo Media Limited.
+Each entry lists what changed, why, the files touched, and how it was verified.
+
+---
+
+## 2026-07-14 — Phase: Signal contract merge (Implementation Plan §Days 3–5)
+
+### Baseline recorded before any change
+- Full existing backend test suite executed: **657 passed, 1 failed**.
+  The single failure (`test_free_user_gets_watermarked_pdf`) is environmental —
+  WeasyPrint's GTK libraries were not yet installed on the development machine,
+  so PDF rendering is skipped locally. Not a code defect; being resolved by
+  installing the GTK3 runtime.
+- Repository migration state recorded: two open Alembic heads
+  (`b2a3b4c5d6e7`, `c1d2e3f4a5b6`).
+
+### Handoff pack reconciled against the repository (drift found and handled)
+The B2B handoff pack was written against an earlier repository state. Three
+drift points were identified and adapted rather than merged blindly:
+1. **`sql_models.py`** — the pack's copy predates the repository's newer
+   `TerritoryProfile` bankability fields (v3). Only the `ProductionSignal` v2
+   model changes were merged; the newer repository fields were preserved.
+2. **Migration parents** — the pack migration expected three open heads
+   (`c1d2e3f4a5b6`, `i2j3k4l5m6n7`, `z8b9c0d1e2f3`); two had since been merged
+   into the chain by internal work. The migration's `down_revision` was
+   re-pointed to the actual current heads (`b2a3b4c5d6e7`, `c1d2e3f4a5b6`).
+   The migration's column additions are idempotent, so behaviour is unchanged.
+3. **`reports/service.py`** — the pack's copy predates newer repository
+   features (bankability query fields, PDF waterfall numerics, distributor
+   dataset). Only the signal-write logic was folded in; no newer repository
+   code was removed.
+
+### Changes delivered
+**New modules (from handoff pack, as designed):**
+- `app/modules/b2b/signal_normalise.py` — canonical vocabulary (formats,
+  genres) + GBP budget banding. Single source of truth for segment matching.
+- `app/modules/b2b/package_service.py` — section library, product templates,
+  and the sufficiency preview with privacy floors (10 overall / 5 per segment).
+
+**Updated modules (from handoff pack, merged):**
+- `app/modules/b2b/service.py` — every signal read now enforces the consent
+  gate (`b2b_consent = TRUE` only) and internal-row exclusion; overall privacy
+  floor raised from 5 to 10.
+- `app/modules/b2b/admin_router.py` — new admin package endpoints
+  (`/api/admin/b2b/package/*`: library, templates, sufficiency preview),
+  additions only, behind the existing `canManageB2B` permission.
+- `app/models/sql_models.py` — `ProductionSignal` v2: three-way territory
+  fields (`home_country`, `territories_considered`, `territories_recommended`),
+  FX-normalised budget fields (`budget_amount_gbp`, `budget_currency`,
+  `fx_rate_date`), audience fields (stored, never scored), governance flags
+  (`b2b_consent` default false, `is_internal`), `report_runs`,
+  `schema_version`, unique `script_id` (one signal per script).
+- `app/modules/reports/service.py` — the signal write path now:
+  FX-normalises budgets to GBP before banding (fixes the historical
+  foreign-currency banding bug), canonicalises format and genres on write,
+  captures the three territory fields, refuses to persist un-consented
+  signals, honours consent withdrawal by deleting the prior row, and
+  dedupes per script (latest wins, `report_runs` incremented).
+
+**Database migration:**
+- `alembic/versions/b2b1v2signal_production_signals_v2.py` — merges the open
+  migration heads into one and adds the v2 columns idempotently; backfills
+  legacy `territory` into `home_country`; existing rows default to
+  `b2b_consent = FALSE` (the safe choice — un-consented rows are dark until
+  re-consented). Applied cleanly to the development database; all 16 new
+  columns and the unique `script_id` index verified present.
+
+**Data cleanup tool (dry-run first, per plan §3):**
+- `scripts/b2b_signal_v2_cleanup.py` — dedupes legacy rows sharing a
+  `script_id` (latest wins) and normalises legacy vocabulary to canonical
+  values. Runs as a dry run by default and prints the affected-rows report;
+  writes nothing without `--apply`. The dry-run report for staging/production
+  will be provided for review before any apply run, as agreed.
+
+**Verification folded into the test suite:**
+- The handoff pack's 17 verification checks (FX banding, consent gate,
+  script dedupe, consent withdrawal, internal exclusion, sufficiency preview)
+  now run inside the repository's pytest suite
+  (`tests/test_b2b_signal_v2.py` + `tests/b2b_signal_v2_checks.py`).
+  Two small adaptations were needed to run them against the current repo:
+  the Jinja2 test stub gained the `filters` registry the newer PDF service
+  uses, and the checks run in a subprocess so their dependency stubs cannot
+  leak into other tests.
+
+### Existing tests updated to the v2 contract (updated, not deleted)
+Five pre-existing tests asserted v1 behaviour and were updated to the
+delivered contract — no test was deleted or skipped:
+- `tests/test_b2b_routes.py` — seeded signals now carry the mandatory
+  governance flags (`b2b_consent=TRUE`, `is_internal=FALSE`); the overall
+  privacy-floor assertion updated from 5 to 10 per the handoff contract.
+- `tests/test_reports_service.py` — the three signal-write tests now pass
+  consent (un-consented writes are correctly refused), and assert the
+  canonicalised vocabulary ("Feature Film" → "feature", lowercased genres)
+  and the stored GBP budget amount.
+
+### Verified by
+- Handoff pack verification checks: **17 passed, 0 failed** inside pytest.
+- Alembic: single head `b2b1v2signal` after migration; upgrade ran cleanly.
+- Database inspected post-migration: all v2 columns + unique index present.
+- Cleanup tool dry run executed against the development database (no legacy
+  rows locally; real dry-run report to follow on staging).
+- Full regression suite after all changes: **658 passed, 1 failed** — the
+  one failure is the pre-existing environmental WeasyPrint/GTK issue from
+  the baseline, unrelated to this work (one net-new test vs baseline: the
+  17-check verification wrapper).
+
+---
+
+## 2026-07-14 — Phase: B2C build, first slice (Implementation Plan §Days 5–10)
+
+### 1. `characters` array — the fix for hallucinated character names
+Root cause found and fixed: the report's narrative prompt already instructed
+the AI to use names "ONLY from script_characters array", but nothing ever
+supplied that array — so the AI invented names. Now:
+- Script analysis extracts named speaking characters **verbatim from dialogue
+  cues** during chunk extraction (generic cues like MAN / VOICE / GUARD #2
+  excluded; inventing or normalising names explicitly forbidden).
+- Names are aggregated across chunks (deduplicated case-insensitively,
+  most-recurring first — protagonists naturally rank top) and delivered on
+  the analysis result as `characters` (capped at 30).
+- The narrative prompt now receives the real `script_characters` array; when
+  it is empty the AI is instructed to write without personal names rather
+  than invent any.
+- Files: `app/modules/scripts/schemas.py`, `app/modules/scripts/service.py`.
+  Chunked parsing and stage configuration untouched, per the plan.
+
+### 2. Business Intelligence consent capture at intake (end to end)
+- Backend: `CreateReportRequest` gains `b2b_consent` (default **false**), which
+  flows into the report path's request metadata — the signal writer merged in
+  the previous phase already refuses un-consented writes and honours
+  withdrawal. File: `app/modules/reports/schemas.py`.
+- Frontend: the upload form and the free-preview dialog gain a **separate,
+  strictly optional** consent checkbox (distinct from the required Terms
+  acceptance; never blocks report generation; resets after each upload so
+  every submission is its own consent event). The request body now always
+  sends an explicit true/false. Checkbox copy is a clearly marked
+  **placeholder pending the solicitor's wording**. Files:
+  `src/app/components/user/ScriptUpload.tsx`,
+  `src/app/contexts/ScriptContext.tsx`.
+
+### Verified by
+- Four new unit tests for character aggregation/sanitisation (frequency
+  ordering, case-insensitive dedupe, cap, empty default) — all passing.
+- Full backend suite: **662 passed, 1 failed** (the same pre-existing
+  WeasyPrint/GTK environment issue; unrelated).
+- Frontend TypeScript typecheck: clean.
+
+---
+
+## 2026-07-16 — Phase: B2C build, festivals & distributors verification
+
+### Production incident assist (staging/Railway)
+The deployed backend was crash-looping: `JWT_SECRET_KEY` was still the
+template placeholder, which the config validator correctly refuses (it would
+allow forged login tokens). Diagnosed from the Railway logs; fixed by setting
+a real secret in the Railway environment — no code change required.
+
+### Festival + Distributor engine verified against the delivered reference
+Reconnaissance showed the handoff's matching engine had already been ported
+into the repository (`app/modules/reports/matching.py`) by internal work,
+wired in the required order (festivals first, distributor matching consumes
+the matched festival names). Rather than re-port it, this phase proved the
+port is faithful:
+- Canonical datasets confirmed seeded and identical in count to the pack:
+  **177 festivals, 57 distributors** (the dev notes' "28 distributors" figure
+  was stale; the delivered JSON contains 57).
+- The pack's smoke tests (Tests 0–5) folded into pytest as
+  `tests/test_matching_parity.py`, running against the repo engine with
+  byte-for-byte copies of the canonical JSONs (`tests/data/`): completion-date
+  and festival-window spec, representation strict opt-in, declared-audience
+  matching (Frameline/Outfest surfacing, Breaking Glass boost), the
+  festivals→distributors scouting linkage, and the baseline-unchanged
+  regression. **7/7 passing.**
+- The v2 sample report (EKO VIBES) received from the client is archived with
+  the handoff pack as the design reference; confirmed the previously flagged
+  stale Crew Cost section is already absent from this version.
+
+### Decision recorded
+Crew costs follow the approved implementation plan (replace with canonical
+dataset), not the dev notes' removal instruction; the canonical crew-costs
+dataset has been requested from the client. No crew-cost code touched.
+
+### Verified by
+- `tests/test_matching_parity.py`: 7 passed.
+- Full backend suite: **669 passed, 1 failed** (the same pre-existing
+  WeasyPrint/GTK environment issue; unrelated).
+
+---
+
+## 2026-07-16 — Phase: B2C build, intake form to the field contract
+
+### Intake form rebuilt to intake_schema.json (v1.0, 2026-07-07)
+New fields captured end to end (upload form → API → report metadata → B2B
+signal write):
+- **Expected Completion** (required) — drives the festival matcher's timing
+  window and the signal's completion month.
+- **Target Audience** (Kids & Family / Under 25 / Adults 25+) — declared
+  only, never inferred from genre.
+- **Audience Skew** — with the contract's routing rule implemented: the
+  "LGBTQ+ audience" option is stored as an audience *segment* (scored by the
+  matchers), never as a skew value; the true skew values are stored for
+  Business Intelligence and not scored.
+- **Representation opt-in block** (who made the film) — strictly opt-in,
+  visually separate from audience, with copy explaining that leaving it blank
+  changes nothing.
+- **Open to Official Co-Production?** (yes/no/undecided) — including a
+  correctness fix: the signal writer previously coerced any string to a
+  boolean, so "no" would have stored as *true*; now yes→true, no→false,
+  undecided→null.
+- **Must Film In** — declared hard territory constraint (captured and stored;
+  wiring into territory selection comes with the engine work).
+- **Primary Language(s)** — upgraded from a single free-text value to up to
+  five entries, per contract.
+
+### Format options aligned to the contract — ⚠ for client confirmation
+The form now offers the contract's seven format options (Feature Film,
+TV Series, TV Pilot, Limited Series, Short, Documentary, Animated Feature) —
+each maps to a canonical value the matchers' hard gates support. The legacy
+options (Commercial, Music Video, Interactive, VR, and duplicate labels) are
+no longer offered on the form but remain accepted by the API so existing
+reports are unaffected. **Per the no-removals rule, please confirm in
+writing that dropping those form options is approved.**
+
+### Contract-vs-live conflict resolved (recorded)
+The contract lists Location Strategy as optional free text; the live platform
+uses a required three-way choice that drives territory selection. The live
+behaviour is newer and deliberate, so it is retained; the schema entry is
+treated as stale.
+
+### Verified by
+- New tests: co-production yes/no/undecided mapping (guarding the
+  bool("no")==True bug) and full intake-contract field acceptance.
+- Full backend suite: **671 passed, 1 failed** (same pre-existing
+  WeasyPrint/GTK environment issue).
+- Frontend TypeScript typecheck: clean.
+
+---
+
+## 2026-07-16 — Phase: Incentive engine reconciliation (dev handoff §6)
+
+### Findings — the overlap the handoff flagged is already resolved in the repo
+The dev handoff asked for the duplicate-engine overlap to be reconciled
+(`programme_selector.py` vs `validator.py`) and the hardcoded 35% Canada
+labour ratio sourced or removed. Audit of the current repository shows both
+were addressed by internal work since the handoff was written:
+- **One authoritative engine.** `programme_selector.py` was never ported;
+  the platform has a single calculation path —
+  `best_incentive()` + `ReportValidator._compute_corrected_rebate` — and the
+  reports, the public/in-app What-If calculator, and the incentives service
+  all call it (the code labels it "single source of truth"). Documented here
+  as the answer to "which engine does the report call".
+- **No fabricated ratios.** The Canada 35% hardcode is gone: labour-only
+  credits now require a *sourced* `qualifying_spend_labour_pct` from the
+  dataset, otherwise no number is produced.
+- The selection duties `programme_selector.py` was designed for (which
+  programme applies when a territory has several) exist in the live engine in
+  richer form: format hard gates, nationality/SPV exclusion (CPTC vs PSTC),
+  supplementary-credit exclusion (UK VFX credit), and cap-exceeded programme
+  switching with plain-language advisory notes.
+
+### Waterfall regression across every incentive record (plan §4) — built and passing
+New tool `scripts/verify_incentive_waterfall.py` runs the authoritative
+engine over **every** `incentive_programs` record (49, matching the canonical
+dataset count exactly) at five budget points (£0.5M–£150M) and checks the
+six-step waterfall invariants: qualifying spend bounded by budget, ATL only
+ever reduces, gross rebate consistent with rate unless explicitly cap-clamped,
+net never exceeds gross, all amounts sane. Result: **215 computations, zero
+anomalies** (30 correctly-skipped zero-rate rows). Folded into pytest
+(`tests/test_incentive_waterfall_regression.py`) — runs wherever a seeded
+database is available (local/staging/CI), skips cleanly elsewhere.
+
+### Verified by
+- Waterfall regression: 215/215 clean against the live engine and full
+  seeded dataset; pytest wrapper passes in DB mode and skips in sqlite mode.
+
+### Explicitly not done (pending, by design)
+- No field, route, table or column removed anywhere.
+- Representation data remains sealed; no B2B read includes it.
+- B2B self-service purchase remains disabled pending final pricing.
+- Staging/production cleanup (`--apply`) awaits the client-reviewed dry-run
+  report.

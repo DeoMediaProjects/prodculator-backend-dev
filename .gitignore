@@ -44,3 +44,5 @@ alembic/versions/__pycache__/
 .DS_Store
 
 seed_admin.py
+
+seed_admin.py

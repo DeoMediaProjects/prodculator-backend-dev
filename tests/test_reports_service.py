@@ -511,3 +511,45 @@ def test_upsert_production_signal_without_script_analysis_uses_report_and_metada
     assert payload["genres"] == ["mystery"]
     assert payload["crew_size"] == 60
     assert payload["principal_cast"] == 12
+
+
+# --- intake contract v2 fields (intake_schema.json) ---
+
+
+def test_signal_payload_co_production_interest_string_mapping():
+    """yes/no/undecided from intake must map to True/False/None — bool("no") is
+    True, which is exactly the bug this guards against."""
+    service = ReportService(_as_db(CaptureUpsertSupabase()))
+    for raw, expected in (("yes", True), ("no", False), ("undecided", None), (None, None)):
+        payload = service._build_production_signal_payload(
+            report_id="r1",
+            report_row={"id": "r1", "created_at": "2026-05-01T00:00:00Z"},
+            request_metadata={"country": "United Kingdom", "co_production_interest": raw},
+            script_analysis=None,
+        )
+        assert payload["co_production_interest"] is expected, f"{raw!r} -> {expected!r}"
+
+
+def test_create_report_request_accepts_intake_contract_fields():
+    from app.modules.reports.schemas import CreateReportRequest
+
+    req = CreateReportRequest(
+        script_title="Test",
+        genre=["Drama"],
+        budget_amount=1_000_000,
+        format="TV Pilot",
+        country="United Kingdom",
+        location_strategy="open",
+        completion_date="2027-03-01",
+        must_film_in="Scotland",
+        co_production_interest="undecided",
+        primary_languages=["English", "Yoruba"],
+        target_audience=["adults_25_plus"],
+        audience_segments=["lgbtq_audience"],
+        audience_skew="female_leaning",
+    )
+    assert req.format == "TV Pilot"
+    assert req.completion_date == "2027-03-01"
+    assert req.must_film_in == "Scotland"
+    assert req.co_production_interest == "undecided"
+    assert req.primary_languages == ["English", "Yoruba"]

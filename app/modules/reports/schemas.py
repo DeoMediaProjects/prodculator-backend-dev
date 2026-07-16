@@ -22,16 +22,21 @@ class CreateReportRequest(BaseModel):
         "GBP", "USD", "EUR", "ZAR", "CAD", "AUD", "NGN",
         "HUF", "CZK", "MAD", "NZD", "RON", "RSD", "OTHER",
     ] = "GBP"
+    # Intake contract (intake_schema.json) labels first; the longer tail is
+    # retained for backward compatibility with reports already created.
     format: Literal[
         "Feature Film",
-        "Short Film",
         "TV Series",
+        "TV Pilot",
         "Limited Series",
-        "Mini-Series",
+        "Short",
         "Documentary",
+        "Animated Feature",
+        # Legacy labels (pre-contract) — still accepted, canonicalised on write
+        "Short Film",
+        "Mini-Series",
         "Docuseries",
         "Animation",
-        "Animated Feature",
         "Animation Series",
         "Commercial",
         "Music Video",
@@ -53,6 +58,15 @@ class CreateReportRequest(BaseModel):
     territories_considering: list[str] | None = None
     filming_start_date: str | None = None
     filming_duration: int | None = None
+    # Expected completion date (intake contract: drives the festival matcher's
+    # timing window; also stored as the signal's completion_window month).
+    completion_date: str | None = None
+    # Hard territory constraint declared by the producer ("Must Film In").
+    must_film_in: str | None = None
+    # Treaty co-production openness (yes/no/undecided per the intake contract).
+    co_production_interest: Literal["yes", "no", "undecided"] | None = None
+    # Primary spoken languages (max 5 per contract; free-text entries today).
+    primary_languages: list[str] | None = None
     # TV series episode metadata — used for UK AVEC HETV threshold verification
     total_episodes: int | None = None
     episode_runtime_minutes: int | None = None
