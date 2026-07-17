@@ -214,7 +214,9 @@ class AuthService:
             id=result.data["id"],
             email=result.data["email"],
             name=result.data.get("name"),
-            role=result.data.get("role", "master_admin"),
+            # Fail CLOSED: absent/null role → "" → zero permissions (DEV
+            # handover §7.1). Legitimate admins carry an explicit role.
+            role=result.data.get("role") or "",
         )
 
         return AdminTokenResponse(
@@ -262,7 +264,9 @@ class AuthService:
             id=result.data["id"],
             email=result.data["email"],
             name=result.data.get("name"),
-            role=result.data.get("role", "master_admin"),
+            # Fail CLOSED: absent/null role → "" → zero permissions (DEV
+            # handover §7.1). Legitimate admins carry an explicit role.
+            role=result.data.get("role") or "",
         )
 
         return AdminTokenResponse(

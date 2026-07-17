@@ -9,7 +9,11 @@ class AdminUser(BaseModel):
     id: str
     email: str
     name: str | None = None
-    role: str = "master_admin"
+    # Fail CLOSED: a missing/blank role grants ZERO permissions (an empty role
+    # is not a key in ROLE_PERMISSIONS, so has_permission() returns False for
+    # everything). A row that predates the role column, or has a NULL role,
+    # must never be silently treated as a master_admin.
+    role: str = ""
 
 
 class AdminTokenResponse(BaseModel):

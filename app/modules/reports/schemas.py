@@ -20,7 +20,10 @@ class CreateReportRequest(BaseModel):
     budget_amount: float  # Actual budget figure (replaces budget_range in v3)
     budget_currency: Literal[
         "GBP", "USD", "EUR", "ZAR", "CAD", "AUD", "NGN",
-        "HUF", "CZK", "MAD", "NZD", "RON", "RSD", "OTHER",
+        "HUF", "CZK", "MAD", "NZD", "RON", "RSD",
+        # Added: FX rates for these already exist in fx.service fallback table.
+        "ISK", "JPY", "KRW", "SGD",
+        "OTHER",
     ] = "GBP"
     # Intake contract (intake_schema.json) labels first; the longer tail is
     # retained for backward compatibility with reports already created.
@@ -44,10 +47,9 @@ class CreateReportRequest(BaseModel):
         "VR",
     ]
     country: str  # Validated & normalised to canonical label by validator below
-    location_strategy: Annotated[
-        Literal["domestic", "open", "international"],
-        Field(description="Select a location strategy: 'domestic', 'open', or 'international'"),
-    ]
+    # Optional (removed from the intake form as redundant with
+    # territories_considering). Absent → the engine treats it as "open".
+    location_strategy: Literal["domestic", "open", "international"] | None = None
     production_priority: Literal["incentive", "full", "location"] = "full"
 
     # Email gate (required for preview reports from unauthenticated users)
@@ -102,15 +104,6 @@ class CreateReportRequest(BaseModel):
         "co_production_informal",
         "undecided",
     ] | None = None
-
-    @field_validator("location_strategy", mode="before")
-    @classmethod
-    def validate_location_strategy(cls, v: str) -> str:
-        if not v or str(v).strip() == "":
-            raise ValueError("Please select a location strategy (Shooting domestically, Open to international, or Specifically international)")
-        if v not in ("domestic", "open", "international"):
-            raise ValueError("Location strategy must be 'domestic', 'open', or 'international'")
-        return v
 
     @field_validator("budget_amount", mode="before")
     @classmethod

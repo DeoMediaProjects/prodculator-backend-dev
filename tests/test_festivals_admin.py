@@ -181,7 +181,7 @@ HEADERS = {"Authorization": "Bearer token"}
 
 
 def _admin_user() -> AdminUser:
-    return AdminUser(id="admin-1", email="admin@example.com", name="Admin")
+    return AdminUser(id="admin-1", email="admin@example.com", name="Admin", role="master_admin")
 
 
 def _setup(client):
