@@ -40,14 +40,14 @@ async def compare_territories(
         ...,
         description="Comma-separated territory labels (max 4)",
     ),
-    currency: str = Query("GBP", description="Display currency for crew costs"),
+    currency: str = Query("GBP", description="Display currency"),
     user: AuthUser = Depends(RequirePlan("professional")),
     service: TerritoryService = Depends(_get_service),
 ) -> TerritoryCompareResponse:
     """Compare up to 4 territories side-by-side.
 
     Requires Professional plan or higher.
-    Returns incentive data, crew costs, highlights, and restrictions
+    Returns incentive data, territory profiles, highlights, and restrictions
     for each territory.
     """
     labels = [t.strip() for t in territories.split(",") if t.strip()][:4]

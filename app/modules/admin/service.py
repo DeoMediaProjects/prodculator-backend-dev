@@ -196,7 +196,6 @@ class AdminService:
 
         checks: list[tuple[str, str, str, str]] = [
             ("incentives", "Review and update incentive data", "high", "This week"),
-            ("crew_costs", "Verify crew cost rates are current", "medium", "This week"),
             ("grants", "Sync grants database", "low", "Next week"),
         ]
 

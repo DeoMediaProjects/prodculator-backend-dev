@@ -5,14 +5,14 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.core.database_client import DatabaseClient
-from app.modules.scraper.scrapers import crew_costs, festivals, grants, incentives
+from app.modules.scraper.scrapers import festivals, grants, incentives
 from app.modules.scraper.sources import DEFAULT_SOURCES
 
 logger = logging.getLogger(__name__)
 
+# crew_costs scraping removed with the crew day-rate dataset (2026-07, owner-approved)
 _SCRAPERS = {
     "incentives": incentives.run,
-    "crew_costs": crew_costs.run,
     "grants": grants.run,
     "festivals": festivals.run,
 }
@@ -58,12 +58,7 @@ _DEPRECATED_SOURCE_URLS = {
 }
 
 # Sources deprecated only for specific resource types (URL is valid for other types)
-_DEPRECATED_SOURCE_BY_TYPE: dict[str, set[str]] = {
-    # screenireland.ie/funding is legitimate for grants but not for crew_costs
-    "crew_costs": {
-        "https://www.screenireland.ie/funding",
-    },
-}
+_DEPRECATED_SOURCE_BY_TYPE: dict[str, set[str]] = {}
 
 
 def _is_expected_source_failure(exc: Exception) -> bool:

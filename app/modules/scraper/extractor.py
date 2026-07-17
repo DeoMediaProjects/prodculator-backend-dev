@@ -31,21 +31,6 @@ Return a JSON object with key "programs", a list of objects, each with:
 Only include programs clearly described in the text. If none found, return {"programs": []}.
 Respond ONLY with valid JSON, no markdown."""
 
-CREW_COSTS_PROMPT = """Extract film/TV crew and cast occupational wage data from this government statistics text.
-Return a JSON object with key "crew_costs", a list of objects, each with:
-  country (string — ISO 2-letter code, e.g. "US", "GB", "CA"),
-  role (string — the crew/cast role or occupational title),
-  role_category (string — e.g. "HOD-Production", "HOD-Camera", "CAST-Lead", "BTL-General"),
-  department (string — rate period: "day", "week", or "session"),
-  union_rate_cents (integer or null — low-end rate estimate in cents of the local currency),
-  non_union_rate_cents (integer or null — high-end rate estimate in cents of the local currency),
-  rate_currency (string or null — ISO currency code, e.g. "USD", "GBP", "CAD"),
-  source_name (string or null — the specific government source, e.g. "BLS OEWS / SOC 27-4031"),
-  confidence_score (integer or null — 0-100 confidence in the estimate)
-Only include figures explicitly stated or directly calculable from government data.
-Return {"crew_costs": []} if none found.
-Respond ONLY with valid JSON."""
-
 GRANTS_PROMPT = """Extract film grant and funding opportunities from this text.
 Return a JSON object with key "grants", a list of objects, each with:
   title (string — the official grant/fund name),
@@ -74,14 +59,12 @@ Return {"festivals": []} if none found. Respond ONLY with valid JSON."""
 
 _PROMPTS = {
     "incentives": INCENTIVES_PROMPT,
-    "crew_costs": CREW_COSTS_PROMPT,
     "grants": GRANTS_PROMPT,
     "festivals": FESTIVALS_PROMPT,
 }
 
 _RESULT_KEYS = {
     "incentives": "programs",
-    "crew_costs": "crew_costs",
     "grants": "grants",
     "festivals": "festivals",
 }
@@ -130,26 +113,6 @@ def _output_schema_for(resource_type: str) -> dict:
                 "payment_timeline", "payment_timeline_days_min",
                 "payment_timeline_days_max", "eligibility_rules",
                 "expiry_date", "status", "source_url",
-            ],
-        },
-        "crew_costs": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "country": {"type": "string"},
-                "role": {"type": "string"},
-                "role_category": {"type": "string"},
-                "department": _nullable("string"),
-                "union_rate_cents": _nullable("integer"),
-                "non_union_rate_cents": _nullable("integer"),
-                "rate_currency": _nullable("string"),
-                "source_name": _nullable("string"),
-                "confidence_score": _nullable("integer"),
-            },
-            "required": [
-                "country", "role", "role_category", "department",
-                "union_rate_cents", "non_union_rate_cents", "rate_currency",
-                "source_name", "confidence_score",
             ],
         },
         "grants": {

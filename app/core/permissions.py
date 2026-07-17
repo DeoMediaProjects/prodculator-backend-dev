@@ -8,7 +8,6 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "canManageAdmins",
         "canViewBusinessMetrics",
         "canEditIncentiveData",
-        "canEditCrewCosts",
         "canEditComparables",
         "canManageDataSources",
         "canManageEmailGating",
@@ -19,7 +18,6 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "senior_admin": {
         "canViewBusinessMetrics",
         "canEditIncentiveData",
-        "canEditCrewCosts",
         "canEditComparables",
         "canManageDataSources",
         "canManageEmailGating",
@@ -29,7 +27,6 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     },
     "data_admin": {
         "canEditIncentiveData",
-        "canEditCrewCosts",
         "canEditComparables",
     },
     "support_admin": {

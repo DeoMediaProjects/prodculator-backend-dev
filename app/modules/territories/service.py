@@ -1,7 +1,9 @@
 """Territory comparison service.
 
-Fetches incentive + crew cost data for selected territories and returns
-structured comparison data without requiring a budget input.
+Fetches incentive data for selected territories and returns structured
+comparison data without requiring a budget input. (Crew day-rate data was
+removed from platform scope 2026-07, owner-approved; Crew Depth tiers stay
+via territory profiles.)
 """
 from __future__ import annotations
 
@@ -27,14 +29,11 @@ from app.modules.territories.schemas import (
     TerritoryListItem,
     TerritoryListResponse,
     IncentiveInfo,
-    CrewCostInfo,
     TerritoryProfileInfo,
 )
 
 logger = logging.getLogger(__name__)
 
-# UK baseline for crew cost display (same as calculator)
-_UK_BASELINE_DAY_RATE = 900
 
 
 class TerritoryService:
@@ -60,7 +59,6 @@ class TerritoryService:
         """Return comparison data for up to 4 territories."""
         # Fetch raw data
         incentives = self._fetch_table("incentive_programs")
-        crew_costs_raw = self._fetch_table("crew_costs")
         profiles_by_territory = {
             row["territory"]: row
             for row in self._fetch_table("territory_profiles")
@@ -69,24 +67,6 @@ class TerritoryService:
 
         territory_incentives = index_incentives_by_territory(incentives)
 
-        # FX-enrich crew costs to GBP
-        crew_costs = self._fx_enrich_crew_costs(crew_costs_raw)
-
-        # Index crew costs by territory
-        crew_by_territory: dict[str, list[dict]] = {}
-        for row in crew_costs:
-            for key in (row.get("territory") or "", row.get("country") or ""):
-                if not key:
-                    continue
-                crew_by_territory.setdefault(key, []).append(row)
-                t_obj = resolve_territory(key)
-                if t_obj:
-                    canonical = t_obj.label
-                    if canonical != key:
-                        crew_by_territory.setdefault(canonical, []).append(row)
-                    if t_obj.parent and t_obj.parent.label != key:
-                        crew_by_territory.setdefault(t_obj.parent.label, []).append(row)
-
         # Build comparison items
         items: list[TerritoryCompareItem] = []
         for label in territory_labels[:4]:
@@ -94,7 +74,7 @@ class TerritoryService:
             if not t_obj:
                 continue
             item = self._build_compare_item(
-                t_obj, territory_incentives, crew_by_territory, display_currency,
+                t_obj, territory_incentives, display_currency,
                 profiles_by_territory,
             )
             items.append(item)
@@ -108,7 +88,6 @@ class TerritoryService:
         self,
         t_obj: Territory,
         territory_incentives: dict[str, list[dict]],
-        crew_by_territory: dict[str, list[dict]],
         display_currency: str,
         profiles_by_territory: dict[str, dict] | None = None,
     ) -> TerritoryCompareItem:
@@ -120,9 +99,6 @@ class TerritoryService:
 
         # Incentive info
         incentive_info = self._build_incentive_info(label, territory_incentives, territory_ccy)
-
-        # Crew cost info
-        crew_info = self._build_crew_info(label, crew_by_territory, territory_ccy)
 
         # Maintained profile (crew depth / infrastructure / bankability),
         # falling back to the parent territory's profile for sub-territories
@@ -139,7 +115,6 @@ class TerritoryService:
             level=level,
             parent=parent,
             incentive=incentive_info,
-            crew_costs=crew_info,
             profile=profile_info,
             labor_requirement=labor_req,
             highlights=highlights,
@@ -158,6 +133,8 @@ class TerritoryService:
         if row is None:
             return None
         return TerritoryProfileInfo(
+            cost_efficiency_score=_safe_int(row.get("cost_efficiency_score")),
+            cost_efficiency_source=row.get("cost_efficiency_source"),
             crew_depth_tier=row.get("crew_depth_tier"),
             crew_depth_score=_safe_int(row.get("crew_depth_score")),
             crew_depth_notes=row.get("crew_depth_notes"),
@@ -276,48 +253,6 @@ class TerritoryService:
             expiry_date=expiry,
         )
 
-    def _build_crew_info(
-        self,
-        territory: str,
-        crew_by_territory: dict[str, list[dict]],
-        territory_ccy: str,
-    ) -> CrewCostInfo | None:
-        rows = crew_by_territory.get(territory, [])
-        if not rows:
-            t_obj = resolve_territory(territory)
-            if t_obj and t_obj.parent:
-                rows = crew_by_territory.get(t_obj.parent.label, [])
-        if not rows:
-            return None
-
-        sym = currency_symbol(territory_ccy)
-
-        # Average day rate in GBP
-        rates_gbp: list[float] = []
-        sample_roles: dict[str, str] = {}
-        for row in rows:
-            role = row.get("role_category") or row.get("role") or ""
-            if role.startswith("CAST-"):
-                continue
-            union_gbp = to_float(row.get("union_rate_gbp"))
-            non_union_gbp = to_float(row.get("non_union_rate_gbp"))
-            rate = union_gbp or non_union_gbp
-            if rate and rate > 0:
-                rates_gbp.append(rate)
-                if role and role not in sample_roles and len(sample_roles) < 5:
-                    sample_roles[role] = f"{sym}{rate:,.0f}/day"
-
-        if not rates_gbp:
-            return None
-
-        avg = sum(rates_gbp) / len(rates_gbp)
-        return CrewCostInfo(
-            avg_day_rate=round(avg),
-            avg_day_rate_display=f"{sym}{avg:,.0f}/day",
-            currency=territory_ccy,
-            sample_roles=sample_roles,
-        )
-
     def _derive_highlights_restrictions(
         self,
         territory: str,
@@ -400,41 +335,6 @@ class TerritoryService:
             except Exception:
                 pass
             return []
-
-    def _fx_enrich_crew_costs(self, crew_costs: list[dict]) -> list[dict]:
-        """Add union_rate_gbp, non_union_rate_gbp to each row."""
-        if not crew_costs:
-            return crew_costs
-
-        currencies: set[str] = set()
-        for c in crew_costs:
-            ccy = (c.get("rate_currency") or c.get("currency") or "").upper()
-            if ccy and ccy != "GBP":
-                currencies.add(ccy)
-
-        rates: dict[str, tuple] = {}
-        if currencies:
-            try:
-                rates = self.fx.get_rates_batch("GBP", list(currencies))
-            except Exception:
-                logger.warning("FX enrichment failed for territory crew costs", exc_info=True)
-
-        for c in crew_costs:
-            currency = (c.get("rate_currency") or c.get("currency") or "").upper()
-            union_cents = c.get("union_rate_cents")
-            non_union_cents = c.get("non_union_rate_cents")
-            if currency == "GBP" or not currency:
-                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
-            elif currency in rates:
-                rate, _ = rates[currency]
-                c["union_rate_gbp"] = round(union_cents / 100 / rate) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / 100 / rate) if non_union_cents else None
-            else:
-                c["union_rate_gbp"] = None
-                c["non_union_rate_gbp"] = None
-
-        return crew_costs
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────

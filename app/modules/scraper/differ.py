@@ -39,7 +39,6 @@ def normalize_territory(value: str | None) -> str | None:
 # Primary label field per resource type — used for display in pending changes
 _LABEL_FIELDS = {
     "incentives": "program",
-    "crew_costs": "role",
     "grants": "title",
     "festivals": "name",
 }
@@ -47,7 +46,6 @@ _LABEL_FIELDS = {
 # Fields to diff per resource type — only these generate pending_changes
 _DIFF_FIELDS = {
     "incentives": ["rate", "cap", "status"],
-    "crew_costs": ["union_rate_cents", "non_union_rate_cents"],
     "grants": ["max_amount", "application_deadline", "status"],
     "festivals": ["tier", "acceptance_rate", "premiere_requirement"],
 }
@@ -55,14 +53,12 @@ _DIFF_FIELDS = {
 # Keys used to match an extracted record to an existing DB row
 _MATCH_KEYS = {
     "incentives": ("territory", "program"),
-    "crew_costs": ("country", "role"),
     "grants": ("title", "territory"),
     "festivals": ("name", "year"),
 }
 
 _TABLES = {
     "incentives": "incentive_programs",
-    "crew_costs": "crew_costs",
     "grants": "grant_opportunities",
     "festivals": "film_festivals",
 }

@@ -45,7 +45,6 @@ class FakeSupabase:
     def __init__(self):
         self.tables = {
             "incentive_programs": [{"id": "i1", "territory": "UK", "status": "active"}],
-            "crew_costs": [{"id": "c1", "country": "GB", "territory": "UK", "role_category": "HOD-Camera"}],
             "grant_opportunities": [{"id": "g1", "status": "open"}],
             "film_festivals": [{"id": "f1", "status": "open"}],
         }
@@ -63,7 +62,6 @@ def test_load_analysis_datasets_tolerates_missing_optional_table():
 
     assert datasets["comparables"] == []
     assert len(datasets["incentives"]) == 1
-    assert len(datasets["crew_costs"]) == 1
     assert len(datasets["grants"]) == 1
     assert len(datasets["festivals"]) == 1
 

@@ -275,6 +275,106 @@ database is available (local/staging/CI), skips cleanly elsewhere.
 - Waterfall regression: 215/215 clean against the live engine and full
   seeded dataset; pytest wrapper passes in DB mode and skips in sqlite mode.
 
+---
+
+## 2026-07-17 — Fixes from end-to-end local testing
+
+### Public What-If calculator no longer rejects visitors (bug fix)
+The public `/what-if` lead-magnet page and the plan-gated in-app tool share
+one API endpoint, which demanded a Professional plan — so logged-out visitors
+always got an error instead of the designed teaser. The endpoint now serves
+two tiers from the same deterministic engine: anonymous/below-Professional
+callers receive the teaser (programme, rates, rebate, qualifying spend, tier
+ratings) with the premium fields redacted (currency advantage, crew figures,
+net saving, minimum spend, payment timelines); Professional and above receive
+the full scenario. Route tests added.
+
+### Session refresh survives a Redis outage (resilience fix)
+Refreshing a login session revokes the old token in Redis. If Redis was
+unreachable, that hard-failed the whole refresh with a server error —
+effectively logging every user out during a cache outage. Revocation is now
+best-effort (logged when skipped); the primary control — token expiry — is
+unaffected. Applied to both user and admin sessions.
+
+### Intake form: validation and usability
+- All mandatory fields now show a visible required asterisk.
+- The Generate button is disabled until every mandatory field is complete,
+  with a hint listing exactly what is missing.
+- Expected Completion self-fills from Filming Start + Duration using the
+  engine's own formula (shoot end + 20 weeks post-production) and remains
+  editable; a manually entered date is never overwritten.
+
+### Environment corrections found during testing (not code)
+- The retired `claude-3-5-sonnet-20241022` model was still pinned in
+  environment config, making script analysis report itself unavailable —
+  updated to a current model. ⚠ Any other deployment carrying this value
+  (staging/production env vars) needs the same correction.
+- The defunct hosted Redis instance (DNS no longer resolves) was still
+  referenced in dev config — replaced; flagged for credential rotation at
+  handover.
+
+### Crew costs — decision update
+Owner has indicated crew-cost day rates should be REMOVED from the platform
+(reverting to the dev-notes instruction), not replaced. Written confirmation
+requested before any removal is performed, per the agreed no-removals rule.
+Crew Depth quality tiers are unaffected and stay.
+
+### Verified by
+- Calculator route tests (anonymous teaser + validation) passing; full
+  backend suite green apart from the long-standing local GTK/WeasyPrint
+  environment issue.
+- Frontend typecheck clean; behaviours verified in the running app.
+
+---
+
+## 2026-07-17 — Crew cost day-rates removed from the platform (owner-approved)
+
+Per the owner's approval (relayed 2026-07-17) and the dev handoff §1: crew
+COST day rates leave the platform entirely. **Crew DEPTH quality tiers are
+untouched** and remain a scoring dimension.
+
+### Cost Efficiency scoring re-anchored
+Cost Efficiency was previously derived from crew day-rate arithmetic. It now
+reads a curated score on the territory profile
+(`territory_profiles.cost_efficiency_score` + source field, added by
+migration). Per the canonical `territory_scorecard_composite.json`, **no
+sourced cost data currently exists** — every territory scores a neutral 50
+("no fabricated numbers" rule) until a sourced value is entered via the
+admin. The report builder and both What-If calculators use the same neutral
+fallback, so no territory gains or loses ranking from unsourced cost claims.
+
+### Removed (backend)
+- `crew_costs` table dropped; crew-cost scrape sources deleted
+  (migration `c3d4e5f6a7b8`, idempotent).
+- Crew scraper, its 16 government-statistics sources, extraction prompt,
+  diff rules, and REST fetchers.
+- Crew day-rate loading/FX-enrichment in the report engine, the crew-rates
+  block in territory financials, the crew sections of the What-If calculator
+  (crew rates, crew savings — net saving is now rebate + currency advantage),
+  the Territory Comparison crew columns, the Excel export's Crew Cost
+  Comparison + Crew Insights sheets, the B2B "Crew Cost Benchmarks" package
+  section (production_services / crew_casting templates recomposed), the
+  report-narrative crew prompts, the crew-cost section explainer, and the
+  `canEditCrewCosts` admin permission.
+
+### Removed (frontend)
+- Crew-cost admin API client, `canEditCrewCosts` permission flag, crew
+  rows in Territory Comparison, crew savings/rates in both What-If
+  calculators, crew insights in report viewing/PDF, and crew-cost feature
+  promises in FAQ/Terms copy. Crew Depth displays all retained.
+
+### Compatibility
+- The calculator API keeps accepting the old `baseline` parameter
+  (deprecated, ignored) and old stored reports still render — legacy
+  crew sections in previously generated reports are simply no longer shown.
+
+### Verified by
+- Full backend suite: **660 passed, 0 failed** (first fully-green run —
+  the environmental PDF issue is also resolved after the GTK runtime
+  install). Migration applied cleanly; crew_costs table gone and
+  cost-efficiency columns present, verified against the live schema.
+- Frontend TypeScript typecheck clean; updated tests passing.
+
 ### Explicitly not done (pending, by design)
 - No field, route, table or column removed anywhere.
 - Representation data remains sealed; no B2B read includes it.

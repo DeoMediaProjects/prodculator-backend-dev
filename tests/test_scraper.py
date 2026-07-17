@@ -139,22 +139,6 @@ class FakeSupabase(DatabaseClient):
                     "updated_at": "2026-01-01T00:00:00Z",
                 },
             ],
-            "crew_costs": [
-                {
-                    "id": "cc1",
-                    "country": "US",
-                    "territory": "United States",
-                    "role": "Camera Operator",
-                    "role_category": "HOD-Camera",
-                    "department": "day",
-                    "union_rate_cents": 30000,
-                    "non_union_rate_cents": 150000,
-                    "rate_currency": "USD",
-                    "source_type": "government_stats",
-                    "created_at": "2026-01-01T00:00:00Z",
-                    "updated_at": "2026-01-01T00:00:00Z",
-                },
-            ],
             "grant_opportunities": [],
             "film_festivals": [],
             "sync_settings": [],
@@ -338,19 +322,6 @@ class TestExtractor:
         assert result[0]["rate"] == "25%"
 
     @patch("app.modules.scraper.extractor.Anthropic")
-    def test_extracts_crew_costs(self, mock_anthropic_cls):
-        mock_client = MagicMock()
-        mock_anthropic_cls.return_value = mock_client
-        mock_client.messages.create.return_value = self._mock_anthropic_response(
-            '{"crew_costs": [{"country": "US", "role": "DP", "role_category": "HOD-Camera", "department": "day", "union_rate_cents": 80000, "non_union_rate_cents": 400000}]}'
-        )
-
-        result = extract("crew_costs", "some page text", "US", FakeSettings())
-
-        assert len(result) == 1
-        assert result[0]["union_rate_cents"] == 80000
-
-    @patch("app.modules.scraper.extractor.Anthropic")
     def test_extracts_grants(self, mock_anthropic_cls):
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
@@ -494,19 +465,6 @@ class TestDiffer:
 
         assert count == 0
 
-    def test_crew_costs_diff(self):
-        db = FakeSupabase()
-        extracted = [
-            {"country": "US", "role": "Camera Operator", "union_rate_cents": 35000, "non_union_rate_cents": 175000},
-        ]
-
-        count = diff_and_queue("crew_costs", extracted, "https://bls.gov", db, confidence="high")
-
-        assert count == 2  # union_rate_cents and non_union_rate_cents changed
-        changes = db.store["pending_changes"]
-        assert all(c["confidence"] == "high" for c in changes)
-
-
 # ── ScraperService tests ─────────────────────────────────────────────────────
 
 
@@ -521,7 +479,6 @@ class TestScraperService:
         assert len(sources) == len(DEFAULT_SOURCES)
         labels = {s["label"] for s in sources}
         assert "BFI Cultural Test & Certification" in labels
-        assert "BLS Occupational Employment & Wage Statistics (OEWS) — NAICS 5121" in labels
 
     def test_seed_sources_syncs_existing_defaults_and_inserts_missing(self):
         db = FakeSupabase()
@@ -679,83 +636,6 @@ class TestIncentivesScraper:
             run({"url": "https://example.com", "territory": None}, FakeSupabase(), FakeSettings())
 
 
-class TestCrewCostsScraper:
-    @patch("app.modules.scraper.scrapers.crew_costs.httpx.Client")
-    def test_bls_api_branch(self, mock_httpx):
-        from app.modules.scraper.scrapers.crew_costs import run
-
-        settings = FakeSettings()
-        settings.BLS_API_KEY = "test-bls-key"
-
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "Results": {
-                "series": [
-                    {
-                        "seriesID": "OEUM000000027106200",
-                        "data": [{"value": "52000", "year": "2024"}],
-                    }
-                ]
-            }
-        }
-        mock_resp.raise_for_status = MagicMock()
-        mock_httpx.return_value.__enter__ = MagicMock(
-            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
-        )
-        mock_httpx.return_value.__exit__ = MagicMock(return_value=False)
-
-        source = {"url": "https://api.bls.gov", "territory": "US", "use_bls_api": True}
-        db = FakeSupabase()
-
-        result = run(source, db, settings)
-
-        # Should create pending changes for union_rate_cents and non_union_rate_cents
-        assert result >= 0  # May be 0 if values match existing
-
-    @patch("app.modules.scraper.scrapers.crew_costs.diff_and_queue", return_value=1)
-    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"country": "GB", "role": "DP", "union_rate_cents": 50000}])
-    @patch("app.modules.scraper.scrapers.crew_costs.fetch_and_strip", return_value="page text")
-    def test_html_scrape_branch(self, mock_fetch, mock_extract, mock_diff):
-        from app.modules.scraper.scrapers.crew_costs import run
-
-        source = {"url": "https://example.com", "territory": "UK", "use_bls_api": False, "is_pdf": False}
-        result = run(source, FakeSupabase(), FakeSettings())
-
-        assert result == 1
-        mock_fetch.assert_called_once()
-        mock_extract.assert_called_once()
-
-    @patch("app.modules.scraper.scrapers.crew_costs.diff_and_queue", return_value=2)
-    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"country": "GB", "role": "Gaffer", "union_rate_cents": 45000}])
-    @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_text", return_value="Role\tDay Rate\nGaffer\t450")
-    @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_links", return_value=["https://example.com/rates.pdf"])
-    def test_pdf_pipeline_branch(self, mock_links, mock_pdf, mock_extract, mock_diff):
-        from app.modules.scraper.scrapers.crew_costs import run
-
-        source = {"url": "https://example.com/ratecards/", "territory": "UK", "use_bls_api": False, "is_pdf": True}
-        result = run(source, FakeSupabase(), FakeSettings())
-
-        assert result == 2
-        mock_links.assert_called_once()
-        assert mock_pdf.call_count == 1
-        assert mock_pdf.call_args[0][0] == "https://example.com/rates.pdf"
-        mock_extract.assert_called_once()
-
-    @patch("app.modules.scraper.scrapers.crew_costs.diff_and_queue", return_value=1)
-    @patch("app.modules.scraper.scrapers.crew_costs.extract", return_value=[{"country": "AU", "role": "Grip", "union_rate_cents": 38000}])
-    @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_text", return_value="Role\tDay Rate\nGrip\t380")
-    @patch("app.modules.scraper.scrapers.crew_costs.fetch_pdf_links", return_value=[])
-    def test_pdf_direct_link_fallback(self, mock_links, mock_pdf, mock_extract, mock_diff):
-        from app.modules.scraper.scrapers.crew_costs import run
-
-        source = {"url": "https://example.com/rates.pdf", "territory": "Australia", "use_bls_api": False, "is_pdf": True}
-        result = run(source, FakeSupabase(), FakeSettings())
-
-        assert result == 1
-        assert mock_pdf.call_count == 1
-        assert mock_pdf.call_args[0][0] == "https://example.com/rates.pdf"
-
-
 class TestGrantsScraper:
     @patch("app.modules.scraper.scrapers.grants.diff_and_queue", return_value=2)
     @patch("app.modules.scraper.scrapers.grants.extract", return_value=[{"title": "BFI Fund"}])
@@ -864,16 +744,12 @@ class TestSources:
             assert "url" in source
             assert "label" in source
             assert "is_pdf" in source
-            assert source["resource_type"] in ("incentives", "crew_costs", "grants", "festivals")
+            assert source["resource_type"] in ("incentives", "grants", "festivals")
 
     def test_default_sources_cover_all_resource_types(self):
+        # crew_costs removed from platform scope 2026-07 (owner-approved)
         types = {s["resource_type"] for s in DEFAULT_SOURCES}
-        assert types == {"incentives", "crew_costs", "grants", "festivals"}
-
-    def test_bls_source_is_flagged(self):
-        bls_sources = [s for s in DEFAULT_SOURCES if s.get("use_bls_api")]
-        assert len(bls_sources) == 1
-        assert bls_sources[0]["resource_type"] == "crew_costs"
+        assert types == {"incentives", "grants", "festivals"}
 
     def test_no_pdf_sources_in_defaults(self):
         # All PDF sources (Screen Malta, BECTU rate cards) were unofficial/third-party

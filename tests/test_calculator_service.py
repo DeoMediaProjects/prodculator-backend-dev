@@ -71,20 +71,6 @@ def test_calculator_uses_budget_currency_reliability_and_profile_scores():
     db = _FakeDB(
         {
             "incentive_programs": [incentive],
-            "crew_costs": [
-                {
-                    "country": "GB",
-                    "role_category": "Director of Photography",
-                    "union_rate_cents": 90_000,
-                    "rate_currency": "GBP",
-                },
-                {
-                    "country": "Hungary",
-                    "role_category": "Director of Photography",
-                    "union_rate_cents": 45_000,
-                    "rate_currency": "GBP",
-                },
-            ],
             "territory_profiles": [
                 {
                     "territory": "Hungary",
@@ -119,14 +105,16 @@ def test_calculator_uses_budget_currency_reliability_and_profile_scores():
     expected_overall = (
         SCORE_WEIGHTS["full"]["incentiveStrength"] * expected_strength
         + SCORE_WEIGHTS["full"]["incentiveReliability"] * expected_reliability
-        + SCORE_WEIGHTS["full"]["costEfficiency"] * 85
+        # Cost efficiency: no curated score on the profile -> neutral 50
+        # (crew day-rate derivation removed 2026-07, owner-approved)
+        + SCORE_WEIGHTS["full"]["costEfficiency"] * 50
         + SCORE_WEIGHTS["full"]["currencyAdvantage"] * 77
         + SCORE_WEIGHTS["full"]["crewDepth"] * 80
         + SCORE_WEIGHTS["full"]["infrastructure"] * 65
     )
 
     assert fake_fx.currency_advantage_calls == [("USD", "HUF")]
-    assert territory.crew_cost_index == 85
+    assert territory.cost_efficiency_score is None
     assert territory.crew_depth_score == 80
     assert territory.crew_depth_tier == "established"
     assert territory.infrastructure_score == 65
@@ -145,8 +133,7 @@ def test_calculator_displays_net_rate_and_net_rebate():
     db = _FakeDB(
         {
             "incentive_programs": [incentive],
-            "crew_costs": [],
-            "territory_profiles": [],
+                "territory_profiles": [],
         }
     )
     service = CalculatorService(db, db.settings)

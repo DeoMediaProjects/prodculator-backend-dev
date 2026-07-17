@@ -89,8 +89,8 @@ SECTION_LIBRARY: list[SectionDef] = [
                "Market Context", dataset="festivals", kind="dataset_table"),
     SectionDef("ctx_distributors", "Distributor Market Map", "context",
                "Market Context", dataset="distributors", kind="dataset_table"),
-    SectionDef("ctx_crew_costs", "Crew Cost Benchmarks", "context",
-               "Market Context", dataset="crew_costs", kind="dataset_table"),
+    # (ctx_crew_costs "Crew Cost Benchmarks" removed 2026-07 with the crew
+    # day-rate dataset, owner-approved)
     SectionDef("ctx_comparables", "Comparable Productions", "context",
                "Market Context", dataset="comparables", kind="dataset_table"),
 ]
@@ -104,11 +104,11 @@ PRODUCT_TEMPLATES: dict[str, list[str]] = {
         "sig_format", "sig_genre", "sig_month",
     ],
     "production_services": [
-        "ctx_crew_costs", "sig_crew", "sig_budget",
+        "sig_crew", "sig_budget",
         "sig_territory_considered", "sig_format",
     ],
     "crew_casting": [
-        "ctx_crew_costs", "sig_principal", "sig_supporting", "sig_extras",
+        "sig_principal", "sig_supporting", "sig_extras",
         "sig_genre", "sig_completion",
     ],
     "strategic_trend": [
@@ -247,7 +247,6 @@ class DatasetFetcher:
         "incentives": "incentive_programs",
         "festivals": "festivals",
         "distributors": "distributors",
-        "crew_costs": "crew_costs",
         "comparables": "comparable_productions",
     }
 

@@ -1610,13 +1610,6 @@ Return a JSON object with ONLY these keys:
       "keyRisks_additional": ["risk beyond the DB-computed ones"]
     }
   },
-  "crewNarratives": {
-    "Territory Name": {
-      "availability": "High|Medium|Low",
-      "specialties": ["specialty 1", "specialty 2"],
-      "tradeoff": "one-sentence crew trade-off summary"
-    }
-  },
   "comparableDescriptions": {
     "Film Title": "one-sentence relevance description"
   },
@@ -1986,25 +1979,7 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                     if isinstance(risk, str) and risk not in existing_risks:
                         existing_risks.append(risk)
 
-        # Crew narratives
-        crew_narratives = ai.get("crewNarratives", {})
-        crew_insights = skeleton.get("crewInsights", [])
-        for insight in crew_insights:
-            if not isinstance(insight, dict):
-                continue
-            territory = insight.get("territory", "")
-            narr = crew_narratives.get(territory, {})
-            for field in ("availability", "specialties", "tradeoff"):
-                val = narr.get(field)
-                if val is not None:
-                    insight[field] = val
-                elif insight.get(field) is None:
-                    if field == "availability":
-                        insight[field] = "Medium"
-                    elif field == "specialties":
-                        insight[field] = []
-                    elif field == "tradeoff":
-                        insight[field] = "See crew cost comparison for details"
+        # (crewNarratives merge removed 2026-07 with the crew day-rate dataset)
 
         # Comparable descriptions
         comparable_descs = ai.get("comparableDescriptions", {})
@@ -2114,16 +2089,6 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             if not loc.get("keyAdvantages"):
                 loc["keyAdvantages"] = []
 
-        for insight in skeleton.get("crewInsights", []):
-            if not isinstance(insight, dict):
-                continue
-            if not insight.get("availability"):
-                insight["availability"] = "Medium"
-            if insight.get("specialties") is None:
-                insight["specialties"] = []
-            if not insight.get("tradeoff"):
-                insight["tradeoff"] = "See crew cost comparison"
-
         for comp in skeleton.get("comparables", []):
             if isinstance(comp, dict) and not comp.get("relevanceDescription"):
                 comp.pop("_budgetGapFlag", None)
@@ -2209,7 +2174,7 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
                     f"AI analysis was temporarily unavailable for this {genre.lower()} "
                     f"{budget_display} production. The report below uses estimated defaults "
                     f"based on project metadata. We recommend regenerating this report for "
-                    f"full territory analysis, financial breakdowns, and crew cost comparisons."
+                    f"full territory analysis and financial breakdowns."
                 ),
                 "recommendedTerritory": location_rankings[0]["name"],
                 "recommendedTerritoryScore": location_rankings[0]["score"],
@@ -2222,7 +2187,6 @@ comparableDescriptions RULES: ONE specific reason this comparable is relevant. R
             },
             "locationRankings": location_rankings,
             "incentiveEstimates": [],
-            "crewInsights": [],
             "comparables": [],
             "weatherLogistics": [],
             "fundingOpportunities": [],

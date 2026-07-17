@@ -653,8 +653,8 @@ class ReportValidator:
             ),
             "territory_deep_dives": (
                 "How to read territory profiles: Each territory below includes a "
-                "breakdown of its incentive programmes, crew cost estimates, and "
-                "location-specific considerations drawn from your script analysis."
+                "breakdown of its incentive programmes and location-specific "
+                "considerations drawn from your script analysis."
             ),
             "incentive_analysis": (
                 "How incentives work: A tax incentive is money returned to your "
@@ -670,12 +670,6 @@ class ReportValidator:
                 "accept it with a discount or additional security; 'NOT BANKABLE' "
                 "means payment is too slow or uncertain to rely on for cash-flow "
                 "financing."
-            ),
-            "crew_costs": (
-                "How we estimate crew costs: Day rates are sourced from union/guild "
-                f"published scales and converted to {budget_currency} at the live exchange rate used "
-                "in this report. Actual rates vary with experience, negotiation, and "
-                "market conditions."
             ),
             "funding_opportunities": (
                 "How we select funding opportunities: Grants and funds are matched "
