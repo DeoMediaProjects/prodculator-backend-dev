@@ -152,7 +152,11 @@ async def get_current_admin(
         id=result.data["id"],
         email=result.data["email"],
         name=result.data.get("name"),
-        role=result.data.get("role", "master_admin"),
+        # Fail CLOSED: absent OR null role → "" → zero permissions. Never
+        # default a role-less admin row to master_admin (security item, DEV
+        # handover §7.1). Legitimate admins carry an explicit role (see
+        # seed_admin.py, which sets 'master_admin').
+        role=result.data.get("role") or "",
     )
 
 

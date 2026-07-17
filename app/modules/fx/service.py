@@ -89,6 +89,11 @@ TERRITORY_CURRENCY: dict[str, str] = {
     "Bavaria": "EUR",
     "Berlin": "EUR",
     "Iceland": "ISK",
+    "Belgium": "EUR",
+    "Netherlands": "EUR",
+    "Japan": "JPY",
+    "South Korea": "KRW",
+    "Singapore": "SGD",
 }
 
 # Currencies with high volatility — require explicit warning (v3 Section 04)

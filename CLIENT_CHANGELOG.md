@@ -381,3 +381,87 @@ fallback, so no territory gains or loses ranking from unsourced cost claims.
 - B2B self-service purchase remains disabled pending final pricing.
 - Staging/production cleanup (`--apply`) awaits the client-reviewed dry-run
   report.
+
+---
+
+## 2026-07-18 — B2C report intake form: usability pass
+
+Refinements to the report-generator intake form (`ScriptUpload.tsx`) so the
+inputs are clearer and less error-prone. No scoring or figures were changed —
+these are input-experience improvements only.
+
+### Location Strategy removed (redundant)
+The Location Strategy field was removed from the form: it duplicated the
+information already captured by "Territories considering". The backend field
+is now optional and defaults to "open" when absent, so previously generated
+reports and the engine are unaffected.
+
+### Territories grouped by continent
+The territory picker now groups countries under continent headings
+(Europe, North America, Africa, Asia, Oceania, South America) with each
+country's sub-regions nested beneath it, in a friendlier, scannable layout.
+
+### Currency derived from the production country
+Currency is no longer pre-set to GBP. It is now suggested automatically from
+the selected Production Country and can still be changed manually. Every
+country in the picker maps to a currency the platform can actually convert:
+- Added four currencies the platform already holds exchange rates for —
+  Icelandic króna (ISK), Japanese yen (JPY), South Korean won (KRW) and
+  Singapore dollar (SGD) — so Iceland, Japan, South Korea and Singapore now
+  suggest their real local currency.
+- Countries whose local currency the platform does not yet hold a rate for
+  (e.g. India/INR, Mexico/MXN, Brazil/BRL) suggest "Other" rather than a
+  wrong or fabricated rate. **To support these fully, a sourced exchange
+  rate must be added to the FX table by the team — no rate was invented.**
+
+### Multi-select fields made obvious
+Fields that accept more than one value (Genres, Camera Equipment, Target
+Audience, Creator Communities) now show checkboxes next to each option and a
+"select one or more" / "select any that apply" helper line, so it is clear
+which fields are multi-select versus single-choice.
+
+### Territory picker made dynamic (country → regions)
+The territory picker now shows countries grouped by continent, and a country's
+provinces/states appear only after that country is selected — shown indented
+beneath it and labelled "Regions in <country>". This removes the earlier wall
+of every region at once and lets a producer drill in per country.
+
+### Long dropdowns now scroll in place
+All dropdown menus are capped in height (long lists scroll inside the menu)
+and anchored directly below their field. The floating/mis-placed menu was
+caused by MUI's default `selectedMenu` positioning; every dropdown now uses
+the plain `menu` variant so the list opens in the right place and no longer
+drifts over unrelated fields while scrolling.
+
+### Verified by
+- Frontend TypeScript typecheck: clean.
+- Backend suite (fx / currency / schema / report scope): **217 passed**.
+- Currency `Literal` and FX territory/rate tables confirmed consistent
+  (every suggested currency is an accepted `budget_currency` value).
+
+---
+
+## 2026-07-18 — Security: admin permissions now fail closed
+
+Closes the open security item flagged in the Developer Handover (§7.1). An
+admin account row with a missing or NULL `role` — for example a row that
+predates the `role` column on a drifted database — was being treated as a
+**master_admin** (all ten permissions, including the ability to create other
+admins). This was caused by defaulting a role-less row to `"master_admin"`
+when the admin record is loaded.
+
+### Fixed
+- A missing/blank role now grants **zero** permissions (fail closed). Changed
+  the default in three places where an admin record is hydrated
+  (`admin/schemas.py`, `core/dependencies.py`, `auth/service.py` login +
+  refresh) from `"master_admin"` to an empty role.
+- The permission map already returned no permissions for an unknown role; the
+  only gap was the default, which is now safe.
+- Legitimate admins are unaffected — they carry an explicit role, and the
+  seed script sets `master_admin` explicitly.
+
+### Verified by
+- New regression test (`tests/test_permissions_failclosed.py`): a role-less
+  admin has zero permissions; `master_admin` retains full access.
+- Full backend suite: **664 passed, 1 skipped** (skip is the environmental
+  WeasyPrint/GTK PDF test).

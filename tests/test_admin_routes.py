@@ -135,6 +135,7 @@ def _admin_user() -> AdminUser:
         id="admin-1",
         email="admin@example.com",
         name="Admin",
+        role="master_admin",
     )
 
 
