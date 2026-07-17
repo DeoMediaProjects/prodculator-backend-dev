@@ -343,6 +343,10 @@ class TerritoryProfile(SQLModel, table=True):
     crew_depth_tier: str | None = Field(default="emerging")
     crew_depth_score: int | None = Field(default=30)
     crew_depth_notes: str | None = None
+    # Cost Efficiency (curated). NULL = no sourced data; consumers use a
+    # neutral 50 — never derived from day rates (removed 2026-07, owner-approved).
+    cost_efficiency_score: int | None = None
+    cost_efficiency_source: str | None = None
     infrastructure_tier: str | None = Field(default="emerging")
     infrastructure_score: int | None = Field(default=30)
     infrastructure_notes: str | None = None

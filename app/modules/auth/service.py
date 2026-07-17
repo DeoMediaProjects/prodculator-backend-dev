@@ -233,7 +233,14 @@ class AuthService:
             raise ValueError("Failed to refresh session")
 
         if redis_client and auth_response.claims:
-            await revoke_token(refresh_token, redis_client, self.supabase.settings)
+            # Best-effort, same rationale as refresh_session: a Redis outage
+            # must not 500 every admin session refresh.
+            try:
+                await revoke_token(refresh_token, redis_client, self.supabase.settings)
+            except Exception as exc:
+                logger.warning(
+                    "Admin refresh-token revocation skipped (Redis unavailable): %s", exc
+                )
 
         if not auth_response.user:
             raise ValueError("Failed to refresh session")
@@ -465,7 +472,15 @@ class AuthService:
             raise ValueError("Failed to refresh session")
 
         if redis_client and auth_response.claims:
-            await revoke_token(refresh_token, redis_client, self.supabase.settings)
+            # Revocation of the rotated-out token is defence-in-depth, not the
+            # primary auth control (the JWT still expires on schedule). A Redis
+            # outage must not turn every session refresh into a 500.
+            try:
+                await revoke_token(refresh_token, redis_client, self.supabase.settings)
+            except Exception as exc:
+                logger.warning(
+                    "Refresh-token revocation skipped (Redis unavailable): %s", exc
+                )
 
         user_response = self.supabase.auth.get_user(auth_response.session.access_token)
         if not user_response or not user_response.user:

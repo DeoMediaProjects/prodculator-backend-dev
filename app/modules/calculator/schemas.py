@@ -28,10 +28,12 @@ class ScenarioRequest(BaseModel):
         None,
         description="Filter to specific territories (null = all covered)",
     )
+    # DEPRECATED (2026-07): crew day-rates were removed from platform scope, so
+    # the crew-cost baseline no longer affects scoring. Accepted and ignored to
+    # keep older clients working.
     baseline: Literal["GB", "US"] = Field(
         "GB",
-        description="Baseline territory for crew cost efficiency scoring. "
-        "GB = UK crew rates as neutral midpoint; US = US crew rates.",
+        description="Deprecated — retained for backward compatibility; ignored.",
     )
 
 
@@ -55,12 +57,13 @@ class TerritoryScenario(BaseModel):
     territory_currency: str
     fx_rate: float | None = None
     fx_rate_date: str | None = None
-    crew_cost_index: float | None = None
+    # Curated cost-efficiency score (territory_profiles). None = no sourced
+    # data; scoring uses a neutral 50. Crew day-rates removed 2026-07.
+    cost_efficiency_score: int | None = None
     crew_depth_score: int | None = None
     crew_depth_tier: str | None = None
     infrastructure_score: int | None = None
     infrastructure_tier: str | None = None
-    crew_rates: dict[str, str] = {}
     net_saving: float
     net_saving_display: str
     payment_timeline: str | None = None

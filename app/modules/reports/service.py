@@ -987,6 +987,7 @@ class ReportService:
             'territory_profiles',
             lambda q: q.select(
                 'territory,crew_depth_tier,crew_depth_score,crew_depth_notes,'
+                'cost_efficiency_score,cost_efficiency_source,'
                 'infrastructure_tier,infrastructure_score,infrastructure_notes,'
                 'hemisphere,cert_weeks_min,cert_weeks_max,'
                 'payment_weeks_min,payment_weeks_max,'
@@ -1026,28 +1027,9 @@ class ReportService:
         budget_original_amount = datasets.get("_budget_amount")
         fx_rates_from_budget = datasets.get("_fx_rates_from_budget") or {}
         incentives = datasets.get("incentives", [])
-        crew_costs = datasets.get("crew_costs", [])
 
         territory_incentives = _index_incentives_by_territory(incentives)
         budget_symbol = _currency_symbol(budget_currency)
-
-        # Index crew costs by territory — full name, ISO code, and canonical label.
-        # Crew rows may use ISO codes ("GB"), full names ("United Kingdom"), or
-        # regional labels ("England").  Index all variants so lookups always hit.
-        crew_by_territory: dict[str, list[dict]] = {}
-        for row in crew_costs:
-            for raw_key in (row.get("territory") or "", row.get("country") or ""):
-                if not raw_key:
-                    continue
-                crew_by_territory.setdefault(raw_key, []).append(row)
-                # Resolve to canonical label to handle ISO ↔ full-name mismatches
-                t_obj = resolve_territory(raw_key)
-                if t_obj:
-                    canonical = t_obj.label
-                    if canonical != raw_key:
-                        crew_by_territory.setdefault(canonical, []).append(row)
-                    if t_obj.parent and t_obj.parent.label != raw_key:
-                        crew_by_territory.setdefault(t_obj.parent.label, []).append(row)
 
         production_format: str | None = datasets.get("_production_format")
         territory_financials: dict[str, dict] = {}
@@ -1105,44 +1087,6 @@ class ReportService:
                 or ""
             )
 
-            # Build crew rate strings for this territory in budget currency
-            t_crew_rows = crew_by_territory.get(territory, [])
-            if not t_crew_rows:
-                # Try ISO lookup
-                from app.core.territories import territory_to_iso as _build_iso
-                iso_map = _build_iso()
-                iso = iso_map.get(territory, "")
-                if iso:
-                    t_crew_rows = crew_by_territory.get(iso, [])
-
-            crew_rates: dict[str, str] = {}
-            for crew_row in t_crew_rows:
-                role = crew_row.get("role_category") or crew_row.get("role") or ""
-                if not role:
-                    continue
-                union_gbp = crew_row.get("union_rate_gbp")
-                non_union_gbp = crew_row.get("non_union_rate_gbp")
-                if union_gbp is None and non_union_gbp is None:
-                    continue
-
-                def _crew_disp(gbp_val: float) -> str:
-                    d, s, _ = _budget_to_display(
-                        gbp_val, budget_currency, budget_currency,
-                        budget_original_amount, budget_gbp, fx_rates_from_budget,
-                    )
-                    return f"{s}{d:,.0f}"
-
-                if union_gbp and non_union_gbp:
-                    lo, hi = sorted([union_gbp, non_union_gbp])
-                    rate_text = f"{_crew_disp(lo)}–{_crew_disp(hi)}/day"
-                elif union_gbp:
-                    rate_text = f"{_crew_disp(union_gbp)}/day"
-                else:
-                    rate_text = f"{_crew_disp(non_union_gbp)}/day"  # type: ignore[arg-type]
-
-                if role not in crew_rates:
-                    crew_rates[role] = rate_text
-
             territory_financials[territory] = {
                 "currency": territory_currency,
                 "currency_symbol": sym,
@@ -1174,7 +1118,6 @@ class ReportService:
                 "net_budget_value": d_net_budget,
                 "rate_gross_value": corrected["rate_gross"],
                 "rate_net_value": corrected.get("rate_net"),
-                "crew_rates": crew_rates,
                 # Budget-currency equivalents for context in prompt
                 "budget_currency": budget_currency,
                 "budget_symbol": budget_symbol,
@@ -1281,7 +1224,7 @@ class ReportService:
         ]
         if normalised_hint:
             hint_set = set(normalised_hint)
-            # Also build ISO set for matching crew_costs.country-style fields
+            # Also build ISO set for matching country-style dataset fields
             hint_iso = {_TERRITORY_TO_ISO.get(t, t) for t in normalised_hint}
             # Priority-boost: hinted territories come first, remainder appended after.
             # Never hard-exclude — every active programme remains available so the
@@ -1311,36 +1254,7 @@ class ReportService:
             else:
                 inc["data_freshness_days"] = None
 
-        # Crew & cast costs — load with FX enrichment
-        all_rates = self._safe_query("crew_costs", lambda q: q.select("*"))
-        if normalised_hint:
-            # Convert full territory names to ISO codes for matching
-            hint_iso = {_TERRITORY_TO_ISO.get(t, t) for t in normalised_hint}
-            hint_full = set(normalised_hint)
-            # Priority-boost: hinted territories first, rest appended.
-            hinted = [
-                c for c in all_rates
-                if c.get("country") in hint_iso or c.get("territory") in hint_full
-            ]
-            rest = [
-                c for c in all_rates
-                if c.get("country") not in hint_iso and c.get("territory") not in hint_full
-            ]
-            all_rates = hinted + rest
-
-        # Split into crew and cast by role_category prefix
-        crew_costs = [
-            c for c in all_rates
-            if not (c.get("role_category") or "").startswith("CAST-")
-        ]
-        cast_costs = [
-            c for c in all_rates
-            if (c.get("role_category") or "").startswith("CAST-")
-        ]
-
-        # FX-enrich each row: add union_rate_gbp, non_union_rate_gbp, fx_rate, fx_date
-        crew_costs = self._fx_enrich_crew_costs(crew_costs)
-        cast_costs = self._fx_enrich_crew_costs(cast_costs)
+        # (crew/cast day-rate loading removed 2026-07, owner-approved)
 
         # Comparable productions (small dataset, load all)
         comparables = self._safe_query("comparable_productions", lambda q: q.select("*"))
@@ -1361,6 +1275,7 @@ class ReportService:
             d for d in self._safe_query("distributors", lambda q: q.select("*"))
             if (d.get("active_status") or "") == "confirmed_active"
         ]
+
         # Territory weather data (for shoot-date-aware risk scoring)
         weather_data = self._safe_query("territory_weather", lambda q: q.select("*"))
 
@@ -1374,10 +1289,8 @@ class ReportService:
                 )
 
         logger.info(
-            "Loaded analysis datasets counts: incentives=%s crew_costs=%s cast_costs=%s comparables=%s grants=%s festivals=%s weather=%s",
+            "Loaded analysis datasets counts: incentives=%s comparables=%s grants=%s festivals=%s weather=%s",
             len(incentives),
-            len(crew_costs),
-            len(cast_costs),
             len(comparables),
             len(grants),
             len(festivals),
@@ -1386,8 +1299,6 @@ class ReportService:
 
         return {
             "incentives": incentives,
-            "crew_costs": crew_costs,
-            "cast_costs": cast_costs,
             "comparables": comparables,
             "grants": grants,
             "festivals": festivals,
@@ -1395,60 +1306,6 @@ class ReportService:
             "weather": weather_data,
             "stacking_map": stacking_map,
         }
-
-    def _fx_enrich_crew_costs(self, crew_costs: list[dict]) -> list[dict]:
-        """Add union_rate_gbp, non_union_rate_gbp, fx_rate, fx_date to each crew/cast cost row."""
-        if not crew_costs:
-            return crew_costs
-        # Collect unique non-GBP currencies (check both new and legacy field names)
-        currencies = set()
-        for c in crew_costs:
-            ccy = c.get("rate_currency") or c.get("currency") or ""
-            if ccy and ccy.upper() != "GBP":
-                currencies.add(ccy.upper())
-
-        if not currencies:
-            # All GBP — convert pence to pounds and annotate
-            for c in crew_costs:
-                union_cents = c.get("union_rate_cents")
-                non_union_cents = c.get("non_union_rate_cents")
-                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
-                c["fx_rate"] = 1.0
-                c["fx_date"] = date.today().isoformat()
-            return crew_costs
-
-        try:
-            fx = FXService(self.supabase.settings)
-            rates = fx.get_rates_batch("GBP", list(currencies))
-        except Exception:
-            logger.warning("FX enrichment failed — crew costs will lack GBP conversions", exc_info=True)
-            rates = {}
-
-        for c in crew_costs:
-            currency = (c.get("rate_currency") or c.get("currency") or "").upper()
-            if currency == "GBP":
-                union_cents = c.get("union_rate_cents")
-                non_union_cents = c.get("non_union_rate_cents")
-                c["union_rate_gbp"] = round(union_cents / 100) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / 100) if non_union_cents else None
-                c["fx_rate"] = 1.0
-                c["fx_date"] = date.today().isoformat()
-            elif currency in rates:
-                rate, fx_date = rates[currency]
-                union_cents = c.get("union_rate_cents")
-                non_union_cents = c.get("non_union_rate_cents")
-                # Convert from local currency cents to GBP pounds: ÷100 for cents→units, ÷rate for FX
-                c["union_rate_gbp"] = round(union_cents / 100 / rate) if union_cents else None
-                c["non_union_rate_gbp"] = round(non_union_cents / 100 / rate) if non_union_cents else None
-                c["fx_rate"] = round(rate, 4)
-                c["fx_date"] = fx_date.isoformat() if hasattr(fx_date, "isoformat") else str(fx_date)
-            else:
-                c["union_rate_gbp"] = None
-                c["non_union_rate_gbp"] = None
-                c["fx_rate"] = None
-                c["fx_date"] = None
-        return crew_costs
 
     @staticmethod
     def _parse_iso_date(value: object) -> date | None:
@@ -1549,10 +1406,6 @@ class ReportService:
                     {"territory": "Georgia (USA)", "risk": "Low", "note": "Program well-established"},
                     {"territory": "South Africa", "risk": "Medium", "note": "Payment delays reported"},
                 ],
-                "crewCostVolatility": [
-                    {"territory": "British Columbia", "volatility": "Low"},
-                    {"territory": "California (USA)", "volatility": "Medium-High"},
-                ],
                 "overallRiskScore": 35,
             },
         }
@@ -1573,15 +1426,8 @@ class ReportService:
         matched = self._match_territories(analysis, all_incentives)
         territory_analysis = []
         for territory in matched:
-            crew_result = (
-                self.supabase.table("crew_costs")
-                .select("*")
-                .eq("territory", territory["name"])
-                .execute()
-            )
-            crew_costs = crew_result.data or []
             incentives = [i for i in all_incentives if i["territory"] == territory["name"]]
-            ta = self._build_territory_analysis(territory, incentives, crew_costs, analysis)
+            ta = self._build_territory_analysis(territory, incentives, analysis)
             territory_analysis.append(ta)
         territory_analysis.sort(key=lambda t: t["overallScore"], reverse=True)
         comparables = self._find_comparables(analysis)
@@ -1659,7 +1505,9 @@ class ReportService:
             reverse=True,
         )
 
-    def _build_territory_analysis(self, territory, incentives, crew_costs, analysis):
+    def _build_territory_analysis(self, territory, incentives, analysis):
+        # Crew day-rate estimation removed 2026-07 (owner-approved); scoring is
+        # incentive + location-match only on this deprecated path.
         budget_min = analysis.budgetEstimate.minUSD
         incentive_details = []
         for inc in incentives:
@@ -1673,35 +1521,12 @@ class ReportService:
             incentive_details.append(
                 {"programName": inc["program_name"], "rate": rate_str, "cap": cap, "potentialRebateUSD": rebate}
             )
-        shooting_days = analysis.productionScale.estimatedShootingDays
-        daily = sum((c.get("union_rate_cents") or c.get("day_rate_cents") or 0) for c in crew_costs) / 100
-        weekly = sum((c.get("non_union_rate_cents") or c.get("week_rate_cents") or 0) for c in crew_costs) / 100
-        weeks = max(1, (shooting_days + 4) // 5)
-        total = weekly * weeks
-        breakdown = [
-            {
-                "role": c["role"],
-                "dayRate": (c.get("union_rate_cents") or c.get("day_rate_cents") or 0) / 100,
-                "weekRate": (c.get("non_union_rate_cents") or c.get("week_rate_cents") or 0) / 100,
-            }
-            for c in crew_costs
-        ]
-        crew_estimate = {
-            "dailyTotal": daily,
-            "weeklyTotal": weekly,
-            "totalForProduction": total,
-            "currency": crew_costs[0]["currency"] if crew_costs else "USD",
-            "breakdown": breakdown,
-        }
         inc_score = min((incentive_details[0]["potentialRebateUSD"] / 1_000_000 * 10) if incentive_details else 0, 40)
-        crew_score = max(40 - (total / 1_000_000 * 5), 0)
         loc_score = territory["matchScore"] / 100 * 20
-        overall = min(round(inc_score + crew_score + loc_score), 100)
+        overall = min(round(inc_score + loc_score), 100)
         pros = []
         if incentive_details and incentive_details[0]["potentialRebateUSD"] > 500_000:
             pros.append(f"Strong incentive: {incentive_details[0]['rate']} rebate available")
-        if total < 1_000_000:
-            pros.append("Competitive crew costs")
         if territory["matchScore"] > 50:
             pros.append("Strong location match for script requirements")
         if not pros:
@@ -1716,7 +1541,6 @@ class ReportService:
             "country": incentives[0]["country"] if incentives else "Unknown",
             "overallScore": overall,
             "incentives": incentive_details,
-            "estimatedCrewCosts": crew_estimate,
             "locationMatch": {"score": territory["matchScore"], "reasons": territory["reasons"]},
             "pros": pros,
             "cons": cons,

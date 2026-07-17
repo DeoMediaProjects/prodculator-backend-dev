@@ -17,7 +17,6 @@ defaults = ScriptAnalysisService._fill_narrative_defaults
 def _skeleton(
     *,
     territories: list[str] | None = None,
-    crew: bool = True,
     comparables: bool = True,
     weather: bool = True,
     deep_dives: bool = True,
@@ -47,18 +46,12 @@ def _skeleton(
         "alternativeStrategy": None,
         "executiveSummary": {"keyInsights": None, "topTerritory": territories[0]},
         "locationRankings": rankings,
-        "crewInsights": [],
         "comparables": [],
         "weatherLogistics": [],
         "territoryDeepDives": [],
         "scoringMethodology": None,
     }
 
-    if crew:
-        skel["crewInsights"] = [
-            {"territory": t, "availability": None, "specialties": None, "tradeoff": None}
-            for t in territories
-        ]
     if comparables:
         skel["comparables"] = [
             {"title": "Film A", "relevanceDescription": None, "_budgetGapFlag": "larger"},
@@ -239,31 +232,6 @@ class TestLocationNarratives:
         result = merge(skel, ai)
         assert result["locationRankings"][0]["costEfficiency"] == 50  # default
 
-
-# ── Crew narratives ──────────────────────────────────────────────────────────
-
-class TestCrewNarratives:
-    def test_crew_fields_from_ai(self):
-        skel = _skeleton(territories=["UK"])
-        ai = {"crewNarratives": {"UK": {
-            "availability": "High", "specialties": ["VFX"], "tradeoff": "Premium rates"
-        }}}
-        result = merge(skel, ai)
-        crew = result["crewInsights"][0]
-        assert crew["availability"] == "High"
-        assert crew["specialties"] == ["VFX"]
-        assert crew["tradeoff"] == "Premium rates"
-
-    def test_crew_defaults_when_missing(self):
-        skel = _skeleton(territories=["UK"])
-        result = merge(skel, {})
-        crew = result["crewInsights"][0]
-        assert crew["availability"] == "Medium"
-        assert crew["specialties"] == []
-        assert "crew cost" in crew["tradeoff"].lower()
-
-
-# ── Comparable descriptions ──────────────────────────────────────────────────
 
 class TestComparableDescriptions:
     def test_description_from_ai(self):
@@ -453,13 +421,6 @@ class TestFillNarrativeDefaults:
         assert loc["crewDepth"] == 50
         assert loc["infrastructure"] == 50
         assert len(loc["reasoning"]) >= 1
-
-    def test_fills_crew_defaults(self):
-        skel = _skeleton(territories=["UK"])
-        defaults(skel)
-        crew = skel["crewInsights"][0]
-        assert crew["availability"] == "Medium"
-        assert crew["specialties"] == []
 
     def test_fills_comparable_defaults(self):
         skel = _skeleton()

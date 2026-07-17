@@ -249,67 +249,8 @@ def build_excel_workbook(report: dict) -> bytes:
 
     _autofit_columns(ws_fin)
 
-    # ── Sheet 4b: Crew Cost Comparison (sub-section of financialAnalysis) ────
-    crew_cost_rows: list[dict] = financial_analysis.get("crewCostComparison") or []
-    if crew_cost_rows:
-        ws_crew_cost = wb.create_sheet("Crew Cost Comparison")
-        ws_crew_cost.freeze_panes = "A2"
-
-        # Territory names are dynamic keys — collect all unique ones
-        all_territories: list[str] = []
-        seen: set[str] = set()
-        for row in crew_cost_rows:
-            for t in (row.get("territories") or {}).keys():
-                if t not in seen:
-                    all_territories.append(t)
-                    seen.add(t)
-
-        crew_cost_headers = ["Role"] + all_territories
-        _write_header_row(ws_crew_cost, crew_cost_headers)
-
-        for row_idx, row in enumerate(crew_cost_rows, 2):
-            territories_map: dict = row.get("territories") or {}
-            _write_data_row(
-                ws_crew_cost,
-                [row.get("role", "")] + [territories_map.get(t, "") for t in all_territories],
-                row=row_idx,
-                shade=row_idx % 2 == 0,
-            )
-
-        _autofit_columns(ws_crew_cost)
-
-    # ── Sheet 5: Crew Insights ───────────────────────────────────────────────
-    ws_crew = wb.create_sheet("Crew Insights")
-    ws_crew.freeze_panes = "A2"
-
-    crew_headers = [
-        "Territory", "Availability", "Cost vs USD", "Quality Rating (1-5)",
-        "Specialties", "Tradeoff Note",
-        "Currency", "FX Rate", "FX Date", "Data Source",
-    ]
-    _write_header_row(ws_crew, crew_headers)
-
-    crew_insights: list[dict] = data.get("crewInsights") or []
-    for row_idx, crew in enumerate(crew_insights, 2):
-        _write_data_row(
-            ws_crew,
-            [
-                crew.get("territory", ""),
-                crew.get("availability", ""),
-                crew.get("costVsUSD", ""),
-                crew.get("qualityRating", ""),
-                ", ".join(crew.get("specialties") or []),
-                crew.get("tradeoff", ""),
-                crew.get("currency", ""),
-                crew.get("fxRate", ""),
-                crew.get("fxDate", ""),
-                crew.get("dataSource", ""),
-            ],
-            row=row_idx,
-            shade=row_idx % 2 == 0,
-        )
-
-    _autofit_columns(ws_crew)
+    # (Crew Cost Comparison + Crew Insights sheets removed 2026-07 with the
+    # crew day-rate dataset, owner-approved)
 
     # ── Sheet 6: Comparable Productions ─────────────────────────────────────
     ws_comp = wb.create_sheet("Comparable Productions")

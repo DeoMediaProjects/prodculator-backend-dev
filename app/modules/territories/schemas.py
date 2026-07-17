@@ -32,21 +32,18 @@ class IncentiveInfo(BaseModel):
     expiry_date: str | None = None
 
 
-class CrewCostInfo(BaseModel):
-    avg_day_rate: float | None = None
-    avg_day_rate_display: str | None = None
-    currency: str = "GBP"
-    sample_roles: dict[str, str] = {}
-
-
 class TerritoryProfileInfo(BaseModel):
     """Maintained crew-depth / infrastructure / bankability profile.
 
     Tier/score of None means "not yet assessed". cert/payment weeks describe
     incentive certification and payout timing; real_world_confirms is None
-    when unconfirmed (distinct from False).
+    when unconfirmed (distinct from False). cost_efficiency_score is the
+    curated Cost Efficiency value (None = no sourced data → neutral 50);
+    crew day-rate data was removed from platform scope 2026-07.
     """
 
+    cost_efficiency_score: int | None = None
+    cost_efficiency_source: str | None = None
     crew_depth_tier: str | None = None
     crew_depth_score: int | None = None
     crew_depth_notes: str | None = None
@@ -70,7 +67,6 @@ class TerritoryCompareItem(BaseModel):
     level: Literal["national", "regional"]
     parent: str | None = None
     incentive: IncentiveInfo | None = None
-    crew_costs: CrewCostInfo | None = None
     profile: TerritoryProfileInfo | None = None
     labor_requirement: str | None = None
     highlights: list[str] = []

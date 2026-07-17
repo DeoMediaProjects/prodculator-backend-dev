@@ -615,6 +615,8 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
         data.pop("financialAnalysis", None)
 
     # Premium operational sections are removed entirely for free-tier users.
+    # (crewInsights only exists on legacy stored reports — the section was
+    # removed platform-wide 2026-07; the pop stays as defence for old data.)
     data.pop("crewInsights", None)
     data.pop("weatherLogistics", None)
 

@@ -1,7 +1,7 @@
 """Unit tests for ReportService._pre_compute_territory_financials.
 
 These tests exercise the service-layer pre-computation of all monetary figures
-(qualifying spend, ATL deductions, rebate amounts, FX conversion, crew rates)
+(qualifying spend, ATL deductions, rebate amounts, FX conversion)
 that are injected into the AI prompt so the AI can copy them verbatim.
 """
 from __future__ import annotations
@@ -59,7 +59,6 @@ def _make_datasets(
     budget_currency: str = "GBP",
     budget_original_amount: float | None = None,
     fx_rates_from_budget: dict | None = None,
-    crew_costs: list[dict] | None = None,
 ) -> dict:
     return {
         "_budget_gbp": {"converted": budget_gbp},
@@ -67,7 +66,6 @@ def _make_datasets(
         "_budget_amount": budget_original_amount or budget_gbp,
         "_fx_rates_from_budget": fx_rates_from_budget or {},
         "incentives": incentives,
-        "crew_costs": crew_costs or [],
     }
 
 
@@ -99,7 +97,7 @@ def test_output_shape_gbp_territory():
         "qualifying_spend", "atl_deduction", "net_qualifying_spend",
         "rate", "rate_gross", "rate_net", "gross_rebate", "net_rebate",
         "net_budget", "headline_net_budget", "programme", "fx_note",
-        "crew_rates", "budget_currency", "budget_symbol",
+        "budget_currency", "budget_symbol",
     ):
         assert key in entry, f"Missing key: {key}"
 
@@ -166,7 +164,6 @@ def test_absent_when_no_budget_gbp():
     datasets = {
         "_budget_currency": "GBP",
         "incentives": [_make_incentive()],
-        "crew_costs": [],
         # No _budget_gbp key
     }
     svc._pre_compute_territory_financials(datasets)
@@ -181,7 +178,6 @@ def test_absent_when_budget_gbp_zero():
         "_budget_gbp": {"converted": 0},
         "_budget_currency": "GBP",
         "incentives": [_make_incentive()],
-        "crew_costs": [],
     }
     svc._pre_compute_territory_financials(datasets)
 
@@ -258,49 +254,6 @@ def test_budget_cap_switches_to_alternative_programme():
     assert "53%" not in entry["rate"]
     # Net rebate: £30M × 80% QS - 15% ATL = £19.5M × 25.5% = £4,972,500
     assert "4,972,500" in entry["net_rebate"]
-
-
-# ── Crew rates ────────────────────────────────────────────────────────────────
-
-
-def test_crew_rates_included_in_budget_currency():
-    """Crew rates should be pre-converted to budget currency."""
-    svc = _make_service()
-    incentive = _make_incentive(
-        territory="United Kingdom",
-        qualifying_spend_cap_pct=None,
-        rate_type="cash_rebate",
-    )
-    crew = {
-        "territory": "United Kingdom",
-        "role_category": "Director of Photography",
-        "union_rate_gbp": 1200.0,
-        "non_union_rate_gbp": 600.0,
-        "fx_rate": 1.0,
-        "fx_date": "2026-03-17",
-    }
-    datasets = _make_datasets(budget_gbp=10_000_000, incentives=[incentive], crew_costs=[crew])
-
-    svc._pre_compute_territory_financials(datasets)
-    entry = datasets["_territory_financials"]["United Kingdom"]
-
-    assert "Director of Photography" in entry["crew_rates"]
-    rate_str = entry["crew_rates"]["Director of Photography"]
-    assert "/day" in rate_str
-    assert "600" in rate_str
-    assert "1,200" in rate_str
-
-
-def test_crew_rates_empty_when_no_crew_data():
-    """crew_rates dict should be empty when no crew costs are available."""
-    svc = _make_service()
-    incentive = _make_incentive(qualifying_spend_cap_pct=None, rate_type="cash_rebate")
-    datasets = _make_datasets(budget_gbp=10_000_000, incentives=[incentive], crew_costs=[])
-
-    svc._pre_compute_territory_financials(datasets)
-    entry = datasets["_territory_financials"]["United Kingdom"]
-
-    assert entry["crew_rates"] == {}
 
 
 # ── Programme name ────────────────────────────────────────────────────────────

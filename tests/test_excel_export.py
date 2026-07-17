@@ -83,32 +83,7 @@ FULL_REPORT_DATA = {
                 "notes": "Assumes full above-the-line deduction.",
             }
         ],
-        "crewCostComparison": [
-            {"role": "Director of Photography", "territories": {"United Kingdom": "£1,800/day", "Spain": "€950/day"}},
-            {"role": "1st AD", "territories": {"United Kingdom": "£1,200/day", "Spain": "€650/day"}},
-        ],
     },
-    "crewInsights": [
-        {
-            "territory": "United Kingdom",
-            "availability": "High",
-            "costVsUSD": "110% of USD benchmark",
-            "qualityRating": 5,
-            "specialties": ["Drama", "VFX"],
-            "tradeoff": "Higher cost offset by strong incentive.",
-        }
-    ],
-    "comparables": [
-        {
-            "title": "Example Film",
-            "genre": "Drama",
-            "budgetRange": "£2M–£4M",
-            "visualScale": "Medium",
-            "location": "United Kingdom",
-            "year": 2024,
-            "source": "BFI",
-        }
-    ],
     "weatherLogistics": [
         {
             "territory": "United Kingdom",
@@ -310,8 +285,6 @@ def test_excel_export_all_expected_sheets_present(client):
         "Territory Rankings",
         "Tax Incentives",
         "Financial Analysis",
-        "Crew Cost Comparison",
-        "Crew Insights",
         "Comparable Productions",
         "Weather & Logistics",
         "Funding & Festivals",
@@ -382,27 +355,6 @@ def test_excel_export_incentives_sheet_has_territory_and_rebate(client):
     assert "£750,000" in row2_values
 
 
-def test_excel_export_crew_cost_comparison_dynamic_columns(client):
-    """Crew Cost Comparison sheet must have territory names as dynamic column headers."""
-    from openpyxl import load_workbook
-
-    report = _make_report(report_data=FULL_REPORT_DATA)
-    service = FakeExcelReportService({"rpt-1": report})
-    user = _make_user("producer")
-
-    client.app.dependency_overrides[get_current_user] = lambda: user
-    client.app.dependency_overrides[get_report_service] = lambda: service
-
-    response = client.get("/api/reports/rpt-1/export-excel", headers={"Authorization": "Bearer token"})
-    wb = load_workbook(io.BytesIO(response.content))
-    ws = wb["Crew Cost Comparison"]
-
-    header_row = [ws.cell(row=1, column=c).value for c in range(1, 5)]
-    assert "Role" in header_row
-    assert "United Kingdom" in header_row
-    assert "Spain" in header_row
-
-
 # ── Partial data / edge cases ─────────────────────────────────────────────────
 
 def test_excel_export_handles_missing_optional_sections_gracefully(client):
@@ -414,7 +366,6 @@ def test_excel_export_handles_missing_optional_sections_gracefully(client):
         "complexity": "Low",
         "locationRankings": [],
         "incentiveEstimates": [],
-        "crewInsights": [],
         "comparables": [],
         "weatherLogistics": [],
         "fundingOpportunities": [],
@@ -428,24 +379,6 @@ def test_excel_export_handles_missing_optional_sections_gracefully(client):
 
     response = client.get("/api/reports/rpt-1/export-excel", headers={"Authorization": "Bearer token"})
     assert response.status_code == 200
-
-
-def test_excel_export_omits_crew_cost_comparison_sheet_when_no_data(client):
-    """When crewCostComparison is absent, the sheet should not be created."""
-    from openpyxl import load_workbook
-
-    data_without_crew_costs = {**FULL_REPORT_DATA, "financialAnalysis": {"budgetScenarios": [], "crewCostComparison": []}}
-    report = _make_report(report_data=data_without_crew_costs)
-    service = FakeExcelReportService({"rpt-1": report})
-    user = _make_user("producer")
-
-    client.app.dependency_overrides[get_current_user] = lambda: user
-    client.app.dependency_overrides[get_report_service] = lambda: service
-
-    response = client.get("/api/reports/rpt-1/export-excel", headers={"Authorization": "Bearer token"})
-    assert response.status_code == 200
-    wb = load_workbook(io.BytesIO(response.content))
-    assert "Crew Cost Comparison" not in wb.sheetnames
 
 
 def test_excel_export_studio_plan_also_allowed(client):

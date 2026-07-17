@@ -327,9 +327,11 @@ class ReportBuilder:
             reliability_score, bankability_label = self._compute_reliability(best)
             currency_score = self._get_currency_score(territory)
 
-            # Crew cost anchor: DB-driven seed for costEfficiency (AI may refine within ±15)
-            cost_anchor = self._crew_rate_anchor(territory)
+            # Cost efficiency: curated territory_profiles score (crew day-rate
+            # derivation removed 2026-07, owner-approved). None = no sourced
+            # data -> neutral treatment downstream; AI may refine within ±15.
             territory_profile = self._get_territory_profile(territory)
+            cost_anchor = self._profile_score(territory_profile, "cost_efficiency_score")
             crew_depth_score = self._profile_score(territory_profile, "crew_depth_score")
             infrastructure_score = self._profile_score(territory_profile, "infrastructure_score")
 
@@ -2139,56 +2141,6 @@ class ReportBuilder:
         contingency_days = round(shoot_weeks / 2 * mult)
 
         return {'svs': svs, 'contingency_days': contingency_days}
-
-    def _crew_rate_anchor(self, territory: str) -> int | None:
-        """Compute a costEfficiency anchor (0-100) from crew day rates.
-
-        Uses the crew_costs DB table.  UK at £900/day = 50 (midpoint).
-        Lower costs → higher anchor (more efficient); higher costs → lower anchor.
-        Returns None when no crew data exists for the territory.
-        """
-        from app.modules.reports.service import _TERRITORY_TO_ISO, _ISO_TO_TERRITORY
-
-        crew_costs = self.datasets.get("crew_costs", [])
-        if not crew_costs:
-            return None
-
-        # Build lookup index (same logic as _build_crew_insights)
-        crew_by_territory: dict[str, list[dict]] = {}
-        for row in crew_costs:
-            country = row.get("country") or ""
-            terr = row.get("territory") or ""
-            if country:
-                crew_by_territory.setdefault(country, []).append(row)
-            if terr:
-                crew_by_territory.setdefault(terr, []).append(row)
-
-        rows = crew_by_territory.get(territory, [])
-        if not rows:
-            iso = _TERRITORY_TO_ISO.get(territory, "")
-            rows = crew_by_territory.get(iso, [])
-        if not rows:
-            full = _ISO_TO_TERRITORY.get(territory, "")
-            rows = crew_by_territory.get(full, [])
-        if not rows:
-            return None
-
-        rates_gbp: list[float] = []
-        for row in rows:
-            union = to_float(row.get("union_rate_gbp"))
-            non_union = to_float(row.get("non_union_rate_gbp"))
-            rate = union or non_union
-            if rate and rate > 0:
-                rates_gbp.append(rate)
-
-        if not rates_gbp:
-            return None
-
-        avg_rate = sum(rates_gbp) / len(rates_gbp)
-        # UK baseline £900/day = anchor 50.  Lower daily rate = more efficient = higher anchor.
-        # Formula: anchor = clamp(int(900 * 50 / avg_rate), 20, 85)
-        anchor = int(900 * 50 / avg_rate)
-        return max(20, min(85, anchor))
 
     # ── Scoring helpers ────────────────────────────────────────────────────
 
