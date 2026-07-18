@@ -541,3 +541,15 @@ stretching the whole dashboard page.
 ### Verified by
 - Full backend suite: **667 passed, 1 skipped** (includes an updated
   narrative-call test covering the streaming path).
+
+---
+
+## 2026-07-18 — Indian rupee, Mexican peso, Brazilian real as budget currencies
+
+With live exchange rates enabled (EXCHANGE_RATE_API_KEY), INR, MXN and BRL are
+now selectable budget currencies. India, Mexico and Brazil no longer fall back
+to "Other" — they suggest their real local currency and convert via the live
+FX API. No exchange rate was invented: these convert through the live rate
+service. (They have no offline fallback rate yet, so if the FX API is
+unavailable they convert 1:1 — a sourced fallback rate should be added to
+harden the offline path.)

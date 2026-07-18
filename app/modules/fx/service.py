@@ -94,6 +94,9 @@ TERRITORY_CURRENCY: dict[str, str] = {
     "Japan": "JPY",
     "South Korea": "KRW",
     "Singapore": "SGD",
+    "India": "INR",
+    "Mexico": "MXN",
+    "Brazil": "BRL",
 }
 
 # Currencies with high volatility — require explicit warning (v3 Section 04)
