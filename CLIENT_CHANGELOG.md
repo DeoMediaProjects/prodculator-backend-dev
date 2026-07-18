@@ -506,3 +506,38 @@ card within the dashboard, dropping the duplicate branding.
 - New tests: report delete succeeds for the owner, is denied (403) for another
   user, and returns 404 when the report doesn't exist.
 - Full backend suite: **667 passed, 1 skipped**. Frontend typecheck clean.
+
+---
+
+## 2026-07-18 — Report narrative reliability + What-If dashboard polish
+
+### Fixed: "AI narrative summary unavailable" on reports
+The report's written narrative was failing with a timeout. The narrative is a
+large generation on a high-capability model, and it was being requested as a
+single blocking call with a 120-second ceiling — which it routinely exceeded,
+so all retries failed and the report fell back to "narrative unavailable".
+- The narrative call is now **streamed**, which keeps the connection alive for
+  the full generation instead of tripping a read-timeout (this is Anthropic's
+  documented approach for long requests).
+- The report-stage timeout ceiling was raised (it runs in a background worker,
+  so a longer allowance is safe). Schema-constrained script-analysis calls are
+  unchanged.
+- Note: report generation for a complex script may take a few minutes; it runs
+  in the background and the report appears when ready. If faster turnaround is
+  preferred over maximum narrative depth, the narrative model can be pointed at
+  a lower-latency model via configuration — no code change needed.
+
+### What-If calculator now matches the dashboard theme
+Following the earlier embedding fix, the calculator was still light-themed
+inside the dark dashboard. When embedded it now uses the app's black/gold
+palette so it matches the surrounding surfaces (and the Territories tool).
+The standalone /what-if and /tools/what-if pages keep their light theme.
+
+### What-If results scroll within their own container
+The results table is capped to about ten rows with an internal scrollbar and a
+pinned header, so the calculator sits in its own scroll area instead of
+stretching the whole dashboard page.
+
+### Verified by
+- Full backend suite: **667 passed, 1 skipped** (includes an updated
+  narrative-call test covering the streaming path).
