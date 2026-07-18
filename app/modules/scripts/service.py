@@ -1510,11 +1510,11 @@ class ScriptAnalysisService:
                     "name": "Cost Efficiency",
                     "key": "costEfficiency",
                     "description": (
-                        "Measures how far your budget stretches in this territory "
-                        "through crew day rates, equipment, and production costs. "
-                        "Computed from published rate scales in our database, "
-                        "benchmarked against the UK market and converted at live "
-                        "exchange rates."
+                        "Measures how far your budget stretches in this territory — "
+                        "the relative cost of mounting the same production locally. "
+                        "Where no verified local-cost dataset has been sourced for a "
+                        "territory, this shows a neutral baseline rather than an "
+                        "estimated figure."
                     ),
                 },
                 {
@@ -1635,7 +1635,7 @@ Return a JSON object with ONLY these keys:
     },
     "complexityDrivers": [{"flag": "str", "detail": "str", "implication": "str", "territoriesAffected": ["str"]}],
     "crewSpecialisations": [{"role": "str", "priority": "Essential|Recommended", "availableIn": ["str"], "importRequired": ["str"]}],
-    "scheduleWeatherNotes": "2-3 sentences on SVS findings referencing scheduleViabilityScore and contingencyDaysEstimate values from skeleton."
+    "scheduleWeatherNotes": "2-3 sentences on schedule-viability findings, stating the schedule-viability score (out of 10) and the estimated contingency days in plain English. NEVER print raw field names like 'scheduleViabilityScore' or 'contingencyDaysEstimate' — write 'a schedule-viability score of 7' and '45 contingency days'."
   },
   "dimensionVerdicts": {
     "Territory Name": {
@@ -1680,7 +1680,7 @@ scriptIntelligence RULES:
 - creativeRecognition: names ONLY from script_characters array. Not a logline. No forbidden verbs (navigates, grapples with, explores, discovers).
 - complexityDrivers: 2-5 drivers, each referencing a specific script element. territoriesAffected: only territories in this report's locationRankings.
 - crewSpecialisations: only genuinely non-standard roles for the territory.
-- scheduleWeatherNotes: reference scheduleViabilityScore and contingencyDaysEstimate values from skeleton. Note hemisphere/season impact when relevant.
+- scheduleWeatherNotes: state the schedule-viability score (out of 10) and estimated contingency days in plain English — e.g. "a schedule-viability score of 7 and roughly 45 contingency days". NEVER write the raw field names scheduleViabilityScore or contingencyDaysEstimate. Note hemisphere/season impact when relevant.
 
 dimensionVerdicts RULES: One sentence per dimension, max 40 words. Reference specific data (programme name, rate, tier name). Do NOT repeat the score number. Do NOT use word "score". Each verdict must be substantively different from reasoning bullets.
 

@@ -465,3 +465,44 @@ when the admin record is loaded.
   admin has zero permissions; `master_admin` retains full access.
 - Full backend suite: **664 passed, 1 skipped** (skip is the environmental
   WeasyPrint/GTK PDF test).
+
+---
+
+## 2026-07-18 — Report cleanup, delete action, and dashboard What-If
+
+Follow-ups from comparing a live generated report against the reference sample.
+
+### Removed leftover crew-cost wording from reports
+Crew-cost day-rates were removed earlier, but two pieces of report text still
+described them — now corrected so the report matches what it actually computes:
+- The **Cost Efficiency** dimension explainer no longer claims it is computed
+  "through crew day rates … published rate scales". It now states honestly that
+  where no verified local-cost dataset exists, the dimension shows a neutral
+  baseline rather than an estimated figure.
+- The **Data Sources** section no longer cites crew/cast wage statistics
+  (Bureau of Labor Statistics, etc.) that no longer back any figure. It now
+  states the real provenance: incentive, grant, festival and distributor
+  records, each carrying its own source and verification.
+
+### Report narrative no longer prints internal field names
+The schedule/weather narrative occasionally printed raw field identifiers
+(`scheduleViabilityScore`, `contingencyDaysEstimate`). The narrative prompts
+now require plain-English phrasing ("a schedule-viability score of 7 and
+roughly 45 contingency days").
+
+### Delete a report from the dashboard (new)
+The Reports table's delete action now works. A new ownership-scoped endpoint
+(`DELETE /api/reports/{id}`) removes a report the signed-in user owns, with a
+confirmation prompt and optimistic UI removal. Anonymised, consented production
+signals are intentionally left intact — deleting a report is not a consent
+withdrawal.
+
+### What-If calculator embeds cleanly in the dashboard
+The in-dashboard What-If tab previously rendered as a full standalone page
+(its own logo header and full-height background). It now renders as a contained
+card within the dashboard, dropping the duplicate branding.
+
+### Verified by
+- New tests: report delete succeeds for the owner, is denied (403) for another
+  user, and returns 404 when the report doesn't exist.
+- Full backend suite: **667 passed, 1 skipped**. Frontend typecheck clean.

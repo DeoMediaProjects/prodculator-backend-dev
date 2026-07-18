@@ -663,6 +663,22 @@ class ReportService:
             {"share_token": None}
         ).eq("id", report_id).execute()
 
+    def delete_report(self, report_id: str, user_id: str) -> None:
+        """Delete a report the user owns.
+
+        Ownership-scoped: a user can only delete their own report. Any
+        anonymised production signal derived from this report is deliberately
+        left intact — it is consented, de-identified aggregate data and is not
+        tied to the report's identifiable content, so a report deletion is not
+        a consent withdrawal (see upsert_production_signal for that path).
+        """
+        report = self.get_report(report_id)
+        if not report:
+            raise ValueError("report_not_found")
+        if report.get("user_id") != user_id:
+            raise PermissionError("access_denied")
+        self.supabase.table("reports").delete().eq("id", report_id).execute()
+
     def update_project_details(self, report_id: str, user_id: str, details: dict) -> dict:
         """Persist user-authored project details onto the report record.
 
