@@ -104,6 +104,19 @@ def test_call_anthropic_uses_stage_specific_values(monkeypatch):
 
     captured = {}
 
+    class _FakeStream:
+        def __init__(self, message):
+            self._message = message
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get_final_message(self):
+            return self._message
+
     class _FakeClient:
         def __init__(self):
             self.messages = self
@@ -111,6 +124,12 @@ def test_call_anthropic_uses_stage_specific_values(monkeypatch):
         def create(self, **kwargs):
             captured["create_kwargs"] = kwargs
             return {"content": []}
+
+        def stream(self, **kwargs):
+            # The narrative (production_analysis) stage streams rather than
+            # blocking on a single create() read.
+            captured["create_kwargs"] = kwargs
+            return _FakeStream({"content": []})
 
     def _fake_build_client(timeout_seconds: int):
         captured["timeout"] = timeout_seconds

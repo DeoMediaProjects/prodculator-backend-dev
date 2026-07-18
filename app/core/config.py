@@ -135,7 +135,11 @@ class Settings(BaseSettings):
     ANTHROPIC_MAX_TOKENS_REPORT: int | None = None
     ANTHROPIC_TIMEOUT_SCRIPT_CHUNK: int | None = 180
     ANTHROPIC_TIMEOUT_SCRIPT_AGGREGATE: int | None = None
-    ANTHROPIC_TIMEOUT_REPORT: int | None = None
+    # The report narrative is a large (up to 12k-token) generation on a slow
+    # model and runs in a background worker, so it gets a generous timeout. It is
+    # also STREAMED (see _call_anthropic_with_retry) which resets the read
+    # timeout per chunk — the 120s default caused every attempt to time out.
+    ANTHROPIC_TIMEOUT_REPORT: int | None = 600
     # Short timeout for the pre-flight reachability probe run before a report is
     # charged. Kept low so a Claude outage fails fast instead of hanging the request.
     ANTHROPIC_HEALTHCHECK_TIMEOUT: int = 10

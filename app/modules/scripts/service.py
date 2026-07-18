@@ -1241,9 +1241,18 @@ class ScriptAnalysisService:
                 import time as _time
                 _t0 = _time.monotonic()
                 logger.info("Anthropic API call starting: stage=%s attempt=%s", stage, attempt)
-                result = client.messages.create(
-                    **request_payload,
-                )
+                # Long generations (the report narrative can run for minutes on a
+                # large model) MUST be streamed — a non-streaming create() holds a
+                # single HTTP read open for the whole generation and trips the
+                # client read-timeout (Anthropic's documented "long requests"
+                # failure). Streaming resets the read timeout per chunk. We keep
+                # the plain create() path for schema-constrained stages that pass
+                # output_config, which are short and already reliable.
+                if output_config:
+                    result = client.messages.create(**request_payload)
+                else:
+                    with client.messages.stream(**request_payload) as stream:
+                        result = stream.get_final_message()
                 _elapsed = _time.monotonic() - _t0
                 logger.info(
                     "Anthropic API call completed: stage=%s attempt=%s elapsed=%.1fs stop_reason=%s",
