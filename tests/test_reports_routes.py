@@ -86,6 +86,14 @@ class FakeReportService:
     def get_report(self, report_id: str):
         return self._reports.get(report_id)
 
+    def delete_report(self, report_id: str, user_id: str) -> None:
+        report = self._reports.get(report_id)
+        if not report:
+            raise ValueError("report_not_found")
+        if report.get("user_id") != user_id:
+            raise PermissionError("access_denied")
+        del self._reports[report_id]
+
     def get_report_by_share_token(self, share_token: str):
         return None
 
@@ -436,3 +444,45 @@ def test_report_access_denied_for_other_user(client, auth_user):
 
     response = client.get(f"/api/reports/{report_id}", headers={"Authorization": "Bearer token"})
     assert response.status_code == 403
+
+
+def test_delete_report_owner_succeeds(client, auth_user):
+    service = FakeReportService()
+    report_id = service.create_report(
+        user_id=auth_user.id,
+        script_title="My Script",
+        report_type="paid",
+        script_file_path=f"{auth_user.id}/123.txt",
+    )
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_report_service] = lambda: service
+
+    response = client.delete(f"/api/reports/{report_id}", headers={"Authorization": "Bearer token"})
+    assert response.status_code == 204
+    assert service.get_report(report_id) is None
+
+
+def test_delete_report_denied_for_other_user(client, auth_user):
+    service = FakeReportService()
+    report_id = service.create_report(
+        user_id="another-user",
+        script_title="Other Script",
+        report_type="paid",
+        script_file_path="another-user/123.txt",
+    )
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_report_service] = lambda: service
+
+    response = client.delete(f"/api/reports/{report_id}", headers={"Authorization": "Bearer token"})
+    assert response.status_code == 403
+    # The report must survive an unauthorised delete attempt.
+    assert service.get_report(report_id) is not None
+
+
+def test_delete_report_not_found(client, auth_user):
+    service = FakeReportService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_report_service] = lambda: service
+
+    response = client.delete("/api/reports/does-not-exist", headers={"Authorization": "Bearer token"})
+    assert response.status_code == 404

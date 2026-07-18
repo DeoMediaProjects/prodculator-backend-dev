@@ -393,6 +393,24 @@ async def revoke_share_link(
         raise HTTPException(status_code=500, detail="Failed to revoke share link")
 
 
+@router.delete("/{report_id}", status_code=204)
+async def delete_report(
+    report_id: str,
+    user: AuthUser = Depends(get_current_user),
+    service: ReportService = Depends(get_report_service),
+):
+    """Delete a report the authenticated user owns."""
+    try:
+        service.delete_report(report_id, user.id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Report not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    except Exception:
+        logger.exception("delete_report failed: report_id=%s", report_id)
+        raise HTTPException(status_code=500, detail="Failed to delete report")
+
+
 @router.get("/{report_id}/status", response_model=ReportStatusResponse)
 async def get_report_status(
     report_id: str,

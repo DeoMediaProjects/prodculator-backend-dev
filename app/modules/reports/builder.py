@@ -1981,23 +1981,28 @@ class ReportBuilder:
     # ── Attributions ───────────────────────────────────────────────────────
 
     def _build_attributions(self, territories: list[str]) -> list[dict]:
-        """Build territory-specific data attributions."""
-        from app.modules.reports.attributions import (
-            TERRITORY_ATTRIBUTIONS,
-        )
-        from app.modules.reports.service import _TERRITORY_TO_ISO
+        """Build the report's data-source provenance line.
 
-        attributions: list[dict] = []
-        seen: set[str] = set()
-        for territory in sorted(territories):
-            iso = territory if len(territory) == 2 else _TERRITORY_TO_ISO.get(territory, "")
-            if iso and iso not in seen:
-                text = TERRITORY_ATTRIBUTIONS.get(iso)
-                if text:
-                    attributions.append({"territory": territory, "text": text})
-                    seen.add(iso)
-
-        return attributions
+        The former per-territory crew/cast wage citations (Bureau of Labor
+        Statistics, ONS, etc.) were removed with crew-cost day-rates in 2026-07
+        — they no longer back any figure in the report, so citing them would be
+        a stale, misleading attribution. Instead we state the provenance of the
+        data the report actually uses: incentive, grant, festival and
+        distributor records, each carrying its own source and verification.
+        """
+        return [
+            {
+                "territory": "All territories",
+                "text": (
+                    "Incentive, grant, festival and distributor figures are sourced "
+                    "from official government film offices and programme portals; "
+                    "each record carries its own verification status and source. "
+                    "Rebate figures are estimates that depend on the production's "
+                    "actual qualifying spend and final approval by the relevant "
+                    "authority."
+                ),
+            }
+        ]
 
     # ── Section Explainers ─────────────────────────────────────────────────
 
