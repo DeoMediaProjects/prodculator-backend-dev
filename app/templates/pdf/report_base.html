@@ -52,7 +52,8 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 }
 
 /* ============ PAGE CHROME ============ */
-.runhead{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:14px;border-bottom:1px solid var(--hairline);margin-bottom:34px}
+.runhead{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;border-bottom:1px solid var(--hairline);margin-bottom:34px}
+.runhead img{display:block}
 .runhead .wordmark{font-size:12px;font-weight:800;letter-spacing:.3em;color:var(--ink)}
 .runhead .wordmark span{color:var(--gold)}
 .runhead .rh-right{font-size:9px;letter-spacing:.18em;color:var(--grey);font-weight:600;text-transform:uppercase}
@@ -365,7 +366,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['exec'] }} — Executive Summary</div>
   <div class="sectitle">Where this production makes the most financial sense to shoot</div>
-  <p class="secsub">Every figure on this page is computed from verified programme data — the narrative explains it.</p>
+  <p class="secsub">Every figure on this page is computed from verified programme data; the narrative explains it.</p>
 
   <div class="idstrip" style="margin-bottom:28px">
     {% if es.format or report.genre %}<div class="idc"><div class="k">Format</div><div class="v">{{ es.format or '' }}{% if es.format and report.genre %} · {% endif %}{{ report.genre or '' }}</div></div>{% endif %}
@@ -395,7 +396,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       <span class="provchip">Computed</span>
     </div>
     {{ waterfall(top_sc, 660, 132, 10) }}
-    <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:6px">The full working behind each bar, and this chart for every ranked territory, is in Section {{ num_map.get('financial', '05') }} — with a plain-English key.</p>
+    <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:6px">The full working behind each bar, and this chart for every ranked territory, is in Section {{ num_map.get('financial', '05') }}, with a plain-English key.</p>
   </div>
   {% endif %}
   {% endif %}
@@ -482,7 +483,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div>
       <h4>Story reading <span class="provchip muted">Narrative</span></h4>
       <div class="serif writtenrule" style="margin-bottom:20px">
-        <p>{{ report.genre or 'This production' }}{% if report.tone %} — {{ report.tone | lower }} in tone{% endif %}{% if report.scale %}, {{ report.scale | lower }} in scale{% endif %}.
+        <p>{{ report.genre or 'This production' }}{% if report.tone %}, {{ report.tone | lower }} in tone{% endif %}{% if report.scale %}, {{ report.scale | lower }} in scale{% endif %}.
         {% if report.complexity %}Production complexity is assessed as {{ report.complexity | lower }}.{% endif %}</p>
       </div>
       {% if si and si.productionChallenges %}
@@ -586,14 +587,14 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {% if origin %}
   <div class="origin">
     <div class="ok"><h4>Script-origin territory · {{ origin.territory }}</h4><span class="outside">Outside the ranking</span></div>
-    <div class="serif" style="font-size:12.5px">Your script is set in {{ origin.territory }} — {% if not origin.hasIncentiveProgramme %}but it offers no formal production incentive, so it cannot rank on financial dimensions. That is a fact about the incentive landscape, not about whether you should shoot there.{% else %}ranked separately here because it was not among the compared territories.{% endif %}</div>
+    <div class="serif" style="font-size:12.5px">Your script is set in {{ origin.territory }}, {% if not origin.hasIncentiveProgramme %}but it offers no formal production incentive, so it cannot rank on financial dimensions. That is a fact about the incentive landscape, not about whether you should shoot there.{% else %}ranked separately here because it was not among the compared territories.{% endif %}</div>
     <div class="ostats">
       {% if origin.scenesPct %}<div class="os"><div class="n">{{ origin.scenesPct }}%</div><div class="l">of scenes set there</div></div>{% endif %}
       <div class="os"><div class="n">{{ origin.programmeNote if origin.hasIncentiveProgramme else '—' }}</div><div class="l">{{ 'Programme' if origin.hasIncentiveProgramme else 'No incentive programme' }}</div></div>
       {% if origin.currencyAdvantage is not none %}<div class="os"><div class="n">{{ origin.currencyAdvantage }}<span style="font-size:12px;color:var(--grey)">/100</span></div><div class="l">Currency advantage</div></div>{% endif %}
       {% if origin.crewDepthTier %}<div class="os"><div class="n" style="font-size:16px">{{ origin.crewDepthTier }}</div><div class="l">Crew depth tier</div></div>{% endif %}
     </div>
-    <div class="serif" style="font-size:12.5px">The case for shooting there is authenticity and purchasing power, not rebate value — weigh it as a creative and currency decision alongside the ranked financial options above.</div>
+    <div class="serif" style="font-size:12.5px">The case for shooting there is authenticity and purchasing power, not rebate value; weigh it as a creative and currency decision alongside the ranked financial options above.</div>
   </div>
   {% endif %}
 </div>
@@ -648,7 +649,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['financial'] }} — Financial Analysis</div>
   <div class="sectitle">From budget to net position</div>
-  <p class="secsub">One chart per ranked territory — every figure traceable to its working. The chart shape follows the programme's mechanism.</p>
+  <p class="secsub">One chart per ranked territory, every figure traceable to its working. The chart shape follows the programme's mechanism.</p>
 
   {% set main_sc = scenarios[0] %}
   {% if main_sc.totalBudgetValue %}
@@ -704,7 +705,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         <span class="lb-val" style="width:64px">{{ sc.currencySymbol }}{{ sc.netRebateValue | money_compact }}</span>
       </div>
       {% endfor %}
-      <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:10px;line-height:1.5">Estimated net rebates on the spend stated in each scenario — not additive unless a multi-territory structure is adopted.</p>
+      <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:10px;line-height:1.5">Estimated net rebates on the spend stated in each scenario, not additive unless a multi-territory structure is adopted.</p>
     </div>
     {% endif %}
     {% if timing %}
@@ -749,7 +750,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['incentives'] }} — Tax Incentive Analysis</div>
   <div class="sectitle">Programme rates, caps and requirements</div>
-  <p class="secsub">Verified programme data — low-confidence records are flagged, never presented as certainties.</p>
+  <p class="secsub">Verified programme data; low-confidence records are flagged, never presented as certainties.</p>
 
   {% for inc in report.incentiveEstimates[:6] %}
   <div class="fcard">
@@ -806,7 +807,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endif %}
     {% endfor %}
   </table>
-  <p class="disclaimer">Eligibility criteria are summarised — confirm current guidelines with each fund before applying.</p>
+  <p class="disclaimer">Eligibility criteria are summarised; confirm current guidelines with each fund before applying.</p>
 </div>
 {% endif %}
 
@@ -842,7 +843,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['festivals'] }} — Festival Recommendations</div>
   <div class="sectitle">Where your film could be seen</div>
-  <p class="secsub">Matched on format, timing, genre and territory — never inferred.</p>
+  <p class="secsub">Matched on format, timing, genre and territory, never inferred.</p>
 
   {% for fest in report.festivalRecommendations %}
   <div class="fcard">
@@ -867,7 +868,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['distributors'] }} — Distributor Recommendations</div>
   <div class="sectitle">Who could buy your film</div>
-  <p class="bridge" style="margin-top:14px">Distributors are ranked partly on whether they actively scout the festivals recommended above — a distributor who attends your premiere is worth more than one who matches on paper.</p>
+  <p class="bridge" style="margin-top:14px">Distributors are ranked partly on whether they actively scout the festivals recommended above: a distributor who attends your premiere is worth more than one who matches on paper.</p>
 
   {% for dist in report.distributorRecommendations %}
   <div class="fcard">
@@ -965,7 +966,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       This report is produced by Prodculator's analysis engine from verified programme data and the
       declared attributes of your production. All rebate figures are estimates; final eligibility and
       values depend on official approval by the relevant authorities and the production's actual
-      qualifying expenditure. Incentive programmes change — verify current terms before financial
+      qualifying expenditure. Incentive programmes change; verify current terms before financial
       commitments. This report does not constitute financial, legal or tax advice.
       Generated {{ created_at[:10] if created_at else '' }} · © Deo Media Limited.
     </p>
