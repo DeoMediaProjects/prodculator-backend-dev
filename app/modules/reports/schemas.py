@@ -23,6 +23,11 @@ class CreateReportRequest(BaseModel):
         "HUF", "CZK", "MAD", "NZD", "RON", "RSD",
         # Added: FX rates for these already exist in fx.service fallback table.
         "ISK", "JPY", "KRW", "SGD",
+        # Added once live FX (EXCHANGE_RATE_API_KEY) is configured — these
+        # convert via the live API. NOTE: they have no hardcoded offline
+        # fallback rate, so if the FX API is unavailable they convert at 1:1.
+        # Add sourced GBP-base fallback rates in fx.service to harden that path.
+        "INR", "MXN", "BRL",
         "OTHER",
     ] = "GBP"
     # Intake contract (intake_schema.json) labels first; the longer tail is
