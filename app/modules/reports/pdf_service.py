@@ -1,13 +1,29 @@
 import json
 import logging
+import re
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup, escape as _html_escape
 from app.core.database_client import DatabaseClient
 
 logger = logging.getLogger(__name__)
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+
+
+def _md_inline(value: Any) -> Markup:
+    """Render the sliver of inline markdown the AI narrative uses — **bold** —
+    as real bold. Everything is HTML-escaped FIRST, so this stays XSS-safe even
+    though the result is marked safe for the template. Text with no ** is simply
+    escaped, identical to Jinja's autoescape."""
+    if value is None:
+        return Markup("")
+    text = str(_html_escape(str(value)))
+    text = _BOLD_RE.sub(r"<strong>\1</strong>", text)
+    return Markup(text)
 
 
 def _money_compact(value: float | int | None) -> str:
@@ -39,6 +55,7 @@ class PDFService:
             autoescape=select_autoescape(["html", "xml"]),
         )
         self.env.filters["money_compact"] = _money_compact
+        self.env.filters["mdbold"] = _md_inline
         # Original Prodculator logo (JPEG data despite historic .png naming —
         # see DATA_REPAIR_NOTE: declare image/jpeg where MIME is explicit)
         logo_path = templates_dir / "assets" / "prodculator_logo.jpg"

@@ -423,7 +423,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="serif writtenrule">
       {% for paragraph in es.keyInsights.split('\n\n') %}
       {% set para = paragraph.strip() %}
-      {% if para %}<p style="margin-bottom:12px">{{ para }}</p>{% endif %}
+      {% if para %}<p style="margin-bottom:12px">{{ para | mdbold }}</p>{% endif %}
       {% endfor %}
     </div>
   </div>

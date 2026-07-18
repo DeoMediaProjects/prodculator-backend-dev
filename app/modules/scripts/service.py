@@ -1602,7 +1602,7 @@ Return a JSON object with ONLY these keys:
   "tone": "narrative tone description",
   "scale": "production scale label (e.g. 'Mid-budget Feature Film')",
   "complexity": "Low|Medium|High|Very High",
-  "executiveSummary_keyInsights": "2-3 paragraph narrative summary written for financiers and producers. Full sentences only — NO bullet points, NO dashes, NO numbered lists, NO hyphens at line starts. Each paragraph separated by a blank line. Write as a senior production consultant would in a formal executive briefing.",
+  "executiveSummary_keyInsights": "2-3 paragraph narrative summary written for financiers and producers. Full sentences only. Do NOT use em-dashes or en-dashes (the long dash characters) anywhere in the prose; instead use commas, colons, parentheses, or separate sentences, whatever is grammatically natural. No bullet points, no numbered lists, no hyphens at line starts. You MAY prefix a paragraph with a short bold label using double asterisks, for example **Production Overview**. Separate each paragraph with a blank line. Write as a senior production consultant would in a formal executive briefing.",
   "alternativeStrategy": "1-2 sentence alternative territory recommendation",
   "nextSteps": [
     {
@@ -1694,6 +1694,8 @@ scriptIntelligence RULES:
 dimensionVerdicts RULES: One sentence per dimension, max 40 words. Reference specific data (programme name, rate, tier name). Do NOT repeat the score number. Do NOT use word "score". Each verdict must be substantively different from reasoning bullets.
 
 comparableDescriptions RULES: ONE specific reason this comparable is relevant. Reference at least one of: incentive programme, budget match, crew parallel, genre match, structural similarity. Do NOT use phrase "comparable production". Do NOT describe plot. Maximum 40 words. One sentence.
+
+PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en-dashes (the long dash characters) anywhere. Rewrite with commas, colons, parentheses, or separate sentences so the prose is grammatically natural. Ordinary hyphens inside compound words (for example "post-production", "mid-budget") are fine.
 """
 
     def generate_production_analysis_v2(

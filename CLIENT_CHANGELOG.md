@@ -544,6 +544,20 @@ stretching the whole dashboard page.
 
 ---
 
+## 2026-07-18 — Report narrative formatting
+
+- **Bold labels now render.** The written summary's section labels (e.g.
+  "Production Overview", "Primary Recommendation") were showing their raw
+  `**asterisks**` in the PDF. They now render as real bold. (HTML is escaped
+  first, so this is safe.)
+- **No more em-dashes in the prose.** The AI narrative leaned on long dashes,
+  which read as machine-written. The narrative prompts now forbid em-/en-dashes
+  and require natural punctuation, so the writing reads more human. Ordinary
+  hyphens in compound words (post-production, mid-budget) are unaffected.
+  Applies to newly generated reports.
+
+---
+
 ## 2026-07-18 — Indian rupee, Mexican peso, Brazilian real as budget currencies
 
 With live exchange rates enabled (EXCHANGE_RATE_API_KEY), INR, MXN and BRL are
