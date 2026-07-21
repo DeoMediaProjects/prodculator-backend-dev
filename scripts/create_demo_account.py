@@ -26,8 +26,8 @@ sys.path.insert(0, ".")
 from app.core.config import get_settings
 from app.core.security import hash_password
 
-DEFAULT_EMAIL = "demo@demomedia.net"
-DEFAULT_PASSWORD = "DemoMedia2026!"
+DEFAULT_EMAIL = "demo@deomedia.net"
+DEFAULT_PASSWORD = "DeoMedia2026!"
 PLAN = "studio"
 # Studio's per-period report limit (see app/modules/payments/plan_catalog.py).
 # Credits act as overflow once the period limit is hit, so a demo effectively
@@ -37,8 +37,8 @@ STUDIO_REPORT_LIMIT = 10
 
 def create_demo_account(email: str, password: str, credits: int, name: str) -> None:
     email = email.strip().lower()
-    if "demomedia" not in email:
-        print("Error: demo email must contain 'demomedia'.")
+    if "deomedia" not in email:
+        print("Error: demo email must contain 'deomedia'.")
         sys.exit(1)
 
     settings = get_settings()
