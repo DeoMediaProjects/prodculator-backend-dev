@@ -120,16 +120,21 @@ class EmailService:
         normalised.setdefault("app_url", app_url)
         normalised.setdefault("dashboard_url", f"{app_url}/dashboard")
         normalised.setdefault("login_url", f"{app_url}/login")
+        # Hosted logo (served from the frontend's public/ dir) so emails can show
+        # the real mark instead of a text wordmark.
+        normalised.setdefault("logo_url", f"{app_url}/prodculator-logo.jpg")
         normalised.setdefault("support_email", self.settings.CONTACT_EMAIL or "support@prodculator.com")
         normalised.setdefault("billing_email", "billing@prodculator.com")
         normalised.setdefault("currency", "USD")
 
         report_id = normalised.get("report_id")
+        # The live route is /report/{id} (singular). The old /reports/{id} path
+        # matched no route, so email buttons fell through to the landing page.
         if report_id and "report_url" not in normalised:
-            normalised["report_url"] = f"{app_url}/reports/{report_id}"
+            normalised["report_url"] = f"{app_url}/report/{report_id}"
 
         if report_id and "pdf_url" not in normalised:
-            normalised["pdf_url"] = f"{app_url}/reports/{report_id}"
+            normalised["pdf_url"] = f"{app_url}/report/{report_id}"
 
         plan_type = normalised.get("plan_type")
         if plan_type and "plan_name" not in normalised:

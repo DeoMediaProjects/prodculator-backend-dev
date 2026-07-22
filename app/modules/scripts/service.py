@@ -1675,7 +1675,7 @@ RULES:
 - costEfficiency, crewDepth, infrastructure: Pre-computed from verified DB data. DO NOT include numeric values for these in locationNarratives. In reasoning bullets, explain what these scores mean for THIS production.
 
 executiveSummary_keyInsights RULES — Write exactly six paragraphs with bold headings. Blank line between each. Total 350-420 words.
-PARAGRAPH 1 — **Production Overview** (80-100 words): Name protagonist + world + specific desire referencing a named location. Core conflict and tone with specific scene type or cultural detail from script. Bridge to primary production challenge. Do NOT list budget, format, or genre.
+PARAGRAPH 1 — **Script Overview** (80-100 words): Name protagonist + world + specific desire referencing a named location. Core conflict and tone with specific scene type or cultural detail from script. Bridge to primary production challenge. Do NOT list budget, format, or genre.
 PARAGRAPH 2 — **Primary Recommendation** (70-90 words): Territory name + FRS from financialReturnScore (e.g. "FRS: 84 — Bankable"). Estimated net rebate — net rate only, NOT gross. Payment timeline in plain English. One sentence why this territory wins for THIS production referencing a specific script element.
 PARAGRAPH 3 — **Second Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: what producer gains vs primary recommendation and what they give up.
 PARAGRAPH 4 — **Third Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: when does this become the right choice? OMIT if fewer than 3 territories.

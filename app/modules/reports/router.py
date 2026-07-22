@@ -12,7 +12,7 @@ from app.core.queue import get_report_queue
 from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
 from app.modules.email.service import EmailService
-from app.modules.reports.pdf_service import PDFService
+from app.modules.reports.pdf_service import PDFService, strip_em_dashes
 from app.modules.reports.schemas import (
     CreateReportRequest,
     PreviewReportResponse,
@@ -307,6 +307,27 @@ async def list_reports(
     """List all reports for the current user (excludes previews)."""
     reports = service.get_user_reports(user.id)
     return [_format_report_response(r, settings) for r in reports]
+
+
+@router.get("/sample/html")
+async def get_sample_report_html() -> Response:
+    """Public marketing sample: renders the real report template with a canned
+    dataset, so the website's /sample always matches live report output.
+    Declared before /{report_id} so the two-segment path can't be captured by it."""
+    from app.modules.reports.sample_report import (
+        SAMPLE_REPORT_DATA,
+        SAMPLE_TITLE,
+        SAMPLE_CREATED_AT,
+    )
+
+    pdf_service = PDFService()
+    html = pdf_service.render_report_html(
+        SAMPLE_REPORT_DATA,
+        script_title=SAMPLE_TITLE,
+        created_at=SAMPLE_CREATED_AT,
+        is_preview=False,
+    )
+    return Response(content=html, media_type="text/html")
 
 
 @router.get("/{report_id}", response_model=ReportResponse)
@@ -718,7 +739,7 @@ def _build_preview_key_insights(
     if not overview:
         title = data.get("scriptTitle") or data.get("title") or "this production"
         overview = (
-            "**Production Overview**\n"
+            "**Script Overview**\n"
             f"Prodculator has built a production intelligence preview for {title}, "
             "using the submitted format, budget, territory, and schedule inputs to "
             "identify the leading production-location strategy."
@@ -1071,6 +1092,7 @@ def _generate_investor_summary_pdf(report: dict) -> bytes | None:
         all_territory_risks=all_territory_risks,
         project_details=project_details,
     )
+    html = strip_em_dashes(html)
 
     try:
         from weasyprint import HTML as WeasyHTML  # type: ignore
