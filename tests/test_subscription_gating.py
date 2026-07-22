@@ -91,6 +91,9 @@ class FakeSupabase:
     def download(self, _path):
         return b"%PDF-fake-content"
 
+    def download_key(self, _key):
+        return b"%PDF-fake-content"
+
 
 class FakeStripeService:
     @staticmethod
