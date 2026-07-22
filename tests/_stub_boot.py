@@ -1,4 +1,5 @@
-import sys, types
+import sys
+import types
 
 def _mod(name, **attrs):
     m = types.ModuleType(name)
