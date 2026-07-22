@@ -558,7 +558,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         {% if loc.rebatePercent %}<div class="tfact"><span class="k">Rate</span><span class="v">{{ loc.rebatePercent }}</span></div>{% endif %}
         {% if loc_sc and loc_sc.netRebate %}<div class="tfact"><span class="k">Est. net rebate</span><span class="v">{{ loc_sc.netRebate }}</span></div>{% endif %}
         {% if loc.crewDepthTier %}<div class="tfact"><span class="k">Crew depth tier</span><span class="v">{{ loc.crewDepthTier }}</span></div>{% endif %}
-        {% if loc.paymentSpeed and loc.paymentSpeed != 'Data not available' %}<div class="tfact"><span class="k">Payment</span><span class="v">{{ loc.paymentSpeed | truncate(60) }}</span></div>{% endif %}
+        {% if loc.paymentSpeed and loc.paymentSpeed != 'Data not available' %}<div class="tfact"><span class="k">Payment</span><span class="v">{{ loc.paymentSpeed }}</span></div>{% endif %}
       </div>
     </div>
     {% if loc.reasoning %}
@@ -627,8 +627,8 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       <div class="dims" style="width:50%">
         <div class="tfact"><span class="k">Rebate</span><span class="v">{{ dd.rebate }}</span></div>
         <div class="tfact"><span class="k">Est. rebate</span><span class="v">{{ dd.estimatedRebate }}</span></div>
-        <div class="tfact"><span class="k">Infrastructure</span><span class="v">{{ dd.infrastructure | truncate(60) }}</span></div>
-        <div class="tfact"><span class="k">Payment</span><span class="v">{{ dd.paymentSpeed | truncate(60) }}</span></div>
+        <div class="tfact"><span class="k">Infrastructure</span><span class="v">{{ dd.infrastructure }}</span></div>
+        <div class="tfact"><span class="k">Payment</span><span class="v">{{ dd.paymentSpeed }}</span></div>
         <div class="tfact"><span class="k">Cultural test</span><span class="v">{{ dd.culturalTestLikelihood }}</span></div>
         <div class="tfact"><span class="k">Admin complexity</span><span class="v">{{ dd.adminComplexity }}</span></div>
       </div>
@@ -689,10 +689,10 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% for sc in other_scs %}
     <div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--grey)">{{ sc.territory }}{% if sc.programme %} · {{ sc.programme | truncate(32) }}{% endif %}</span>
+        <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--grey)">{{ sc.territory }}{% if sc.programme %} · {{ sc.programme }}{% endif %}</span>
               </div>
       {{ waterfall(sc, 300, 132, 9) }}
-      {% if sc.notes %}<p style="font-size:9px;color:var(--grey);font-weight:500;margin-top:4px;line-height:1.5">{{ sc.notes | truncate(160) }}</p>{% endif %}
+      {% if sc.notes %}<p style="font-size:9px;color:var(--grey);font-weight:500;margin-top:4px;line-height:1.5">{{ sc.notes }}</p>{% endif %}
     </div>
     {% endfor %}
   </div>
@@ -764,14 +764,14 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="fcard-top">
       <div>
         <h4>{{ inc.territory }} — {{ inc.program }}</h4>
-        <div class="meta">{{ inc.rate }}{% if inc.rateType %} · {{ inc.rateType | replace('_', ' ') }}{% endif %}{% if inc.cap %} · Cap: {{ inc.cap | truncate(60) }}{% endif %}</div>
+        <div class="meta">{{ inc.rate }}{% if inc.rateType %} · {{ inc.rateType | replace('_', ' ') }}{% endif %}{% if inc.cap %} · Cap: {{ inc.cap }}{% endif %}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">{{ bankchip(inc.bankabilityLabel) }}</div>
     </div>
     <div style="display:flex;gap:24px;font-size:10.5px;color:#3A382F;font-weight:500;padding:8px 0;border-top:1px solid var(--hairline)">
       {% if inc.estimatedRebate %}<span><b>Est. rebate:</b> {{ inc.estimatedRebate }}</span>{% endif %}
       {% if inc.qualifyingSpend %}<span><b>Qualifying spend:</b> {{ inc.qualifyingSpend }}</span>{% endif %}
-      {% if inc.paymentSpeed %}<span><b>Payment:</b> {{ inc.paymentSpeed | truncate(50) }}</span>{% endif %}
+      {% if inc.paymentSpeed %}<span><b>Payment:</b> {{ inc.paymentSpeed }}</span>{% endif %}
     </div>
     {% if inc.requirements %}
     <ul class="challenges" style="margin-top:8px">
@@ -806,7 +806,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         {% for badge in opp.badges or [] %}<br><span class="chip {{ 'notbank' if badge == 'LEGISLATIVE RISK' else ('verify' if badge != 'CLOSING SOON' else 'gold') }}" style="margin-top:4px">{{ badge }}</span>{% endfor %}
       </td>
       <td>{{ opp.territory }}</td>
-      <td>{{ opp.notes | truncate(46) }}</td>
+      <td>{{ opp.notes }}</td>
       <td>{{ opp.deadline or 'Rolling' }}</td>
     </tr>
     {% if opp.whyMatched %}
@@ -860,7 +860,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         <div class="meta">{{ fest.location }}{% if fest.tier %} · {{ fest.tier }}{% endif %}{% if fest.oscarQualifying %} · Oscar-qualifying{% endif %}</div>
       </div>
       {% if fest.deadlinePattern %}
-      <div class="deadline"><div class="d">{{ fest.deadlinePattern | truncate(70) }}</div><div class="l">Submission pattern</div></div>
+      <div class="deadline"><div class="d">{{ fest.deadlinePattern }}</div><div class="l">Submission pattern</div></div>
       {% endif %}
     </div>
     {% if fest.whyMatched %}<div class="whym">{{ fest.whyMatched }}</div>{% endif %}
@@ -915,7 +915,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       {% if w.shootWindowRisk %}<b>{{ w.shootWindowRisk }}</b><br>{% endif %}
       {% if w.seasonalConsiderations %}{{ w.seasonalConsiderations }}<br>{% endif %}
       {% if w.contingencyBudget %}Contingency: {{ w.contingencyBudget }} · {% endif %}
-      {% if w.travelVisa %}Visas: {{ w.travelVisa | truncate(120) }}{% endif %}
+      {% if w.travelVisa %}Visas: {{ w.travelVisa }}{% endif %}
     </div>
   </div>
   {% endfor %}
