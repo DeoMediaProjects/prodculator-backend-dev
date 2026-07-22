@@ -1,6 +1,9 @@
+import hashlib
 import json
 import logging
-from time import perf_counter
+from collections import OrderedDict
+from threading import Lock
+from time import perf_counter, monotonic
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 
@@ -27,6 +30,39 @@ from app.modules.subscriptions.service import SubscriptionService
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
+
+# ── Duplicate-submission guard ────────────────────────────────────────────────
+# A single report costs several billed AI calls. An accidental double-click (or a
+# retry while the first run is still generating) would otherwise start a second
+# full, charged generation for the identical script + config. We remember recent
+# submissions per user for a short window and return the in-flight report instead
+# of starting (and charging for) a duplicate.
+_DEDUPE_TTL_SECONDS = 180
+_recent_submissions: "OrderedDict[str, tuple[str, float]]" = OrderedDict()
+_recent_submissions_lock = Lock()
+
+
+def _submission_key(user_id: str, body: str, script_text: str) -> str:
+    digest = hashlib.sha256(f"{user_id}\n{body}\n{script_text}".encode("utf-8", "ignore")).hexdigest()
+    return digest
+
+
+def _recent_report_for(key: str) -> str | None:
+    now = monotonic()
+    with _recent_submissions_lock:
+        # Drop expired entries.
+        for k in [k for k, (_, ts) in _recent_submissions.items() if now - ts > _DEDUPE_TTL_SECONDS]:
+            _recent_submissions.pop(k, None)
+        hit = _recent_submissions.get(key)
+        return hit[0] if hit else None
+
+
+def _remember_submission(key: str, report_id: str) -> None:
+    with _recent_submissions_lock:
+        _recent_submissions[key] = (report_id, monotonic())
+        _recent_submissions.move_to_end(key)
+        while len(_recent_submissions) > 256:
+            _recent_submissions.popitem(last=False)
 
 
 def get_report_service(supabase: DatabaseClient = Depends(get_supabase)) -> ReportService:
@@ -230,6 +266,22 @@ async def create_report(
     # Explicitly delete the bytes so they are not referenced beyond this scope
     del file_bytes
 
+    # Duplicate-submission guard: if this exact script + config was just submitted
+    # by this user, return the in-flight report instead of starting (and charging
+    # for) an identical second generation.
+    dedupe_key = _submission_key(user.id, body, script_text)
+    existing_report_id = _recent_report_for(dedupe_key)
+    if existing_report_id:
+        logger.info(
+            "Duplicate report submission ignored: user_id=%s reusing report_id=%s",
+            user.id, existing_report_id,
+        )
+        return ReportStatusResponse(
+            status="processing",
+            report_id=existing_report_id,
+            message="Report generation already in progress",
+        )
+
     # Pre-flight: confirm Scriptelligence (Claude) is reachable BEFORE we charge
     # for the report (create the row / consume a credit). If it's down, the user
     # is never charged — they get a clear, retryable error to display instead.
@@ -259,6 +311,8 @@ async def create_report(
             script_file_path=None,  # never stored
             request_metadata=metadata,
         )
+        # Record the submission so an immediate resubmit reuses this report.
+        _remember_submission(dedupe_key, report_id)
         _dispatch_report_job(
             background_tasks=background_tasks,
             report_id=report_id,

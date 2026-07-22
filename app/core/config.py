@@ -122,13 +122,16 @@ class Settings(BaseSettings):
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
-    # Default to the current most-capable Opus model. The previous default
-    # (claude-3-5-sonnet-20241022) was retired by Anthropic in Oct 2025 and now
-    # 404s, so any environment that didn't override it would fail at report time.
-    # Override via the ANTHROPIC_MODEL env var (e.g. claude-sonnet-4-6 for a lower
-    # cost/latency profile).
-    ANTHROPIC_MODEL: str = "claude-opus-4-8"
-    ANTHROPIC_MAX_TOKENS: int = 12000
+    # Default to Sonnet, not Opus. Report generation makes many calls per report
+    # (one per script chunk + aggregation + the narrative), so Opus (~5x Sonnet's
+    # price) made a single report cost several dollars and drove a large,
+    # unexpected bill. Sonnet 4.6 is the right cost/quality balance for this
+    # pipeline. Set ANTHROPIC_MODEL=claude-opus-4-8 in the env only if a specific
+    # report genuinely needs Opus-level quality.
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    # Output cap. Lower than before (was 12000) to bound per-call output cost;
+    # the report JSON comfortably fits under this.
+    ANTHROPIC_MAX_TOKENS: int = 8000
     ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
     ANTHROPIC_MAX_TOKENS_SCRIPT_CHUNK: int | None = None
     ANTHROPIC_MAX_TOKENS_SCRIPT_AGGREGATE: int | None = None
@@ -144,7 +147,7 @@ class Settings(BaseSettings):
     # charged. Kept low so a Claude outage fails fast instead of hanging the request.
     ANTHROPIC_HEALTHCHECK_TIMEOUT: int = 10
 
-    # Script analysis chunking controls
+    # Script analysis chunking controls.
     SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False
     SCRIPT_CHUNK_TARGET_TOKENS: int = 1800
     SCRIPT_CHUNK_OVERLAP_TOKENS: int = 200
