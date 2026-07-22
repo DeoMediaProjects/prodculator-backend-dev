@@ -65,7 +65,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 .serif{font-family:var(--serif);font-size:13.5px;line-height:1.7;color:#26241F}
 .provchip{display:inline-flex;align-items:center;gap:5px;font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold);border-radius:2px;padding:3px 7px;background:transparent}
 .provchip.muted{border-color:var(--hairline);color:var(--grey)}
-.writtenrule{border-left:2px solid var(--hairline);padding-left:20px}
+.writtenrule{padding-left:0}
 
 /* chips */
 .chip{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:4px 9px;border-radius:2px}
@@ -108,7 +108,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 .headline-net .fig{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .headline-net .fig small{font-size:17px;font-weight:600;color:var(--gold);letter-spacing:0}
 .headline-net .sub{font-family:var(--serif);font-size:13px;color:var(--grey);margin-top:12px}
-.reco{display:table;width:100%;border:1px solid var(--hairline);border-left:3px solid var(--gold-bright);margin-bottom:24px}
+.reco{display:table;width:100%;border:1px solid var(--hairline);margin-bottom:24px}
 .reco>div{display:table-cell;padding:15px 16px;border-right:1px solid var(--hairline);vertical-align:top}
 .reco>div:last-child{border-right:none}
 .reco .k{font-size:8.5px;font-weight:700;letter-spacing:.16em;color:var(--grey);text-transform:uppercase;margin-bottom:7px}
@@ -170,7 +170,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 .minicard .sub{font-size:10.5px;color:var(--grey);font-weight:600;margin-top:8px}
 
 /* script-origin callout */
-.origin{border:1px solid var(--hairline);border-left:4px solid var(--ink);padding:22px 24px;margin-top:6px;background:#FBFAF6;page-break-inside:avoid}
+.origin{border:1px solid var(--hairline);padding:22px 24px;margin-top:6px;background:#FBFAF6;page-break-inside:avoid}
 .origin .ok{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .origin .ok h4{font-size:14px;font-weight:700}
 .origin .outside{font-size:8.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--paper);background:var(--ink);padding:4px 9px}
@@ -190,7 +190,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 .whym .sig{color:var(--gold);font-weight:600;font-style:italic}
 .linkage{display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px}
 .linkage::before{content:'⟶';font-size:12px}
-.bridge{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--grey);line-height:1.65;border-left:2px solid var(--gold-bright);padding-left:18px;margin-bottom:22px}
+.bridge{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--grey);line-height:1.65;padding-left:0;margin-bottom:22px}
 
 /* ============ GENERIC LIST TABLES ============ */
 .rowtable{width:100%;border-collapse:collapse;border-top:2px solid var(--ink);margin-bottom:20px}
@@ -319,24 +319,25 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% set rh = script_title ~ ' · ' ~ ('Free Preview' if is_preview else 'Pro Report') %}
 
 <!-- ═══════════════ COVER ═══════════════ -->
-<div class="page first cover">
+<div class="page first cover" style="padding:0;min-height:1050px;align-items:stretch">
   <div style="flex:1"></div>
-  <div class="band">{% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Prodculator" style="height:56px">{% else %}<span class="wordmark">PRODCULAT<span>O</span>R</span>{% endif %}</div>
-  <div style="padding:56px 0 0">
-    <div class="cover-kicker">Production Analysis Report{% if not is_preview %} · Pro{% endif %}</div>
-    <div class="cover-title">{{ script_title }}</div>
+  <div style="background:var(--ink);padding:56px 0;display:flex;justify-content:center;align-items:center">
+    {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Prodculator" style="width:86%;filter:invert(1)">{% else %}<span class="wordmark" style="font-size:22px;font-weight:800;letter-spacing:.42em;color:var(--paper)">PRODCULAT<span style="color:var(--gold-bright)">O</span>R</span>{% endif %}
+  </div>
+  <div style="text-align:center;padding:56px 64px 0">
+    <div class="cover-kicker">Production Analysis Report{% if not is_preview %} &middot; Pro{% endif %}</div>
+    <h1 class="cover-title">{{ script_title }}</h1>
     <div class="cover-rule"></div>
     {% if is_preview %}
     <div style="margin-top:22px"><span class="chip gold">Free preview — upgrade for the full report</span></div>
     {% endif %}
   </div>
   <div style="flex:1"></div>
-  <div>
+  <div style="padding:0 64px 48px">
     <div class="cover-bottom">
-      <span>Generated {{ created_at[:10] if created_at else 'N/A' }}</span>
-      <span class="conf">Prepared for production &amp; investment review</span>
+      <span>Generated {{ created_at | pretty_date }}</span>
     </div>
-    <div class="cover-foot">A Deo Media Limited product · prodculator.com</div>
+    <div class="cover-foot">A Deo Media Limited product &middot; Company No. 15426752 &middot; Registered in England &amp; Wales &middot; www.prodculator.com &middot; app.prodculator.com</div>
   </div>
 </div>
 
@@ -356,6 +357,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     </tr>
     {% endfor %}
   </table>
+
+  <div style="margin-top:40px;border-top:1px solid var(--hairline);padding-top:24px">
+    <div style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:12px">How to read this report</div>
+    <div style="font-size:11.5px;line-height:1.75;color:#3A382F">
+      <div><span class="provchip" style="margin-right:8px">Computed</span> This figure comes directly from verified programme data and deterministic calculation. It is not an opinion or an AI estimate.</div>
+      <div style="margin-top:8px"><span class="provchip muted" style="margin-right:8px">Narrative</span> Written interpretation of the computed results. Explanation, never the source of a number.</div>
+      <div style="margin-top:8px"><span class="chip bank" style="margin-right:6px">Bankable</span><span class="chip verify" style="margin-right:6px">Verify first</span><span class="chip notbank" style="margin-right:8px">Not bankable</span> How dependable an incentive is for financing purposes.</div>
+      <div style="margin-top:8px">Step-charts show how your budget becomes your net position. Each bar is one line of the calculation, and every chart carries a plain-English key.</div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════ EXECUTIVE SUMMARY ═══════════════ -->
@@ -375,12 +386,23 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% if report.complexity %}<div class="idc"><div class="k">Complexity</div><div class="v">{{ report.complexity }}{% if es.shootDays %} · {{ es.shootDays }} wk shoot{% endif %}</div></div>{% endif %}
   </div>
 
+  {% if es.keyInsights %}
+  <div class="sumblock">
+    <h4>Story understanding <span class="provchip muted">Narrative</span></h4>
+    <div class="serif writtenrule">
+      {% for paragraph in es.keyInsights.split('\n\n') %}
+      {% set para = paragraph.strip() %}
+      {% if para %}<p style="margin-bottom:12px">{{ para | replace('Production Overview', 'Script Overview') | mdbold }}</p>{% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if not is_preview and es.headlineNetBudget %}
   <div class="headline-net">
     <div class="lbl">
       <span>Estimated net budget after incentives{% if top_sc and top_sc.programme %} — under {{ top_sc.programme }}{% endif %}</span>
-      <span class="provchip">Computed</span>
-    </div>
+          </div>
     <div class="fig">{{ es.headlineNetBudget | replace('approximately ', '') }}
       {% if es.recommendedTerritoryRebate %}<small>net of {{ es.recommendedTerritoryRebate }} rebate</small>{% endif %}
     </div>
@@ -393,8 +415,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div style="margin:-4px 0 24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--grey)">Where that number comes from — {{ top_sc.territory }}, Nº 1 ranked</span>
-      <span class="provchip">Computed</span>
-    </div>
+          </div>
     {{ waterfall(top_sc, 660, 132, 10) }}
     <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:6px">The full working behind each bar, and this chart for every ranked territory, is in Section {{ num_map.get('financial', '05') }}, with a plain-English key.</p>
   </div>
@@ -418,18 +439,6 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   </div>
   {% endif %}
 
-  {% if es.keyInsights %}
-  <div class="sumblock">
-    <h4>Summary <span class="provchip muted">Narrative</span></h4>
-    <div class="serif writtenrule">
-      {% for paragraph in es.keyInsights.split('\n\n') %}
-      {% set para = paragraph.strip() %}
-      {% if para %}<p style="margin-bottom:12px">{{ para | mdbold }}</p>{% endif %}
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
   {% if is_preview %}
   <div class="upgrade-cta">
     <div class="t">See the full financial picture</div>
@@ -449,7 +458,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 
   <div class="si-grid">
     <div>
-      <h4>Parsed from your script <span class="provchip">Computed</span></h4>
+      <h4>Parsed from your script</h4>
       <table class="datatable">
         {% if si and si.sceneCount %}<tr><td>Scene count</td><td>{{ si.sceneCount }}</td></tr>{% endif %}
         {% if si and si.interiorPct is not none %}<tr><td>Interior / Exterior</td><td>{{ si.interiorPct }}% / {{ si.exteriorPct }}%</td></tr>{% endif %}
@@ -655,8 +664,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {% if main_sc.totalBudgetValue %}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <span class="h5label" style="margin:0">Rebate waterfall — {{ main_sc.territory }}{% if main_sc.programme %} · {{ main_sc.programme }}{% endif %}</span>
-    <span class="provchip">Computed</span>
-  </div>
+      </div>
   {{ waterfall(main_sc, 660, 220, 11) }}
 
   <div style="border-top:1px solid var(--hairline);margin-top:10px;padding-top:14px;margin-bottom:8px">
@@ -682,8 +690,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--grey)">{{ sc.territory }}{% if sc.programme %} · {{ sc.programme | truncate(32) }}{% endif %}</span>
-        <span class="provchip">Computed</span>
-      </div>
+              </div>
       {{ waterfall(sc, 300, 132, 9) }}
       {% if sc.notes %}<p style="font-size:9px;color:var(--grey);font-weight:500;margin-top:4px;line-height:1.5">{{ sc.notes | truncate(160) }}</p>{% endif %}
     </div>
@@ -931,45 +938,42 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {% endif %}{% endfor %}
   <div class="upgrade-cta">
     <div class="t">Unlock the full report</div>
-    <div class="s">Full territory rankings, tax incentive rebates, financial analysis, festival &amp; distributor strategy — at prodculator.com.</div>
+    <div class="s">Full territory rankings, tax incentive rebates, financial analysis, festival &amp; distributor strategy, at prodculator.com.</div>
   </div>
   {% else %}
-  {% if es.actionTimeline %}
-  <div class="h5label" style="margin-top:8px">Action timeline</div>
-  <table class="rowtable">
-    <tr><th style="width:55%">Action</th><th>Deadline</th><th>Note</th></tr>
-    {% for item in es.actionTimeline[:8] %}
-    <tr>
-      <td style="font-weight:600">{{ item.action }}</td>
-      <td>{{ item.deadline or '—' }}</td>
-      <td>{{ item.note or '' }}</td>
-    </tr>
+  <p class="secsub">Territory-specific, deadline-anchored actions, then the legal frame.</p>
+  {% set actions = es.actionTimeline or report.nextSteps or [] %}
+  {% if actions %}
+  <div style="margin-bottom:26px">
+    {% for item in actions[:8] %}
+    <div style="display:flex;gap:14px;padding:10px 0;border-bottom:1px solid var(--hairline);font-size:12.5px">
+      <span style="color:var(--gold);font-weight:800">{{ '%02d' | format(loop.index) }}</span>
+      <span style="font-weight:500">{{ item.action }}{% if item.deadline %} <span style="color:var(--grey)">({{ item.deadline }})</span>{% endif %}</span>
+    </div>
     {% endfor %}
-  </table>
-  {% endif %}
-
-  {% if report.alternativeStrategy %}
-  <div class="h5label">Alternative strategy</div>
-  <div class="serif writtenrule" style="margin-bottom:24px"><p>{{ report.alternativeStrategy }}</p></div>
+  </div>
   {% endif %}
   {% endif %}
 
-  <div style="margin-top:auto;padding-top:26px">
-    {% if report.attributions %}
-    <div class="h5label">Data sources</div>
-    <p class="disclaimer" style="margin-bottom:14px">
-      {% for attr in report.attributions[:8] %}{{ attr.territory }}: {{ attr.text }}{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
-    {% endif %}
-    <div class="h5label">Disclaimer</div>
-    <p class="disclaimer">
-      This report is produced by Prodculator's analysis engine from verified programme data and the
-      declared attributes of your production. All rebate figures are estimates; final eligibility and
-      values depend on official approval by the relevant authorities and the production's actual
-      qualifying expenditure. Incentive programmes change; verify current terms before financial
-      commitments. This report does not constitute financial, legal or tax advice.
-      Generated {{ created_at[:10] if created_at else '' }} · © Deo Media Limited.
-    </p>
+  {# Legal frame, mirrors the sample report #}
+  {% set legal = [
+    ('About This Report', "This report is produced by Prodculator's automated analysis system. All financial figures, scores, and rankings are computed directly from the datasets described in this report; narrative passages are generated from those computed results. Automated analysis can contain errors, and no output of this system should be relied upon without independent verification."),
+    ('Guidance, Not Advice', "This report is provided for general informational purposes only. It is not financial, investment, tax, legal, accounting, or production advice, and it is not a substitute for professional advice tailored to your circumstances. Nothing in this report constitutes an offer, recommendation, or inducement to make any investment, financing, or production decision. The report is intended as a guide to inform your own enquiries, not as a basis for decisions in itself."),
+    ('No Reliance and Independent Verification', "You must independently verify all information in this report, including incentive rates, eligibility criteria, programme availability, deadlines, and all financial estimates, with the relevant authorities and qualified professional advisers before making any financial, investment, or production decision. By using this report, you acknowledge that you have not relied, and will not rely, on this report as the basis for any such decision, and that any decision you make remains entirely your own responsibility."),
+    ('Estimates and Assumptions', "All rebate figures, scores, and financial projections are estimates. They reflect the budget, spend allocations, and other inputs you provided, the exchange rates and programme terms recorded in Prodculator's datasets as at the dates shown, and assumptions stated in the relevant sections. Actual outcomes will differ. Final eligibility for any incentive programme is determined solely by the relevant authority."),
+    ('Data Currency and Third-Party Sources', "Information is drawn from government and film-commission publications, official programme documentation, industry databases, and Prodculator's proprietary datasets, current as at the 'data as of' dates shown in this report. Programmes, rates, and deadlines change without notice. Third-party data remains the property of its respective owners; its inclusion does not imply endorsement by or of those sources."),
+    ('Script Content', "Script content uploaded for analysis is processed solely to generate this report. Prodculator does not retain, share, or use script content beyond the scope of this analysis."),
+    ('Limitation of Liability', "To the fullest extent permitted by law, Prodculator, Deo Media Limited, and their officers, directors, employees, and agents shall not be liable for any loss or damage (whether direct, indirect, incidental, consequential, or otherwise, including loss of profit, funding, or opportunity) arising from the use of, or reliance on, this report or any information in it. Nothing in this section excludes liability that cannot be excluded by law."),
+    ('Governing Law', "This report and any dispute arising from its use are governed by the laws of England and Wales, and the courts of England and Wales have exclusive jurisdiction."),
+    ('Company Identification', "Prodculator is owned and operated by Deo Media Limited, a company registered in England and Wales, Company No. 15426752. Registered office: Springhead Road, Northfleet, Kent, United Kingdom, DA11 8HN. www.prodculator.com, app.prodculator.com, support@prodculator.com.")
+  ] %}
+  <div style="margin-top:26px">
+    {% for heading, body in legal %}
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:3px">{{ heading }}</div>
+      <p style="font-size:10.5px;color:#3A382F;line-height:1.6">{{ body }}</p>
+    </div>
+    {% endfor %}
   </div>
 </div>
 

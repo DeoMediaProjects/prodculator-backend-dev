@@ -340,3 +340,22 @@ def parse_money_string(text: Any) -> float | None:
     value *= multipliers.get(multiplier_char, 1)
 
     return value if value > 0 else None
+
+
+# Third-party data providers we cannot surface in user-facing output for legal
+# reasons. Matched case-insensitively against each "/"-separated attribution part.
+_SUPPRESSED_SOURCE_TOKENS = ("tmdb", "the movie database")
+
+
+def clean_source(source: Any) -> str:
+    """Strip legally-suppressed provider attributions (e.g. TMDB) from a source
+    string, keeping any remaining provenance. Returns "Industry sources" when
+    nothing usable remains. Mirrors the frontend ``cleanSource`` helper."""
+    if not source:
+        return "Industry sources"
+    parts = [p.strip() for p in str(source).split("/")]
+    kept = [
+        p for p in parts
+        if p and not any(tok in p.lower() for tok in _SUPPRESSED_SOURCE_TOKENS)
+    ]
+    return " / ".join(kept) if kept else "Industry sources"

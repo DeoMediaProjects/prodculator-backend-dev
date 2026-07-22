@@ -1,7 +1,9 @@
-from collections import Counter
+from collections import Counter, OrderedDict
+import hashlib
 import json
 import logging
 import re
+from threading import Lock
 from time import perf_counter, sleep
 from typing import Any
 
@@ -21,6 +23,37 @@ from app.modules.scripts.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ── Script-analysis result cache ──────────────────────────────────────────────
+# Script analysis depends only on the script content + model, not on the report
+# config (budget, territories, dates). Regenerating a report for the same script
+# (which happened repeatedly during design iteration) previously re-ran the full,
+# multi-call analysis every time. We cache the successful result by content hash
+# so those regenerations skip the analysis calls entirely. Process-local LRU with
+# a hard cap; safe if it misses across workers/restarts (just recomputes).
+_ANALYSIS_CACHE_MAX = 64
+_analysis_cache: "OrderedDict[str, tuple[ScriptAnalysisResult, dict[str, Any]]]" = OrderedDict()
+_analysis_cache_lock = Lock()
+
+
+def _analysis_cache_key(model: str, script_content: str) -> str:
+    return hashlib.sha256(f"{model}\n{script_content}".encode("utf-8", "ignore")).hexdigest()
+
+
+def _analysis_cache_get(key: str):
+    with _analysis_cache_lock:
+        hit = _analysis_cache.get(key)
+        if hit is not None:
+            _analysis_cache.move_to_end(key)
+        return hit
+
+
+def _analysis_cache_put(key: str, value: "tuple[ScriptAnalysisResult, dict[str, Any]]") -> None:
+    with _analysis_cache_lock:
+        _analysis_cache[key] = value
+        _analysis_cache.move_to_end(key)
+        while len(_analysis_cache) > _ANALYSIS_CACHE_MAX:
+            _analysis_cache.popitem(last=False)
 
 
 class ClaudeUnavailableError(Exception):
@@ -353,6 +386,15 @@ class ScriptAnalysisService:
         if not self.settings.ANTHROPIC_API_KEY:
             raise ValueError("Anthropic API key is not configured")
 
+        # Reuse a previously computed analysis for the same script + model,
+        # skipping the (multi-call, billed) analysis pipeline on regeneration.
+        cache_key = _analysis_cache_key(self.settings.ANTHROPIC_MODEL, script_content)
+        cached = _analysis_cache_get(cache_key)
+        if cached is not None:
+            result, meta = cached
+            logger.info("Script analysis cache hit: title=%s key=%s", script_title, cache_key[:12])
+            return result, {**meta, "mode": "cache", "cacheHit": True}
+
         chunked_enabled = bool(getattr(self.settings, "SCRIPT_ANALYSIS_CHUNKED_ENABLED", False))
         analysis_meta: dict[str, Any] = {
             "mode": "chunked",
@@ -370,6 +412,8 @@ class ScriptAnalysisService:
             analysis_meta.setdefault("mode", "chunked")
             analysis_meta.setdefault("fallbackUsed", False)
             self._emit_script_analysis_metrics(script_title, script_content, analysis_meta)
+            # Cache only genuine successes so a degraded fallback is never reused.
+            _analysis_cache_put(cache_key, (result, analysis_meta))
             return result, analysis_meta
         except ClaudeUnavailableError:
             # A total Anthropic outage must NOT be masked as a heuristic fallback
@@ -1231,7 +1275,11 @@ class ScriptAnalysisService:
                 )
                 request_payload: dict[str, Any] = {
                     "model": self.settings.ANTHROPIC_MODEL,
-                    "system": system_prompt,
+                    # Mark the (large, per-stage-static) system prompt as cacheable.
+                    # Anthropic prompt caching then serves it at ~10% input cost on
+                    # repeat calls within the cache window — a big saving when several
+                    # reports are generated in a row or a script is re-run.
+                    "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
                     "messages": [{"role": "user", "content": user_content}],
                     "temperature": temperature,
                     "max_tokens": stage_max_tokens,
@@ -1254,9 +1302,15 @@ class ScriptAnalysisService:
                     with client.messages.stream(**request_payload) as stream:
                         result = stream.get_final_message()
                 _elapsed = _time.monotonic() - _t0
+                _usage = getattr(result, "usage", None)
                 logger.info(
-                    "Anthropic API call completed: stage=%s attempt=%s elapsed=%.1fs stop_reason=%s",
+                    "Anthropic API call completed: stage=%s attempt=%s elapsed=%.1fs stop_reason=%s "
+                    "input_tokens=%s output_tokens=%s cache_read=%s cache_write=%s",
                     stage, attempt, _elapsed, getattr(result, "stop_reason", None),
+                    getattr(_usage, "input_tokens", None),
+                    getattr(_usage, "output_tokens", None),
+                    getattr(_usage, "cache_read_input_tokens", None),
+                    getattr(_usage, "cache_creation_input_tokens", None),
                 )
                 return result
             except Exception as exc:
@@ -1675,7 +1729,7 @@ RULES:
 - costEfficiency, crewDepth, infrastructure: Pre-computed from verified DB data. DO NOT include numeric values for these in locationNarratives. In reasoning bullets, explain what these scores mean for THIS production.
 
 executiveSummary_keyInsights RULES — Write exactly six paragraphs with bold headings. Blank line between each. Total 350-420 words.
-PARAGRAPH 1 — **Production Overview** (80-100 words): Name protagonist + world + specific desire referencing a named location. Core conflict and tone with specific scene type or cultural detail from script. Bridge to primary production challenge. Do NOT list budget, format, or genre.
+PARAGRAPH 1 — **Script Overview** (80-100 words): Name protagonist + world + specific desire referencing a named location. Core conflict and tone with specific scene type or cultural detail from script. Bridge to primary production challenge. Do NOT list budget, format, or genre.
 PARAGRAPH 2 — **Primary Recommendation** (70-90 words): Territory name + FRS from financialReturnScore (e.g. "FRS: 84 — Bankable"). Estimated net rebate — net rate only, NOT gross. Payment timeline in plain English. One sentence why this territory wins for THIS production referencing a specific script element.
 PARAGRAPH 3 — **Second Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: what producer gains vs primary recommendation and what they give up.
 PARAGRAPH 4 — **Third Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: when does this become the right choice? OMIT if fewer than 3 territories.

@@ -9,6 +9,8 @@ import io
 import logging
 from typing import Any
 
+from app.modules.reports.helpers import clean_source
+
 logger = logging.getLogger(__name__)
 
 # Gold accent used across sheets to match brand
@@ -273,7 +275,7 @@ def build_excel_workbook(report: dict) -> bytes:
                 comp.get("visualScale", ""),
                 comp.get("location", ""),
                 comp.get("year", ""),
-                comp.get("source", ""),
+                clean_source(comp.get("source")) if comp.get("source") else "",
                 comp.get("relevanceDescription", ""),
             ],
             row=row_idx,

@@ -26,6 +26,32 @@ def _md_inline(value: Any) -> Markup:
     return Markup(text)
 
 
+def strip_em_dashes(html: str) -> str:
+    """Remove em dashes from rendered output (both the literal — and the
+    &mdash; entity), replacing them with a comma. Em dashes in this report
+    always act as a clause/separator break, so a comma reads naturally. En
+    dashes (used in numeric ranges like 12–16) are deliberately left alone."""
+    html = html.replace("&mdash;", "—")
+    html = html.replace(" — ", ", ").replace("—", ", ")
+    return html
+
+
+def _pretty_date(value: Any) -> str:
+    """Format an ISO timestamp/date as '06 July 2026' for the cover. Falls back
+    to the first 10 chars if the value can't be parsed."""
+    if not value:
+        return ""
+    from datetime import datetime
+
+    raw = str(value)
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        # %d is zero-padded and platform-portable, unlike %-d on Windows.
+        return dt.strftime("%d %B %Y")
+    except ValueError:
+        return raw[:10]
+
+
 def _money_compact(value: float | int | None) -> str:
     """1_234_567 → '1.23M'; 850_000 → '850K'; small values keep separators."""
     if value is None:
@@ -56,6 +82,7 @@ class PDFService:
         )
         self.env.filters["money_compact"] = _money_compact
         self.env.filters["mdbold"] = _md_inline
+        self.env.filters["pretty_date"] = _pretty_date
         # Original Prodculator logo (JPEG data despite historic .png naming —
         # see DATA_REPAIR_NOTE: declare image/jpeg where MIME is explicit)
         logo_path = templates_dir / "assets" / "prodculator_logo.jpg"
@@ -90,6 +117,7 @@ class PDFService:
             is_preview=is_preview,
             logo_data_uri=self._logo_data_uri,
         )
+        html = strip_em_dashes(html)
         logger.debug(
             "Rendered report HTML: keys=%s html_chars=%s elapsed_ms=%s",
             sorted(report_data.keys()),

@@ -35,6 +35,7 @@ from app.modules.reports.helpers import (
     format_money,
     currency_symbol,
     parse_money_string,
+    clean_source,
 )
 from app.modules.reports.matching import (
     estimate_completion_date,
@@ -1348,10 +1349,13 @@ class ReportBuilder:
             if comp_year:
                 comp_year = str(comp_year).strip()
 
-            # Source — omit if empty/N/A
+            # Source — omit if empty/N/A, otherwise scrub legally-suppressed
+            # provider attributions (e.g. TMDB) before it reaches the report.
             comp_source = (row.get("source") or "").strip()
             if comp_source.lower() in ("", "n/a", "none"):
                 comp_source = ""
+            else:
+                comp_source = clean_source(comp_source)
 
             # Genre — ensure string for template rendering
             if isinstance(comp_genre_raw, list):

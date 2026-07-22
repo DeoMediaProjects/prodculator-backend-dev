@@ -1,6 +1,9 @@
+import hashlib
 import json
 import logging
-from time import perf_counter
+from collections import OrderedDict
+from threading import Lock
+from time import perf_counter, monotonic
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 
@@ -12,7 +15,7 @@ from app.core.queue import get_report_queue
 from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
 from app.modules.email.service import EmailService
-from app.modules.reports.pdf_service import PDFService
+from app.modules.reports.pdf_service import PDFService, strip_em_dashes
 from app.modules.reports.schemas import (
     CreateReportRequest,
     PreviewReportResponse,
@@ -27,6 +30,39 @@ from app.modules.subscriptions.service import SubscriptionService
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 logger = logging.getLogger(__name__)
+
+# ── Duplicate-submission guard ────────────────────────────────────────────────
+# A single report costs several billed AI calls. An accidental double-click (or a
+# retry while the first run is still generating) would otherwise start a second
+# full, charged generation for the identical script + config. We remember recent
+# submissions per user for a short window and return the in-flight report instead
+# of starting (and charging for) a duplicate.
+_DEDUPE_TTL_SECONDS = 180
+_recent_submissions: "OrderedDict[str, tuple[str, float]]" = OrderedDict()
+_recent_submissions_lock = Lock()
+
+
+def _submission_key(user_id: str, body: str, script_text: str) -> str:
+    digest = hashlib.sha256(f"{user_id}\n{body}\n{script_text}".encode("utf-8", "ignore")).hexdigest()
+    return digest
+
+
+def _recent_report_for(key: str) -> str | None:
+    now = monotonic()
+    with _recent_submissions_lock:
+        # Drop expired entries.
+        for k in [k for k, (_, ts) in _recent_submissions.items() if now - ts > _DEDUPE_TTL_SECONDS]:
+            _recent_submissions.pop(k, None)
+        hit = _recent_submissions.get(key)
+        return hit[0] if hit else None
+
+
+def _remember_submission(key: str, report_id: str) -> None:
+    with _recent_submissions_lock:
+        _recent_submissions[key] = (report_id, monotonic())
+        _recent_submissions.move_to_end(key)
+        while len(_recent_submissions) > 256:
+            _recent_submissions.popitem(last=False)
 
 
 def get_report_service(supabase: DatabaseClient = Depends(get_supabase)) -> ReportService:
@@ -230,6 +266,22 @@ async def create_report(
     # Explicitly delete the bytes so they are not referenced beyond this scope
     del file_bytes
 
+    # Duplicate-submission guard: if this exact script + config was just submitted
+    # by this user, return the in-flight report instead of starting (and charging
+    # for) an identical second generation.
+    dedupe_key = _submission_key(user.id, body, script_text)
+    existing_report_id = _recent_report_for(dedupe_key)
+    if existing_report_id:
+        logger.info(
+            "Duplicate report submission ignored: user_id=%s reusing report_id=%s",
+            user.id, existing_report_id,
+        )
+        return ReportStatusResponse(
+            status="processing",
+            report_id=existing_report_id,
+            message="Report generation already in progress",
+        )
+
     # Pre-flight: confirm Scriptelligence (Claude) is reachable BEFORE we charge
     # for the report (create the row / consume a credit). If it's down, the user
     # is never charged — they get a clear, retryable error to display instead.
@@ -259,6 +311,8 @@ async def create_report(
             script_file_path=None,  # never stored
             request_metadata=metadata,
         )
+        # Record the submission so an immediate resubmit reuses this report.
+        _remember_submission(dedupe_key, report_id)
         _dispatch_report_job(
             background_tasks=background_tasks,
             report_id=report_id,
@@ -307,6 +361,27 @@ async def list_reports(
     """List all reports for the current user (excludes previews)."""
     reports = service.get_user_reports(user.id)
     return [_format_report_response(r, settings) for r in reports]
+
+
+@router.get("/sample/html")
+async def get_sample_report_html() -> Response:
+    """Public marketing sample: renders the real report template with a canned
+    dataset, so the website's /sample always matches live report output.
+    Declared before /{report_id} so the two-segment path can't be captured by it."""
+    from app.modules.reports.sample_report import (
+        SAMPLE_REPORT_DATA,
+        SAMPLE_TITLE,
+        SAMPLE_CREATED_AT,
+    )
+
+    pdf_service = PDFService()
+    html = pdf_service.render_report_html(
+        SAMPLE_REPORT_DATA,
+        script_title=SAMPLE_TITLE,
+        created_at=SAMPLE_CREATED_AT,
+        is_preview=False,
+    )
+    return Response(content=html, media_type="text/html")
 
 
 @router.get("/{report_id}", response_model=ReportResponse)
@@ -718,7 +793,7 @@ def _build_preview_key_insights(
     if not overview:
         title = data.get("scriptTitle") or data.get("title") or "this production"
         overview = (
-            "**Production Overview**\n"
+            "**Script Overview**\n"
             f"Prodculator has built a production intelligence preview for {title}, "
             "using the submitted format, budget, territory, and schedule inputs to "
             "identify the leading production-location strategy."
@@ -1071,6 +1146,7 @@ def _generate_investor_summary_pdf(report: dict) -> bytes | None:
         all_territory_risks=all_territory_risks,
         project_details=project_details,
     )
+    html = strip_em_dashes(html)
 
     try:
         from weasyprint import HTML as WeasyHTML  # type: ignore
