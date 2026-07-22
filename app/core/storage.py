@@ -55,6 +55,16 @@ class S3StorageBucket:
         response = self._s3.get_object(Bucket=self._bucket_name, Key=key)
         return response["Body"].read()
 
+    def download_key(self, key: str) -> bytes:
+        """Download using an already-fully-qualified key (as returned by ``get_s3_key``).
+
+        Unlike ``download``, this does not re-apply the prefix/bucket-label —
+        use this when reading back a key that was persisted in the DB.
+        """
+        logger.debug("S3 download by key: bucket=%s key=%s", self._bucket_name, key)
+        response = self._s3.get_object(Bucket=self._bucket_name, Key=key)
+        return response["Body"].read()
+
     def get_s3_key(self, path: str) -> str:
         """Return the raw S3 object key for ``path``. Store this in the DB instead of a URL."""
         return self._key(path)
@@ -107,6 +117,10 @@ class _LocalStorageBucket:
     def download(self, path: str) -> bytes:
         target = self._safe_path(path)
         return target.read_bytes()
+
+    def download_key(self, key: str) -> bytes:
+        """In local mode the stored key is already the relative path, so this is the same lookup."""
+        return self.download(key)
 
     def get_s3_key(self, path: str) -> str:
         """In local mode, the 'key' is just the relative path — stored in the DB the same way."""

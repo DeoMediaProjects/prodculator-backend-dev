@@ -579,14 +579,17 @@ async def download_pdf(
             raise HTTPException(status_code=503, detail="PDF generation temporarily unavailable")
     else:
         # Paid / upgraded users: serve the full report PDF stored in S3.
+        # Use the exact key persisted at upload time (pdf_url) rather than
+        # recomputing a path from user_id/report_id — recomputing assumes
+        # today's storage config matches what was active at generation time,
+        # which is exactly the kind of drift that produced silent 404s.
         s3_key = report.get("pdf_url")
         if not s3_key:
             raise HTTPException(status_code=404, detail="PDF not found")
-        storage_path = f"{report['user_id']}/{report_id}.pdf"
         try:
-            pdf_bytes = supabase.storage.from_("reports").download(storage_path)
+            pdf_bytes = supabase.storage.from_("reports").download_key(s3_key)
         except Exception:
-            logger.warning("PDF download from storage failed: report_id=%s path=%s", report_id, storage_path)
+            logger.exception("PDF download from storage failed: report_id=%s key=%s", report_id, s3_key)
             raise HTTPException(status_code=404, detail="PDF not found")
 
     return Response(
