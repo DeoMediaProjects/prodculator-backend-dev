@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Callable
+from typing import Any
 
 PRIVACY_MIN_OVERALL = 10
 PRIVACY_MIN_SEGMENT = 5

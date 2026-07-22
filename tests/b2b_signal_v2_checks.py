@@ -6,7 +6,7 @@ No network, no Postgres — proves the logic, not the transport.
 """
 import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import date
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-that-is-at-least-32-characters-long")
 sys.path.insert(0, ".")
