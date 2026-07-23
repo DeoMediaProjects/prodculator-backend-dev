@@ -317,6 +317,34 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% set num_map = {} %}
 {% for s in secs %}{% set _ = num_map.update({s.id: '%02d' % loop.index}) %}{% endfor %}
 {% set rh = script_title ~ ' · ' ~ ('Free Preview' if is_preview else 'Pro Report') %}
+{% set descriptions_only = descriptions_only | default(false) %}
+
+{# ══════════ description-only mode (sample report): each section shows
+   what it covers and why it matters instead of the real, data-driven
+   content — used for the public marketing sample, never for real reports #}
+{% set section_info = {
+  'exec': {'what': "A one-page synthesis of the whole report: script format, tone and scale, the top-ranked territory and programme, and the headline net budget after incentives.", 'why': "It's the page a decision-maker reads first, often the only page they read before deciding whether to go deeper."},
+  'script': {'what': "Metrics parsed directly from the script (scene count, interior/exterior split, day/night balance, named locations, cast size) alongside a narrative reading of genre, tone, scale and complexity.", 'why': "Location and financial recommendations are only as good as the production reality behind them; this section grounds the analysis in the actual script, not a generic template."},
+  'strategy': {'what': "Every candidate territory scored across six weighted dimensions (incentive strength, incentive reliability, cost efficiency, currency advantage, crew depth, infrastructure), with the top-ranked territory profiled in full and runners-up summarised.", 'why': "This is the core recommendation engine of the report: it turns dozens of variables into a ranked, defensible shortlist instead of a gut call."},
+  'deepdives': {'what': "A closer look at each ranked territory's rebate mechanics, infrastructure, payment speed, cultural test likelihood, administrative complexity, and the specific advantages and risks of shooting there.", 'why': "The headline score shows what to shoot for; this section shows what a production is actually signing up for on the ground."},
+  'financial': {'what': "A rebate waterfall chart for each ranked territory, showing exactly how total budget becomes net budget through qualifying spend, gross rebate and, where applicable, tax treatment, plus payment-timing data for when the cash actually lands.", 'why': "Incentive headlines are frequently quoted on gross rates that overstate the real cash benefit; this section shows the true, traceable net position instead of a marketing number."},
+  'incentives': {'what': "Programme-by-programme detail on rates, caps, qualifying requirements, warnings and stacking rules for every relevant tax incentive.", 'why': "Incentive eligibility is won or lost on the fine print, caps and exclusions, not the headline percentage."},
+  'grants': {'what': "Grants and funds whose territory and format criteria this production actually meets, with amounts, deadlines and match reasoning.", 'why': "Grant funding stacks on top of tax incentives and is easy to miss when only looking at rebate programmes."},
+  'comparables': {'what': "Real productions matched on genre, budget tier and territory, used as reference points for scale and precedent.", 'why': "Comparables give financiers and department heads a concrete frame of reference instead of an abstract projection."},
+  'festivals': {'what': "Festivals matched on format, timing, genre and territory, each with the specific reason it fits this production.", 'why': "A festival strategy decided this early can shape delivery deadlines, formats and even casting choices."},
+  'distributors': {'what': "Distributors ranked partly on whether they actively scout the festivals recommended above, with primary market, rights type and verification status.", 'why': "Distribution is the payoff for every decision made earlier in the report; this section connects festival strategy directly to who is actually buying."},
+  'weather': {'what': "Best shooting months, seasonal weather risk, contingency budget guidance and travel/visa notes for each ranked territory.", 'why': "Weather risk and travel logistics can quietly erode a budget that looked solid on paper."},
+  'next': {'what': "A prioritised, deadline-anchored action list drawn from the specific territories and programmes recommended earlier in the report.", 'why': "Turns the analysis into a concrete to-do list instead of leaving the reader to work out next steps alone."},
+} %}
+
+{% macro section_desc(sec_id) -%}
+<div class="notebox">
+  <span class="nk">What this section covers&nbsp;&nbsp;</span>{{ section_info[sec_id].what }}
+</div>
+<div class="notebox" style="margin-top:14px">
+  <span class="nk">Why it matters&nbsp;&nbsp;</span>{{ section_info[sec_id].why }}
+</div>
+{%- endmacro %}
 
 <!-- ═══════════════ COVER ═══════════════ -->
 <div class="page first cover" style="padding:0;min-height:1050px;align-items:stretch">
@@ -379,6 +407,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Where this production makes the most financial sense to shoot</div>
   <p class="secsub">Every figure on this page is computed from verified programme data; the narrative explains it.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('exec') }}
+  {% else %}
   <div class="idstrip" style="margin-bottom:28px">
     {% if es.format or report.genre %}<div class="idc"><div class="k">Format</div><div class="v">{{ es.format or '' }}{% if es.format and report.genre %} · {% endif %}{{ report.genre or '' }}</div></div>{% endif %}
     {% if report.tone %}<div class="idc"><div class="k">Tone</div><div class="v">{{ report.tone }}</div></div>{% endif %}
@@ -445,6 +476,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="s">Professional unlocks full territory rankings, tax incentive rebates, financial analysis and your recommended production strategy.</div>
   </div>
   {% endif %}
+  {% endif %}
 </div>
 
 <!-- ═══════════════ SCRIPT INTELLIGENCE ═══════════════ -->
@@ -456,6 +488,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">What your script tells us</div>
   <p class="secsub">Two readings of the same document: one counted, one understood.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('script') }}
+  {% else %}
   <div class="si-grid">
     <div>
       <h4>Parsed from your script</h4>
@@ -505,6 +540,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       {% endif %}
     </div>
   </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -516,6 +552,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Where the numbers point</div>
   <p class="secsub">{{ rankings | length }} territor{{ 'y' if rankings | length == 1 else 'ies' }}, scored across six dimensions.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('strategy') }}
+  {% else %}
   {% if report.scoringMethodology and report.scoringMethodology.dimensions %}
   <div style="border:1px solid var(--hairline);margin-bottom:14px">
     <div style="padding:11px 16px;border-bottom:1px solid var(--hairline);font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)">What the six dimensions measure</div>
@@ -606,6 +645,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="serif" style="font-size:12.5px">The case for shooting there is authenticity and purchasing power, not rebate value; weigh it as a creative and currency decision alongside the ranked financial options above.</div>
   </div>
   {% endif %}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -617,6 +657,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">The ranked territories in depth</div>
   <p class="secsub">Full incentive, crew and infrastructure picture per territory.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('deepdives') }}
+  {% else %}
   {% for dd in report.territoryDeepDives[:3] %}
   <div class="tcard">
     <div class="tcard-head">
@@ -649,6 +692,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     </div>
   </div>
   {% endfor %}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -660,6 +704,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">From budget to net position</div>
   <p class="secsub">One chart per ranked territory, every figure traceable to its working. The chart shape follows the programme's mechanism.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('financial') }}
+  {% else %}
   {% set main_sc = scenarios[0] %}
   {% if main_sc.totalBudgetValue %}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -748,6 +795,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endif %}
   </div>
 
+  {% endif %}
 </div>
 {% endif %}
 
@@ -759,6 +807,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Programme rates, caps and requirements</div>
   <p class="secsub">Verified programme data; low-confidence records are flagged, never presented as certainties.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('incentives') }}
+  {% else %}
   {% for inc in report.incentiveEstimates[:6] %}
   <div class="fcard">
     <div class="fcard-top">
@@ -787,6 +838,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   </div>
   {% endfor %}
   <p class="disclaimer" style="margin-top:10px">Estimates only. Final eligibility depends on official approval by the relevant authorities.</p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -798,6 +850,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Matched funds and deadlines</div>
   <p class="secsub">Funds whose territory and format criteria this production meets.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('grants') }}
+  {% else %}
   <table class="rowtable">
     <tr><th style="width:36%">Fund</th><th>Territory</th><th>Amount</th><th>Deadline</th></tr>
     {% for opp in grants_only[:10] %}
@@ -815,6 +870,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endfor %}
   </table>
   <p class="disclaimer">Eligibility criteria are summarised; confirm current guidelines with each fund before applying.</p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -826,6 +882,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Films that made similar choices</div>
   <p class="secsub">Matched on genre, budget tier and territory relevance.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('comparables') }}
+  {% else %}
   <table class="rowtable">
     <tr><th style="width:30%">Title</th><th>Genre</th><th>Budget</th><th>Location</th><th>Year</th></tr>
     {% for comp in report.comparables[:8] %}
@@ -841,6 +900,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endif %}
     {% endfor %}
   </table>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -852,6 +912,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Where your film could be seen</div>
   <p class="secsub">Matched on format, timing, genre and territory, never inferred.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('festivals') }}
+  {% else %}
   {% for fest in report.festivalRecommendations %}
   <div class="fcard">
     <div class="fcard-top">
@@ -866,6 +929,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% if fest.whyMatched %}<div class="whym">{{ fest.whyMatched }}</div>{% endif %}
   </div>
   {% endfor %}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -877,6 +941,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Who could buy your film</div>
   <p class="bridge" style="margin-top:14px">Distributors are ranked partly on whether they actively scout the festivals recommended above: a distributor who attends your premiere is worth more than one who matches on paper.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('distributors') }}
+  {% else %}
   {% for dist in report.distributorRecommendations %}
   <div class="fcard">
     {% if dist.scoutsRecommendedFestivals %}
@@ -891,6 +958,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% if dist.whyMatched %}<div class="whym">{{ dist.whyMatched }}{% if dist.submissionProcess %} <span class="sig">{{ dist.submissionProcess }}</span>{% endif %}</div>{% endif %}
   </div>
   {% endfor %}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -902,6 +970,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="sectitle">Shoot-window risk by territory</div>
   <p class="secsub">Climate data and travel practicalities for the ranked territories.</p>
 
+  {% if descriptions_only %}
+  {{ section_desc('weather') }}
+  {% else %}
   {% for w in report.weatherLogistics[:4] %}
   <div class="fcard">
     <div class="fcard-top">
@@ -919,6 +990,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     </div>
   </div>
   {% endfor %}
+  {% endif %}
 </div>
 {% endif %}
 
@@ -942,6 +1014,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   </div>
   {% else %}
   <p class="secsub">Territory-specific, deadline-anchored actions, then the legal frame.</p>
+  {% if descriptions_only %}
+  {{ section_desc('next') }}
+  {% else %}
   {% set actions = es.actionTimeline or report.nextSteps or [] %}
   {% if actions %}
   <div style="margin-bottom:26px">
@@ -952,6 +1027,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     </div>
     {% endfor %}
   </div>
+  {% endif %}
   {% endif %}
   {% endif %}
 

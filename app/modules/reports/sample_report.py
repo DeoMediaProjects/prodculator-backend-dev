@@ -6,7 +6,7 @@ output — no separate hand-maintained mock to drift out of sync.
 """
 from __future__ import annotations
 
-SAMPLE_TITLE = "EKO VIBES EP ONE PILOT"
+SAMPLE_TITLE = "Your Script Title"
 SAMPLE_CREATED_AT = "2026-07-06T09:00:00Z"
 
 SAMPLE_REPORT_DATA: dict = {

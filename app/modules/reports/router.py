@@ -380,6 +380,10 @@ async def get_sample_report_html() -> Response:
         script_title=SAMPLE_TITLE,
         created_at=SAMPLE_CREATED_AT,
         is_preview=False,
+        # The sample is a marketing preview, not a real analysis — show what
+        # each section covers and why it matters instead of canned numbers
+        # that could be mistaken for a real production's data.
+        descriptions_only=True,
     )
     return Response(content=html, media_type="text/html")
 
