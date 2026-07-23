@@ -105,6 +105,7 @@ class PDFService:
         created_at: str = "",
         request_config: dict | None = None,
         is_preview: bool = False,
+        descriptions_only: bool = False,
     ) -> str:
         started = perf_counter()
         template = self.env.get_template("report_base.html")
@@ -115,6 +116,7 @@ class PDFService:
             created_at=created_at,
             request_config=request_config,
             is_preview=is_preview,
+            descriptions_only=descriptions_only,
             logo_data_uri=self._logo_data_uri,
         )
         html = strip_em_dashes(html)
