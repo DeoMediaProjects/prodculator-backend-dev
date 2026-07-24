@@ -2,10 +2,12 @@ import hashlib
 import json
 import logging
 from collections import OrderedDict
+from pathlib import Path
 from threading import Lock
 from time import perf_counter, monotonic
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
@@ -386,6 +388,24 @@ async def get_sample_report_html() -> Response:
         descriptions_only=True,
     )
     return Response(content=html, media_type="text/html")
+
+
+# Reuse the same brand mark the PDF cover uses (black-on-white, reads on the
+# email's light card). Resolved once at import.
+_EMAIL_LOGO_PATH = Path(__file__).resolve().parents[2] / "templates" / "pdf" / "assets" / "prodculator_logo.jpg"
+
+
+@router.get("/email-logo")
+async def get_email_logo() -> FileResponse:
+    """Public brand logo for transactional emails. Served from the API (which is
+    always deployed and internet-reachable) so email clients' image proxies can
+    fetch it regardless of where/whether the frontend hosts a copy. Declared
+    before /{report_id} so the single-segment path can't be captured by it."""
+    return FileResponse(
+        _EMAIL_LOGO_PATH,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
 
 
 @router.get("/{report_id}", response_model=ReportResponse)
