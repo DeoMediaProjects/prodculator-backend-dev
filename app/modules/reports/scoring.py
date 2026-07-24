@@ -13,10 +13,52 @@ import json
 from app.modules.reports.helpers import to_float
 
 
+# Source-quality tiers curated in territory_profiles that are trusted enough
+# to drive the client-facing verdict directly. "unverified" is deliberately
+# excluded — an unverified curated row is no more trustworthy than having no
+# curated row at all, so it falls through to the legacy proxy below.
+_TRUSTED_BANKABILITY_SOURCE_QUALITY = frozenset({
+    "government_direct", "government_plus_industry", "industry_secondary",
+})
+
+
 def _compute_bankability_label(
-    reliability: float | None, timeline_max: float | None
+    reliability: float | None,
+    timeline_max: float | None,
+    *,
+    profile: dict | None = None,
 ) -> str:
-    """Return BANKABLE / VERIFY FIRST / NOT BANKABLE per v3 spec."""
+    """Return BANKABLE / VERIFY FIRST / NOT BANKABLE per v3 spec.
+
+    Prefers curated, human-verified territory_profiles bankability research
+    (real government-sourced cert+payment timing) over the older
+    incentive-row proxy signal (payment_reliability / payment_timeline_days)
+    whenever a trusted profile exists for this territory. Falls back to the
+    proxy for the many territories that have no curated research yet, or
+    whose research is marked 'unverified' — so existing behaviour is
+    unchanged wherever the curated data doesn't exist.
+    """
+    if profile:
+        if profile.get("bankability_suspended"):
+            return "NOT BANKABLE"
+        if profile.get("bankability_real_world_confirms") is False:
+            # Real-world evidence contradicts the stated policy (e.g. a
+            # programme that is nominally active but factually not paying).
+            return "NOT BANKABLE"
+
+        source_quality = (profile.get("bankability_source_quality") or "").strip()
+        if source_quality in _TRUSTED_BANKABILITY_SOURCE_QUALITY:
+            cert_max = to_float(profile.get("cert_weeks_max"))
+            pay_max = to_float(profile.get("payment_weeks_max"))
+            if cert_max is not None or pay_max is not None:
+                total_weeks = (cert_max or 0) + (pay_max or 0)
+                if total_weeks > 52:
+                    return "NOT BANKABLE"
+                if total_weeks <= 26:
+                    return "BANKABLE"
+                return "VERIFY FIRST"
+
+    # Legacy proxy signal — used when no trusted curated profile exists.
     if reliability is not None and reliability < 0.50:
         return "NOT BANKABLE"
     if timeline_max is not None and timeline_max > 365 and reliability is None:

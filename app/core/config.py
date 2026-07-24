@@ -120,6 +120,22 @@ class Settings(BaseSettings):
     STRIPE_PRICE_B2B_PRODUCTION_TREND_GBP: str = ""
     STRIPE_PRICE_B2B_PRODUCTION_TREND_USD: str = ""
 
+    # ── Compressed-cycle billing test (LIVE money) ────────────────────────────
+    # A controlled way to validate the recurring-charge machinery without
+    # waiting a full month. When enabled, admins can mint a Checkout that bills
+    # on a short (default 2-day) cycle and auto-refunds every charge so the test
+    # subscriber is kept whole. OFF by default — while false, the test endpoints
+    # 404 AND the auto-refund webhook path is completely dormant (cannot refund
+    # anything). A refund fires only for subscriptions explicitly tagged
+    # metadata.autoRefund="true", so a real customer's invoice is never touched.
+    STRIPE_TEST_BILLING_ENABLED: bool = False
+    # Renewal cadence for the test price, in days (Stripe interval=day).
+    STRIPE_TEST_BILLING_INTERVAL_DAYS: int = 2
+    # Amount the test price charges, in the currency's minor unit (100 = $1/£1).
+    # Deliberately a token amount so real prices stay untouched and the residual
+    # Stripe processing fee is negligible. Bump to test the real amount instead.
+    STRIPE_TEST_BILLING_UNIT_AMOUNT: int = 100
+
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
     # Default to Sonnet, not Opus. Report generation makes many calls per report
@@ -146,6 +162,15 @@ class Settings(BaseSettings):
     # Short timeout for the pre-flight reachability probe run before a report is
     # charged. Kept low so a Claude outage fails fast instead of hanging the request.
     ANTHROPIC_HEALTHCHECK_TIMEOUT: int = 10
+
+    # OpenAI — same-quality fallback for script/report generation when Anthropic
+    # is unreachable or out of credits. Used with the IDENTICAL prompts and
+    # per-stage token budgets as the Anthropic path (see ScriptAnalysisService);
+    # this is not a degraded/heuristic fallback, it's the same instructions on a
+    # different model. Blank key means the fallback is simply skipped and the
+    # existing fail-closed (refund) behavior applies, exactly as before.
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o"
 
     # Script analysis chunking controls.
     SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False

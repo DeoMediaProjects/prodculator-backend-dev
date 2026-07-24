@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 
+import stripe as stripe_lib
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
@@ -18,7 +20,8 @@ from app.modules.b2b.schemas import (
     B2BSubscriptionListResponse,
     B2BSubscriptionResponse,
 )
-from app.modules.b2b.service import B2BService
+from app.modules.b2b.service import B2B_PRODUCTS, B2BService
+from app.modules.payments.service import StripeService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,68 @@ def get_b2b_service(
     settings: Settings = Depends(get_settings),
 ) -> B2BService:
     return B2BService(db, settings)
+
+
+class B2BTestCheckoutRequest(BaseModel):
+    """Admin-only: mint a compressed-cycle B2B test checkout for a target user."""
+    user_email: str
+    product_type: str
+    currency: str = "gbp"  # gbp | usd
+
+
+@router.post("/test/checkout")
+async def create_b2b_test_checkout(
+    body: B2BTestCheckoutRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageAdmins")),
+    settings: Settings = Depends(get_settings),
+    supabase: DatabaseClient = Depends(get_supabase),
+    service: B2BService = Depends(get_b2b_service),
+):
+    """Mint a B2B Checkout URL that bills a target user on a short (default
+    2-day) cycle and auto-refunds every charge. LIVE money, master-admin only,
+    inert unless STRIPE_TEST_BILLING_ENABLED is on."""
+    if not settings.STRIPE_TEST_BILLING_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if body.product_type not in B2B_PRODUCTS:
+        raise HTTPException(status_code=404, detail="B2B product not found")
+
+    email = body.user_email.strip().lower()
+    user_rows = (
+        supabase.table("users").select("id,email").eq("email", email).limit(1).execute().data or []
+    )
+    if not user_rows:
+        raise HTTPException(status_code=404, detail=f"No user account found for {email}")
+    target = user_rows[0]
+
+    price_id = service.get_price_id(body.product_type, body.currency)
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No Stripe price configured for {body.product_type} in {body.currency.upper()}",
+        )
+
+    try:
+        result = StripeService(settings).create_b2b_subscription_checkout(
+            price_id=price_id,
+            user_email=target["email"],
+            user_id=target["id"],
+            product_type=body.product_type,
+            currency=body.currency,
+            delivery_frequency="monthly",
+            test_billing=True,
+        )
+        logger.info(
+            "B2B test-billing checkout minted for user=%s product=%s by admin=%s",
+            target["id"], body.product_type, _admin.id,
+        )
+        return result
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error minting B2B test checkout for %s", email)
+        raise HTTPException(status_code=400, detail="Payment processing failed")
+    except Exception:
+        logger.exception("Unexpected error minting B2B test checkout for %s", email)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/subscriptions", response_model=B2BSubscriptionListResponse)

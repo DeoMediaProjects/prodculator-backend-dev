@@ -56,10 +56,21 @@ class StripeService:
         user_email: str,
         user_id: str,
         metadata: dict | None = None,
+        test_billing: bool = False,
     ) -> dict:
-        """Create a Stripe Checkout session for subscription."""
+        """Create a Stripe Checkout session for subscription.
+
+        When ``test_billing`` is True, swaps in a short-cycle (default 2-day)
+        test price cloned from ``price_id`` and tags the subscription so the
+        auto-refund webhook keeps the test subscriber whole. Never set from a
+        normal user path — only the admin test endpoint passes it.
+        """
         combined_metadata = {"userId": user_id, **(metadata or {})}
         plan_type = (metadata or {}).get("planType", "professional")
+        if test_billing:
+            price_id = self.get_or_create_test_price(price_id)
+            combined_metadata["testBilling"] = f"{self.settings.STRIPE_TEST_BILLING_INTERVAL_DAYS}day"
+            combined_metadata["autoRefund"] = "true"
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
@@ -84,8 +95,14 @@ class StripeService:
         currency: str,
         delivery_frequency: str,
         extra_recipient_email: str | None = None,
+        test_billing: bool = False,
     ) -> dict:
-        """Create a Stripe Checkout session for an independent B2B subscription."""
+        """Create a Stripe Checkout session for an independent B2B subscription.
+
+        See ``create_subscription_checkout`` for the ``test_billing`` contract.
+        """
+        if test_billing:
+            price_id = self.get_or_create_test_price(price_id)
         metadata = {
             "userId": user_id,
             "subscriptionKind": "b2b",
@@ -96,6 +113,9 @@ class StripeService:
         }
         if extra_recipient_email:
             metadata["extraRecipientEmail"] = extra_recipient_email
+        if test_billing:
+            metadata["testBilling"] = f"{self.settings.STRIPE_TEST_BILLING_INTERVAL_DAYS}day"
+            metadata["autoRefund"] = "true"
 
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
@@ -327,6 +347,91 @@ class StripeService:
             if len(results) >= limit:
                 break
         return results
+
+    # ── Compressed-cycle billing test helpers ────────────────────────────────
+    def get_or_create_test_price(self, real_price_id: str) -> str:
+        """Find-or-create a short-cycle recurring price for billing tests.
+
+        Cloned from the real price's product + currency, but with a short
+        interval (default 2 days) and a token unit amount so the real price is
+        never touched and the refunded charge is tiny. Idempotent via a
+        deterministic lookup_key, so repeated tests reuse the same price.
+        """
+        interval_days = self.settings.STRIPE_TEST_BILLING_INTERVAL_DAYS
+        unit_amount = self.settings.STRIPE_TEST_BILLING_UNIT_AMOUNT
+        lookup_key = f"test_{interval_days}d_{unit_amount}_{real_price_id}"
+
+        existing = stripe.Price.list(lookup_keys=[lookup_key], active=True, limit=1)
+        if existing.data:
+            return existing.data[0].id
+
+        real = stripe.Price.retrieve(real_price_id)
+        if not real.get("recurring"):
+            raise ValueError(f"Price {real_price_id} is not a recurring subscription price")
+
+        created = stripe.Price.create(
+            product=real["product"],
+            currency=real["currency"],
+            unit_amount=unit_amount,
+            recurring={"interval": "day", "interval_count": interval_days},
+            lookup_key=lookup_key,
+            nickname=f"[TEST {interval_days}d] cloned from {real_price_id}",
+            metadata={
+                "test_billing": "true",
+                "source_price_id": real_price_id,
+                "interval_days": str(interval_days),
+            },
+        )
+        logger.info(
+            "Created %s-day test price %s (from %s, %s %s)",
+            interval_days, created.id, real_price_id, unit_amount, real["currency"],
+        )
+        return created.id
+
+    def auto_refund_test_invoice(self, invoice: dict) -> str | None:
+        """Fully refund a paid invoice IFF its subscription is flagged as a test.
+
+        Safe by construction: the refund fires only when the subscription's
+        Stripe metadata carries autoRefund="true" (set exclusively by the admin
+        test-checkout path), read straight from Stripe. A real customer's
+        subscription never carries that flag, so this returns None for them and
+        no refund is ever issued. Returns the refund id, or None if not
+        applicable / already refunded.
+        """
+        subscription_id = invoice.get("subscription")
+        if not subscription_id:
+            return None
+
+        subscription = stripe.Subscription.retrieve(subscription_id)
+        if (subscription.get("metadata") or {}).get("autoRefund") != "true":
+            return None  # Not a test subscription — never refund.
+
+        payment_intent = invoice.get("payment_intent")
+        if not payment_intent:
+            fresh = stripe.Invoice.retrieve(invoice.get("id"))
+            payment_intent = fresh.get("payment_intent")
+        if not payment_intent:
+            logger.warning(
+                "Test-billing auto-refund: no payment_intent on invoice %s", invoice.get("id")
+            )
+            return None
+
+        try:
+            refund = stripe.Refund.create(
+                payment_intent=payment_intent,
+                metadata={
+                    "auto_refund": "test_billing",
+                    "invoice_id": invoice.get("id") or "",
+                    "subscription_id": subscription_id,
+                },
+            )
+            return refund.get("id")
+        except stripe.error.InvalidRequestError as exc:
+            # Already refunded (e.g. a Stripe retry of the same event) — benign.
+            logger.info(
+                "Test-billing auto-refund skipped for invoice %s: %s", invoice.get("id"), exc
+            )
+            return None
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> stripe.Event:
         """Verify and construct a Stripe webhook event."""

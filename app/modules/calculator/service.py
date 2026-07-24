@@ -308,7 +308,7 @@ class CalculatorService:
 
         # ── Overall score ──────────────────────────────────────────────────
         incentive_strength = ReportBuilder._compute_incentive_strength(best)
-        reliability, bankability_label = ReportBuilder._compute_reliability(best)
+        reliability, bankability_label = ReportBuilder._compute_reliability(best, territory_profile)
         overall_score = (
             weights.get("costEfficiency", 0) * cost_efficiency_for_score
             + weights.get("crewDepth", 0) * crew_depth_for_score

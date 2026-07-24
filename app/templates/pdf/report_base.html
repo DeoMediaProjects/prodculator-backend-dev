@@ -307,12 +307,12 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% set _ = secs.append({'id': 'strategy', 'title': 'Production Location Strategy', 'locked': is_preview}) %}
 {% if report.territoryDeepDives %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': true}) %}{% endif %}
 {% if scenarios and not is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': true}) %}{% endif %}
+{% if report.weatherLogistics and not is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': true}) %}{% endif %}
 {% if report.incentiveEstimates and not is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': true}) %}{% endif %}
 {% if grants_only and not is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': true}) %}{% endif %}
 {% if report.comparables and not is_preview %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': true}) %}{% endif %}
 {% if report.festivalRecommendations %}{% set _ = secs.append({'id': 'festivals', 'title': 'Where Your Film Could Be Seen — Festival Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'festivals', 'title': 'Festival Recommendations', 'locked': true}) %}{% endif %}
 {% if report.distributorRecommendations %}{% set _ = secs.append({'id': 'distributors', 'title': 'Who Could Buy Your Film — Distributor Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'distributors', 'title': 'Distributor Recommendations', 'locked': true}) %}{% endif %}
-{% if report.weatherLogistics and not is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': true}) %}{% endif %}
 {% set _ = secs.append({'id': 'next', 'title': 'Next Steps & Disclaimers', 'locked': false}) %}
 {% set num_map = {} %}
 {% for s in secs %}{% set _ = num_map.update({s.id: '%02d' % loop.index}) %}{% endfor %}
@@ -799,6 +799,38 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 </div>
 {% endif %}
 
+<!-- ═══════════════ WEATHER & LOGISTICS ═══════════════ -->
+{% if not is_preview and report.weatherLogistics %}
+<div class="page" id="sec-weather">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['weather'] }} — Weather &amp; Logistics</div>
+  <div class="sectitle">Shoot-window risk by territory</div>
+  <p class="secsub">Climate data and travel practicalities for the ranked territories.</p>
+
+  {% if descriptions_only %}
+  {{ section_desc('weather') }}
+  {% else %}
+  {% for w in report.weatherLogistics[:4] %}
+  <div class="fcard">
+    <div class="fcard-top">
+      <div>
+        <h4>{{ w.territory }}</h4>
+        <div class="meta">Best months: {{ w.bestMonths | join(', ') }}{% if w.avgTempRange %} · {{ w.avgTempRange }}{% endif %}</div>
+      </div>
+      <span class="chip {{ 'bank' if w.weatherRisk == 'Low' else ('verify' if w.weatherRisk == 'Medium' else 'notbank') }}">{{ w.weatherRisk }} risk</span>
+    </div>
+    <div style="font-size:11px;line-height:1.6;color:#3A382F;font-weight:500;padding-top:8px;border-top:1px solid var(--hairline)">
+      {% if w.shootWindowRisk %}<b>{{ w.shootWindowRisk }}</b><br>{% endif %}
+      {% if w.seasonalConsiderations %}{{ w.seasonalConsiderations }}<br>{% endif %}
+      {% if w.contingencyBudget %}Contingency: {{ w.contingencyBudget }} · {% endif %}
+      {% if w.travelVisa %}Visas: {{ w.travelVisa }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- ═══════════════ TAX INCENTIVE ANALYSIS ═══════════════ -->
 {% if not is_preview and report.incentiveEstimates %}
 <div class="page" id="sec-incentives">
@@ -956,38 +988,6 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       </div>
     </div>
     {% if dist.whyMatched %}<div class="whym">{{ dist.whyMatched }}{% if dist.submissionProcess %} <span class="sig">{{ dist.submissionProcess }}</span>{% endif %}</div>{% endif %}
-  </div>
-  {% endfor %}
-  {% endif %}
-</div>
-{% endif %}
-
-<!-- ═══════════════ WEATHER & LOGISTICS ═══════════════ -->
-{% if not is_preview and report.weatherLogistics %}
-<div class="page" id="sec-weather">
-  {{ runhead(rh) }}
-  <div class="eyebrow">{{ num_map['weather'] }} — Weather &amp; Logistics</div>
-  <div class="sectitle">Shoot-window risk by territory</div>
-  <p class="secsub">Climate data and travel practicalities for the ranked territories.</p>
-
-  {% if descriptions_only %}
-  {{ section_desc('weather') }}
-  {% else %}
-  {% for w in report.weatherLogistics[:4] %}
-  <div class="fcard">
-    <div class="fcard-top">
-      <div>
-        <h4>{{ w.territory }}</h4>
-        <div class="meta">Best months: {{ w.bestMonths | join(', ') }}{% if w.avgTempRange %} · {{ w.avgTempRange }}{% endif %}</div>
-      </div>
-      <span class="chip {{ 'bank' if w.weatherRisk == 'Low' else ('verify' if w.weatherRisk == 'Medium' else 'notbank') }}">{{ w.weatherRisk }} risk</span>
-    </div>
-    <div style="font-size:11px;line-height:1.6;color:#3A382F;font-weight:500;padding-top:8px;border-top:1px solid var(--hairline)">
-      {% if w.shootWindowRisk %}<b>{{ w.shootWindowRisk }}</b><br>{% endif %}
-      {% if w.seasonalConsiderations %}{{ w.seasonalConsiderations }}<br>{% endif %}
-      {% if w.contingencyBudget %}Contingency: {{ w.contingencyBudget }} · {% endif %}
-      {% if w.travelVisa %}Visas: {{ w.travelVisa }}{% endif %}
-    </div>
   </div>
   {% endfor %}
   {% endif %}

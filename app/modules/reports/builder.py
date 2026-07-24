@@ -44,6 +44,7 @@ from app.modules.reports.matching import (
     match_grants,
 )
 from app.modules.reports.scoring import (
+    _TRUSTED_BANKABILITY_SOURCE_QUALITY,
     _compute_bankability_label,
     _incentive_qualification_score,
     _incentive_rate_score,
@@ -92,8 +93,10 @@ _LONG_SHOOT_DEFAULT = 26
 _HETV_TV_FORMATS = frozenset({"TV Series", "Limited Series", "Mini-Series", "Docuseries"})
 _HETV_MIN_PER_HOUR_GBP = 1_000_000.0
 
-# Deadline urgency window
-_DEADLINE_URGENT_DAYS = 56
+# Deadline urgency window — kept in sync with matching.CLOSING_SOON_DAYS
+# (same 90-day cutoff, applied here to the executive-summary flag over the
+# same grant/festival deadline data).
+_DEADLINE_URGENT_DAYS = 90
 
 # Grant format filtering
 _FEATURE_ONLY_PHRASES = (
@@ -323,15 +326,15 @@ class ReportBuilder:
             best = best_incentive(rows, self._production_format)
             effective_rate = format_rate(best.get("rate_gross"), best.get("rate_net"))
 
-            # Compute deterministic scores
-            strength = self._compute_incentive_strength(best)
-            reliability_score, bankability_label = self._compute_reliability(best)
-            currency_score = self._get_currency_score(territory)
-
             # Cost efficiency: curated territory_profiles score (crew day-rate
             # derivation removed 2026-07, owner-approved). None = no sourced
             # data -> neutral treatment downstream; AI may refine within ±15.
             territory_profile = self._get_territory_profile(territory)
+
+            # Compute deterministic scores
+            strength = self._compute_incentive_strength(best)
+            reliability_score, bankability_label = self._compute_reliability(best, territory_profile)
+            currency_score = self._get_currency_score(territory)
             cost_anchor = self._profile_score(territory_profile, "cost_efficiency_score")
             crew_depth_score = self._profile_score(territory_profile, "crew_depth_score")
             infrastructure_score = self._profile_score(territory_profile, "infrastructure_score")
@@ -779,7 +782,10 @@ class ReportBuilder:
         if est.get("bankabilityLabel") not in TERMINAL_LABELS:
             reliability = to_float(db_row.get("payment_reliability"))
             timeline_max = to_float(db_row.get("payment_timeline_days_max"))
-            est["bankabilityLabel"] = _compute_bankability_label(reliability, timeline_max)
+            territory_profile = self._get_territory_profile(territory)
+            est["bankabilityLabel"] = _compute_bankability_label(
+                reliability, timeline_max, profile=territory_profile,
+            )
 
         # HETV threshold check
         self._apply_hetv_check(est, db_row)
@@ -2154,12 +2160,32 @@ class ReportBuilder:
     # ── Scoring helpers ────────────────────────────────────────────────────
 
     @staticmethod
-    def _compute_reliability(db_row: dict) -> tuple[int, str]:
-        """Compute incentiveReliability score and bankabilityLabel."""
+    def _compute_reliability(db_row: dict, profile: dict | None = None) -> tuple[int, str]:
+        """Compute incentiveReliability score and bankabilityLabel.
+
+        `profile` is the territory_profiles row (curated, human-verified
+        payment-timing research) for this territory, if one exists. When it
+        carries a trusted source quality, both the label AND this score are
+        derived from it instead of the older incentive-row proxy, so the two
+        stay consistent with each other.
+        """
         reliability = to_float(db_row.get("payment_reliability"))
         timeline_max = to_float(db_row.get("payment_timeline_days_max"))
 
-        # Reliability score (0-100)
+        label = _compute_bankability_label(reliability, timeline_max, profile=profile)
+
+        if (
+            profile
+            and not profile.get("bankability_suspended")
+            and profile.get("bankability_real_world_confirms") is not False
+            and (profile.get("bankability_source_quality") or "").strip()
+            in _TRUSTED_BANKABILITY_SOURCE_QUALITY
+        ):
+            rel_score = {"BANKABLE": 90, "NOT BANKABLE": 15}.get(label, 55)
+            return rel_score, label
+
+        # Reliability score (0-100) — legacy proxy, used when no trusted
+        # curated profile exists for this territory.
         if reliability is not None:
             if reliability >= 0.90:
                 rel_score = 90
@@ -2172,7 +2198,6 @@ class ReportBuilder:
         else:
             rel_score = 30
 
-        label = _compute_bankability_label(reliability, timeline_max)
         return rel_score, label
 
     def _get_currency_score(self, territory: str) -> int:
