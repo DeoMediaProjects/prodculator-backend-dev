@@ -191,11 +191,18 @@ async def create_subscription_checkout(
         )
 
     try:
+        # When compressed-cycle billing test mode is ON (a deliberate ops flag,
+        # OFF in normal operation), the public checkout mints a short-cycle
+        # (default 2-day) $1 subscription tagged for auto-refund, so a demo
+        # subscriber can watch a real renewal fire and be kept whole. OFF by
+        # default → charges the real plan price with no refund, exactly as
+        # before.
         result = service.create_subscription_checkout(
             price_id=price_id,
             user_email=user.email,
             user_id=user.id,
             metadata={"planType": body.plan_type},
+            test_billing=settings.STRIPE_TEST_BILLING_ENABLED,
         )
         return CheckoutResponse(**result)
     except stripe_lib.StripeError:

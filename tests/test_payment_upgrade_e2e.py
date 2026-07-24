@@ -147,7 +147,7 @@ class StatefulFakeSupabase:
 
 class FakeStripeService:
     @staticmethod
-    def create_subscription_checkout(price_id, user_email, user_id, metadata=None):
+    def create_subscription_checkout(price_id, user_email, user_id, metadata=None, test_billing=False):
         return {"session_id": "cs_sub", "url": "https://checkout.stripe.test/sub"}
 
 
