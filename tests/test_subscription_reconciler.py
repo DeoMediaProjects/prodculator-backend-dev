@@ -3,8 +3,18 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+import stripe
+
 from app.core.config import Settings
 from app.modules.payments.reconciler import _diff_subscription, run_subscription_reconciler
+
+
+def _stripe_sub_obj(data: dict):
+    """A real stripe.StripeObject, not a plain dict -- run_subscription_reconciler
+    calls .to_dict() on stripe.Subscription.retrieve()'s return value (live
+    Stripe SDK objects don't support .get(), which _diff_subscription relies on
+    throughout)."""
+    return stripe.Subscription.construct_from(data, "sk_test_x")
 
 
 class _FakeResult:
@@ -262,12 +272,12 @@ class TestReconcilerRun:
             ],
         })
 
-        fake_stripe_sub = {
+        fake_stripe_sub = _stripe_sub_obj({
             "id": "sub_stripe_1",
             "status": "active",
             "cancel_at_period_end": False,
             "items": {"data": [{"price": {"id": "price_producer"}}]},
-        }
+        })
 
         with patch("app.modules.payments.reconciler.stripe.Subscription.retrieve", return_value=fake_stripe_sub):
             count = run_subscription_reconciler(db, _settings())
@@ -293,12 +303,12 @@ class TestReconcilerRun:
             ],
         })
 
-        fake_stripe_sub = {
+        fake_stripe_sub = _stripe_sub_obj({
             "id": "sub_stripe_1",
             "status": "active",
             "cancel_at_period_end": False,
             "items": {"data": [{"price": {"id": "price_producer"}}]},
-        }
+        })
 
         with patch("app.modules.payments.reconciler.stripe.Subscription.retrieve", return_value=fake_stripe_sub):
             count = run_subscription_reconciler(db, _settings())

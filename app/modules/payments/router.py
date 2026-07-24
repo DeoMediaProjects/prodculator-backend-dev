@@ -299,6 +299,11 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
     handler = WebhookHandler(supabase, settings, background_tasks)
-    handler.handle_event(event.id, event.type, event.data.object)
+    # Stripe's SDK objects (Subscription, Invoice, Session, ...) are NOT dicts —
+    # they only support attribute/bracket access, not .get(). Every downstream
+    # handler is written against plain dicts (and is tested against them), so
+    # convert once here rather than at each of the dozens of .get() call sites
+    # in webhook_handler.py / b2b/service.py.
+    handler.handle_event(event.id, event.type, event.data.object.to_dict())
 
     return {"received": True}

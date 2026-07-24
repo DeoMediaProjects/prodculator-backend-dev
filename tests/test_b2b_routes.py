@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
+import stripe
 from sqlalchemy import text
 
 from app.core.config import get_settings
@@ -252,7 +253,9 @@ def test_b2b_webhook_creates_b2b_subscription_without_changing_normal_plan(clien
         id="evt_b2b_checkout",
         type="checkout.session.completed",
         data=SimpleNamespace(
-            object={
+            # A real stripe.StripeObject, not a plain dict -- router.py calls
+            # .to_dict() on event.data.object.
+            object=stripe.Subscription.construct_from({
                 "id": "cs_b2b",
                 "mode": "subscription",
                 "metadata": {
@@ -265,7 +268,7 @@ def test_b2b_webhook_creates_b2b_subscription_without_changing_normal_plan(clien
                 },
                 "subscription": "sub_b2b",
                 "customer": "cus_b2b",
-            }
+            }, "sk_test_x")
         ),
     )
     monkeypatch.setattr(
