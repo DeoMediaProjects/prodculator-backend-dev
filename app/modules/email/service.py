@@ -120,9 +120,11 @@ class EmailService:
         normalised.setdefault("app_url", app_url)
         normalised.setdefault("dashboard_url", f"{app_url}/dashboard")
         normalised.setdefault("login_url", f"{app_url}/login")
-        # Hosted logo (served from the frontend's public/ dir) so emails can show
-        # the real mark instead of a text wordmark.
-        normalised.setdefault("logo_url", f"{app_url}/prodculator-logo.jpg")
+        # Hosted logo. Served from the API itself (always deployed and reachable)
+        # rather than the frontend, so the mark renders in email clients even if
+        # FRONTEND_URL points at a marketing domain that doesn't host the asset.
+        backend_url = self.settings.BACKEND_URL.rstrip("/")
+        normalised.setdefault("logo_url", f"{backend_url}/api/reports/email-logo")
         normalised.setdefault("support_email", self.settings.CONTACT_EMAIL or "support@prodculator.com")
         normalised.setdefault("billing_email", "billing@prodculator.com")
         normalised.setdefault("currency", "USD")

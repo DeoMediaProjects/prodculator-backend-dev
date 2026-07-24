@@ -198,6 +198,25 @@ async def request_id_middleware(request: Request, call_next):
 # so local http dev isn't pinned to HTTPS.
 _API_CSP_STRICT = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
 
+# The public sample-report HTML is served to be embedded in an <iframe> on the
+# marketing/app site (a different origin: app.* framing api.*). It must therefore
+# be frameable by our own frontends and allowed to render its own inline styles,
+# Google Fonts, and data-URI logo. The strict API CSP (default-src 'none',
+# frame-ancestors 'none') and X-Frame-Options: DENY otherwise blank it out.
+_EMBEDDABLE_PATHS = frozenset({"/api/reports/sample/html"})
+
+
+def _embeddable_csp() -> str:
+    ancestors = " ".join(settings.CORS_ORIGINS) if settings.CORS_ORIGINS else "'self'"
+    return (
+        "default-src 'none'; "
+        "img-src 'self' data:; "
+        "style-src 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
+        f"frame-ancestors {ancestors}; "
+        "base-uri 'none'"
+    )
+
 
 # slowapi fail-open guard. When the rate-limit storage backend (Redis) is
 # unreachable, `swallow_errors=True` swallows the error inside the limiter, but
@@ -215,8 +234,13 @@ async def rate_limit_failopen(request: Request, call_next):
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    embeddable = request.url.path in _EMBEDDABLE_PATHS
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
+    # X-Frame-Options can't express a cross-subdomain allow-list and would
+    # override frame-ancestors in older browsers, so the embeddable sample omits
+    # it and relies solely on the CSP frame-ancestors directive below.
+    if not embeddable:
+        response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault(
         "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
@@ -226,7 +250,10 @@ async def security_headers(request: Request, call_next):
             "Strict-Transport-Security",
             "max-age=63072000; includeSubDomains; preload",
         )
-        response.headers.setdefault("Content-Security-Policy", _API_CSP_STRICT)
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            _embeddable_csp() if embeddable else _API_CSP_STRICT,
+        )
     return response
 
 
