@@ -1,5 +1,6 @@
 import stripe
 
+from app.core.config import Settings, get_settings
 from app.core.dependencies import get_current_user, get_supabase
 from app.modules.payments import router as payments_router
 from app.modules.payments.router import get_stripe_service
@@ -37,6 +38,11 @@ class FakeQuery:
 
     def eq(self, key, value):
         self.filters[key] = value
+        return self
+
+    def in_(self, _key, _values):
+        # Membership filter (e.g. status in active/trialing/past_due). The tests
+        # that hit this path seed no subscription rows, so it just needs to exist.
         return self
 
     def limit(self, _value):
@@ -90,6 +96,110 @@ def test_checkout_and_update_payment_method_success(client, auth_user):
         json={"customer_id": "cus_123", "payment_method_id": "pm_123"},
     )
     assert update_response.status_code == 200
+
+
+class _CapturingStripeService:
+    """Records the price_id the endpoint resolved before calling Stripe."""
+
+    def __init__(self):
+        self.received = {}
+
+    def create_subscription_checkout(self, price_id, user_email, user_id, metadata=None):
+        self.received["price_id"] = price_id
+        return {"session_id": "cs_resolved", "url": "https://checkout.stripe.test/resolved"}
+
+
+def _settings_with_prices():
+    return Settings(
+        _env_file=None,
+        JWT_SECRET_KEY="x" * 64,
+        STRIPE_PRICE_PROFESSIONAL_GBP="price_prof_gbp_live",
+        STRIPE_PRICE_PROFESSIONAL_USD="price_prof_usd_live",
+        STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP="price_prof_annual_gbp_live",
+    )
+
+
+def test_subscription_checkout_resolves_price_when_client_sends_empty(client, auth_user):
+    """The live bug: a frontend build without VITE_STRIPE_PRICE_* baked in sends
+    price_id="". The backend must resolve the price from plan/currency/cycle out
+    of its own config instead of forwarding an empty string to Stripe (which 400s
+    with 'You passed an empty string for line_items[0][price]')."""
+    capturing = _CapturingStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
+
+    resp = client.post(
+        "/api/payments/subscription-checkout",
+        headers={"Authorization": "Bearer token"},
+        json={"price_id": "", "plan_type": "professional", "currency": "gbp", "billing_cycle": "monthly"},
+    )
+    assert resp.status_code == 200
+    assert capturing.received["price_id"] == "price_prof_gbp_live"
+
+    client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_subscription_checkout_honours_nonempty_client_price(client, auth_user):
+    """A non-empty client price_id is still honoured (keeps local dev, where the
+    frontend DOES bake the price, working unchanged)."""
+    capturing = _CapturingStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
+
+    resp = client.post(
+        "/api/payments/subscription-checkout",
+        headers={"Authorization": "Bearer token"},
+        json={"price_id": "price_client_supplied", "plan_type": "professional", "currency": "gbp"},
+    )
+    assert resp.status_code == 200
+    assert capturing.received["price_id"] == "price_client_supplied"
+
+    client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_subscription_checkout_annual_cycle_resolves_annual_price(client, auth_user):
+    capturing = _CapturingStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
+
+    resp = client.post(
+        "/api/payments/subscription-checkout",
+        headers={"Authorization": "Bearer token"},
+        json={"price_id": "", "plan_type": "professional", "currency": "gbp", "billing_cycle": "annual"},
+    )
+    assert resp.status_code == 200
+    assert capturing.received["price_id"] == "price_prof_annual_gbp_live"
+
+    client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_subscription_checkout_400_when_price_unconfigured(client, auth_user):
+    """When neither the client nor the server has a price for the requested
+    plan/currency/cycle, respond with a clear 400 naming the missing env var --
+    never forward an empty string to Stripe."""
+    capturing = _CapturingStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
+
+    resp = client.post(
+        "/api/payments/subscription-checkout",
+        headers={"Authorization": "Bearer token"},
+        # producer/usd is not configured in _settings_with_prices
+        json={"price_id": "", "plan_type": "producer", "currency": "usd", "billing_cycle": "monthly"},
+    )
+    assert resp.status_code == 400
+    assert "STRIPE_PRICE_PRODUCER_USD" in resp.json()["detail"]
+    assert "price_id" not in capturing.received  # Stripe was never called
+
+    client.app.dependency_overrides.pop(get_settings, None)
 
 
 def test_cancel_subscription_denied_when_not_owner(client, auth_user):

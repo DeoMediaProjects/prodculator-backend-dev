@@ -13,6 +13,7 @@ Coverage goals:
 """
 from unittest.mock import MagicMock, patch
 
+import stripe
 
 from app.core.dependencies import get_current_user
 from app.modules.auth.schemas import AuthUser
@@ -246,23 +247,28 @@ def test_stripe_service_list_invoices_filters_draft_and_void():
     """Only paid/open invoices are returned; draft and void are discarded."""
     from app.modules.payments.service import StripeService
 
+    # Real stripe.Invoice objects, not plain dicts -- list_invoices calls
+    # .to_dict() on each one it pages through (live Stripe SDK objects don't
+    # support .get(), which every field extraction below relies on).
     fake_invoices = [
-        {"id": "inv-paid", "status": "paid", "amount_paid": 5000, "amount_due": 5000,
-         "currency": "usd", "created": 1700000001, "number": "PRD-001",
-         "lines": {"data": [{"period": {"start": 0, "end": 0}, "description": "Sub"}]},
-         "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
-        {"id": "inv-open", "status": "open", "amount_paid": 0, "amount_due": 5000,
-         "currency": "usd", "created": 1700000002, "number": "PRD-002",
-         "lines": {"data": []},
-         "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
-        {"id": "inv-draft", "status": "draft", "amount_paid": 0, "amount_due": 5000,
-         "currency": "usd", "created": 1700000003, "number": "PRD-003",
-         "lines": {"data": []},
-         "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
-        {"id": "inv-void", "status": "void", "amount_paid": 0, "amount_due": 0,
-         "currency": "usd", "created": 1700000004, "number": "PRD-004",
-         "lines": {"data": []},
-         "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
+        stripe.Invoice.construct_from(inv, "sk_test_x") for inv in [
+            {"id": "inv-paid", "status": "paid", "amount_paid": 5000, "amount_due": 5000,
+             "currency": "usd", "created": 1700000001, "number": "PRD-001",
+             "lines": {"data": [{"period": {"start": 0, "end": 0}, "description": "Sub"}]},
+             "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
+            {"id": "inv-open", "status": "open", "amount_paid": 0, "amount_due": 5000,
+             "currency": "usd", "created": 1700000002, "number": "PRD-002",
+             "lines": {"data": []},
+             "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
+            {"id": "inv-draft", "status": "draft", "amount_paid": 0, "amount_due": 5000,
+             "currency": "usd", "created": 1700000003, "number": "PRD-003",
+             "lines": {"data": []},
+             "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
+            {"id": "inv-void", "status": "void", "amount_paid": 0, "amount_due": 0,
+             "currency": "usd", "created": 1700000004, "number": "PRD-004",
+             "lines": {"data": []},
+             "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
+        ]
     ]
 
     # Stub stripe.Invoice.list to return a fake paginator
@@ -290,10 +296,13 @@ def test_stripe_service_list_invoices_respects_limit():
     from app.modules.payments.service import StripeService
 
     def _make_inv(i):
-        return {"id": f"inv-{i}", "status": "paid", "amount_paid": 1000, "amount_due": 1000,
-                "currency": "usd", "created": i, "number": f"PRD-{i:04d}",
-                "lines": {"data": []},
-                "hosted_invoice_url": None, "invoice_pdf": None, "description": None}
+        return stripe.Invoice.construct_from(
+            {"id": f"inv-{i}", "status": "paid", "amount_paid": 1000, "amount_due": 1000,
+             "currency": "usd", "created": i, "number": f"PRD-{i:04d}",
+             "lines": {"data": []},
+             "hosted_invoice_url": None, "invoice_pdf": None, "description": None},
+            "sk_test_x",
+        )
 
     class FakePager:
         def auto_paging_iter(self):

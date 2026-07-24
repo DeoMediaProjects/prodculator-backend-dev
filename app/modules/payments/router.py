@@ -150,6 +150,7 @@ async def create_subscription_checkout(
     user: AuthUser = Depends(get_current_user),
     supabase: DatabaseClient = Depends(get_supabase),
     service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ):
     """Create a subscription checkout session.
 
@@ -167,9 +168,31 @@ async def create_subscription_checkout(
             },
         )
 
+    # Resolve the Stripe price server-side. The frontend bakes VITE_STRIPE_PRICE_*
+    # at build time, so a build without those env vars sends an empty price_id and
+    # Stripe rejects the request. The backend is the source of truth for prices:
+    # honour a non-empty client price_id (keeps local dev working), otherwise
+    # resolve from plan/currency/cycle out of the server's own STRIPE_PRICE_* config.
+    price_id = (body.price_id or "").strip()
+    if not price_id:
+        price_id = _resolve_base_subscription_price(
+            settings, body.plan_type, body.currency, body.billing_cycle
+        )
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No Stripe price configured for "
+                f"{body.plan_type}/{body.currency}/{body.billing_cycle}. "
+                f"Set STRIPE_PRICE_{body.plan_type.strip().upper()}"
+                f"{'_ANNUAL' if body.billing_cycle == 'annual' else ''}_"
+                f"{body.currency.strip().upper()} on the server."
+            ),
+        )
+
     try:
         result = service.create_subscription_checkout(
-            price_id=body.price_id,
+            price_id=price_id,
             user_email=user.email,
             user_id=user.id,
             metadata={"planType": body.plan_type},
