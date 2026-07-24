@@ -1,3 +1,5 @@
+import stripe
+
 from app.core.dependencies import get_current_user, get_supabase
 from app.modules.payments import router as payments_router
 from app.modules.payments.router import get_stripe_service
@@ -121,7 +123,9 @@ def test_webhook_dispatches_when_signature_valid(client, monkeypatch):
         type = "checkout.session.completed"
 
         class Data:
-            object = {"id": "evt_obj"}
+            # A real stripe.StripeObject, not a plain dict -- router.py calls
+            # .to_dict() on event.data.object.
+            object = stripe.Subscription.construct_from({"id": "evt_obj"}, "sk_test_x")
 
         data = Data()
 

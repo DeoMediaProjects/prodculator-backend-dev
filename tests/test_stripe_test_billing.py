@@ -3,6 +3,11 @@
 The security-critical property is that a refund fires ONLY for subscriptions
 explicitly tagged autoRefund="true" — a real customer's invoice must never be
 refunded by this path. These tests pin that behaviour.
+
+Mocks return REAL stripe.StripeObject instances via construct_from(), not
+plain dicts. A plain-dict mock previously masked a real bug: live Stripe SDK
+objects don't support .get() (see test_stripe_object_shape.py), so a mock
+that returns a dict exercises code paths production never takes.
 """
 from types import SimpleNamespace
 
@@ -16,18 +21,25 @@ def _service() -> StripeService:
     return Settings() and StripeService(Settings())
 
 
+def _stripe_obj(data: dict):
+    """A real stripe.StripeObject (via any concrete subclass's construct_from),
+    not a plain dict -- so .to_dict() and the lack of .get() are faithful to
+    what the live SDK actually returns."""
+    return stripe.Subscription.construct_from(data, "sk_test_x")
+
+
 def test_auto_refund_fires_for_flagged_subscription(monkeypatch):
     svc = _service()
 
     monkeypatch.setattr(
         stripe.Subscription, "retrieve",
-        lambda sub_id: {"id": sub_id, "metadata": {"autoRefund": "true"}},
+        lambda sub_id: _stripe_obj({"id": sub_id, "metadata": {"autoRefund": "true"}}),
     )
     created = {}
 
     def fake_refund_create(**kwargs):
         created.update(kwargs)
-        return {"id": "re_test_123"}
+        return _stripe_obj({"id": "re_test_123"})
 
     monkeypatch.setattr(stripe.Refund, "create", fake_refund_create)
 
@@ -45,7 +57,7 @@ def test_auto_refund_never_fires_for_real_subscription(monkeypatch):
 
     monkeypatch.setattr(
         stripe.Subscription, "retrieve",
-        lambda sub_id: {"id": sub_id, "metadata": {}},  # no flag = real customer
+        lambda sub_id: _stripe_obj({"id": sub_id, "metadata": {}}),  # no flag = real customer
     )
 
     def explode(**kwargs):
@@ -75,7 +87,7 @@ def test_auto_refund_swallows_already_refunded(monkeypatch):
 
     monkeypatch.setattr(
         stripe.Subscription, "retrieve",
-        lambda sub_id: {"id": sub_id, "metadata": {"autoRefund": "true"}},
+        lambda sub_id: _stripe_obj({"id": sub_id, "metadata": {"autoRefund": "true"}}),
     )
 
     def already(**kwargs):
@@ -110,7 +122,9 @@ def test_get_or_create_test_price_creates_short_cycle_clone(monkeypatch):
     monkeypatch.setattr(stripe.Price, "list", lambda **kwargs: SimpleNamespace(data=[]))
     monkeypatch.setattr(
         stripe.Price, "retrieve",
-        lambda price_id: {"product": "prod_1", "currency": "gbp", "unit_amount": 4900, "recurring": {"interval": "month"}},
+        lambda price_id: _stripe_obj(
+            {"product": "prod_1", "currency": "gbp", "unit_amount": 4900, "recurring": {"interval": "month"}}
+        ),
     )
     captured = {}
 

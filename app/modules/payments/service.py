@@ -144,7 +144,7 @@ class StripeService:
         Read-only — no Stripe state mutation. Used by the change-plan modal to
         show the user what they'll be charged before they confirm.
         """
-        sub = stripe.Subscription.retrieve(subscription_id)
+        sub = stripe.Subscription.retrieve(subscription_id).to_dict()
         item_id = sub["items"]["data"][0]["id"]
         current_price = sub["items"]["data"][0].get("price") or {}
         current_interval = (current_price.get("recurring") or {}).get("interval", "month")
@@ -158,12 +158,12 @@ class StripeService:
                 subscription_details={
                     "items": [{"id": item_id, "price": new_price_id}],
                 },
-            )
+            ).to_dict()
         else:
             invoice = stripe.Invoice.upcoming(
                 subscription=subscription_id,
                 subscription_items=[{"id": item_id, "price": new_price_id}],
-            )
+            ).to_dict()
 
         # Sum proration line items (negative = credit, positive = prorated charge).
         proration_credit = 0
@@ -176,7 +176,7 @@ class StripeService:
 
         # Detect billing-cycle change (monthly ↔ annual) so the modal can warn.
         try:
-            target_price = stripe.Price.retrieve(new_price_id)
+            target_price = stripe.Price.retrieve(new_price_id).to_dict()
             target_interval = (target_price.get("recurring") or {}).get("interval", "month")
         except Exception:
             target_interval = current_interval
@@ -243,14 +243,14 @@ class StripeService:
         to their current tier for the remainder of the period they already paid
         for. Returns the schedule_id to store for later cancellation.
         """
-        sub = stripe.Subscription.retrieve(subscription_id)
+        sub = stripe.Subscription.retrieve(subscription_id).to_dict()
         current_price_id = sub["items"]["data"][0]["price"]["id"]
 
         # Create a schedule from the existing subscription first. Stripe auto-populates
         # phase 1 from the current subscription state, including start/end dates.
         schedule = stripe.SubscriptionSchedule.create(
             from_subscription=subscription_id,
-        )
+        ).to_dict()
 
         # Read period boundaries: prefer the subscription fields, fall back to the
         # auto-populated schedule phase (handles subscriptions already on a schedule
@@ -326,6 +326,7 @@ class StripeService:
         invoices = stripe.Invoice.list(customer=customer_id, limit=limit)
         results: list[dict] = []
         for inv in invoices.auto_paging_iter():
+            inv = inv.to_dict()
             if inv.get("status") not in ("paid", "open"):
                 continue
             results.append(
@@ -365,7 +366,7 @@ class StripeService:
         if existing.data:
             return existing.data[0].id
 
-        real = stripe.Price.retrieve(real_price_id)
+        real = stripe.Price.retrieve(real_price_id).to_dict()
         if not real.get("recurring"):
             raise ValueError(f"Price {real_price_id} is not a recurring subscription price")
 
@@ -402,13 +403,13 @@ class StripeService:
         if not subscription_id:
             return None
 
-        subscription = stripe.Subscription.retrieve(subscription_id)
+        subscription = stripe.Subscription.retrieve(subscription_id).to_dict()
         if (subscription.get("metadata") or {}).get("autoRefund") != "true":
             return None  # Not a test subscription — never refund.
 
         payment_intent = invoice.get("payment_intent")
         if not payment_intent:
-            fresh = stripe.Invoice.retrieve(invoice.get("id"))
+            fresh = stripe.Invoice.retrieve(invoice.get("id")).to_dict()
             payment_intent = fresh.get("payment_intent")
         if not payment_intent:
             logger.warning(
@@ -425,7 +426,7 @@ class StripeService:
                     "subscription_id": subscription_id,
                 },
             )
-            return refund.get("id")
+            return refund.id
         except stripe.error.InvalidRequestError as exc:
             # Already refunded (e.g. a Stripe retry of the same event) — benign.
             logger.info(

@@ -15,10 +15,18 @@ get_current_user — i.e. the plan the user sees reflects what they paid for.
 from types import SimpleNamespace
 
 import pytest
+import stripe
 
 from app.core.dependencies import get_supabase
 from app.modules.payments import router as payments_router
 from app.modules.payments.router import get_stripe_service
+
+
+def _stripe_event_object(data: dict):
+    """A real stripe.StripeObject, not a plain dict -- router.py calls
+    .to_dict() on event.data.object (live Stripe SDK objects don't support
+    .get(), which the webhook handlers rely on throughout)."""
+    return stripe.Subscription.construct_from(data, "sk_test_x")
 
 
 # ---------------------------------------------------------------------------
@@ -196,11 +204,11 @@ def test_pay_then_webhook_then_me_reflects_upgrade(client, monkeypatch):
         id="evt_e2e_1",
         type="checkout.session.completed",
         data=SimpleNamespace(
-            object={
+            object=_stripe_event_object({
                 "metadata": {"userId": "user-1", "planType": "producer"},
                 "subscription": "sub_e2e",
                 "customer": "cus_e2e",
-            }
+            })
         ),
     )
     monkeypatch.setattr(
@@ -240,11 +248,11 @@ def test_duplicate_webhook_does_not_double_apply(client, monkeypatch):
         id="evt_e2e_dup",
         type="checkout.session.completed",
         data=SimpleNamespace(
-            object={
+            object=_stripe_event_object({
                 "metadata": {"userId": "user-1", "planType": "professional"},
                 "subscription": "sub_dup",
                 "customer": "cus_dup",
-            }
+            })
         ),
     )
     monkeypatch.setattr(
@@ -319,11 +327,11 @@ def test_retry_after_midhandler_failure_completes_upgrade(client, monkeypatch):
         id="evt_retry",
         type="checkout.session.completed",
         data=SimpleNamespace(
-            object={
+            object=_stripe_event_object({
                 "metadata": {"userId": "user-1", "planType": "producer"},
                 "subscription": "sub_retry",
                 "customer": "cus_retry",
-            }
+            })
         ),
     )
     monkeypatch.setattr(
@@ -370,11 +378,11 @@ def test_upgrade_email_deferred_to_background_tasks(client, monkeypatch):
         id="evt_email",
         type="checkout.session.completed",
         data=SimpleNamespace(
-            object={
+            object=_stripe_event_object({
                 "metadata": {"userId": "user-1", "planType": "producer"},
                 "subscription": "sub_email",
                 "customer": "cus_email",
-            }
+            })
         ),
     )
     monkeypatch.setattr(

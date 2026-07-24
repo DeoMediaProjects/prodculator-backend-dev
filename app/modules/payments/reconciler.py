@@ -51,7 +51,11 @@ def run_subscription_reconciler(supabase: DatabaseClient, settings: Settings) ->
         if not sub_id:
             continue
         try:
-            stripe_sub = stripe.Subscription.retrieve(sub_id)
+            # .to_dict() — a live Stripe SDK object doesn't support .get(), which
+            # every field read below (and resolve_plan_from_subscription) relies
+            # on. Without this the reconciler — the safety net for missed
+            # webhooks — crashes on every single run.
+            stripe_sub = stripe.Subscription.retrieve(sub_id).to_dict()
         except stripe.StripeError as exc:
             logger.warning("reconciler: Stripe fetch failed for %s: %s", sub_id, exc)
             continue
