@@ -469,6 +469,30 @@ class WebhookHandler:
 
     def _handle_invoice_paid(self, invoice: dict) -> None:
         logger.info("Invoice paid: %s", invoice.get("id"))
+
+        # Compressed-cycle billing test: refund this charge if (and only if) the
+        # master flag is on AND the subscription is explicitly tagged as a test.
+        # Best-effort and fully isolated — a refund failure here must never break
+        # the webhook (which would make Stripe retry and re-run entitlement work),
+        # so any error is logged and swallowed. The per-subscription flag check
+        # lives in the service and reads straight from Stripe, so a real
+        # customer's invoice can never be refunded by this path.
+        if self.settings and getattr(self.settings, "STRIPE_TEST_BILLING_ENABLED", False):
+            try:
+                from app.modules.payments.service import StripeService
+
+                refund_id = StripeService(self.settings).auto_refund_test_invoice(invoice)
+                if refund_id:
+                    logger.info(
+                        "Test-billing auto-refund issued: invoice=%s refund=%s",
+                        invoice.get("id"), refund_id,
+                    )
+            except Exception:
+                logger.exception(
+                    "Test-billing auto-refund failed for invoice %s (non-fatal)",
+                    invoice.get("id"),
+                )
+
         customer_id = invoice.get("customer")
         if not customer_id:
             return

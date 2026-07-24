@@ -306,8 +306,13 @@ def match_distributors(
             )
 
         # --- Representation match — STRICT OPT-IN ONLY ---
+        # Only skip scoring when "general" is the distributor's ONLY tag (no
+        # specialty declared at all). A distributor carrying "general"
+        # alongside a real specialty (e.g. ["lgbtq+", "general"]) must still
+        # be scored on that specialty — excluding "general" from the array
+        # check entirely used to drop these distributors silently.
         dist_rep = dist.get("specialty_representation") or ["general"]
-        if dist_rep != ["general"] and "general" not in dist_rep:
+        if dist_rep != ["general"]:
             user_rep_signals = set()
             if representation_gender and representation_gender.lower() == "woman":
                 user_rep_signals.add("women")
@@ -358,7 +363,11 @@ GRANT_FORMAT_MAP = {
 
 STALE_EXCLUDE_MONTHS = 6
 STALE_FLAG_MONTHS = 4
-CLOSING_SOON_DAYS = 56
+# Matches the client mockup's own "Closing Soon" cutoff (90 days). Was 56 —
+# kept in sync with builder._DEADLINE_URGENT_DAYS, the equivalent threshold
+# used for the executive-summary deadline flag over the same grant/festival
+# data, so the two don't silently disagree with each other.
+CLOSING_SOON_DAYS = 90
 
 
 def _parse_date(s):

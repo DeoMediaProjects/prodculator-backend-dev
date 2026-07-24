@@ -2,6 +2,7 @@ import logging
 
 import stripe as stripe_lib
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +10,9 @@ from app.core.database_client import DatabaseClient
 
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase, get_current_user
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
+from app.modules.admin.schemas import AdminUser
 from app.modules.auth.schemas import AuthUser
 from app.modules.payments.schemas import (
     CheckoutRequest,
@@ -30,6 +33,77 @@ webhook_router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
 
 def get_stripe_service(settings: Settings = Depends(get_settings)) -> StripeService:
     return StripeService(settings)
+
+
+def _resolve_base_subscription_price(
+    settings: Settings, plan_type: str, currency: str, billing_cycle: str
+) -> str:
+    """Map a plan/currency/cycle to its configured live Stripe price id."""
+    plan = plan_type.strip().upper()
+    cyc = "_ANNUAL" if billing_cycle == "annual" else ""
+    cur = currency.strip().upper()
+    return getattr(settings, f"STRIPE_PRICE_{plan}{cyc}_{cur}", "") or ""
+
+
+class TestSubscriptionCheckoutRequest(BaseModel):
+    """Admin-only: mint a compressed-cycle test checkout for a target user."""
+    user_email: str
+    plan_type: str  # professional | producer | studio
+    currency: str = "gbp"  # gbp | usd
+    billing_cycle: str = "monthly"  # monthly | annual
+
+
+@router.post("/test/subscription-checkout", response_model=CheckoutResponse)
+async def create_test_subscription_checkout(
+    body: TestSubscriptionCheckoutRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageAdmins")),
+    settings: Settings = Depends(get_settings),
+    supabase: DatabaseClient = Depends(get_supabase),
+    service: StripeService = Depends(get_stripe_service),
+):
+    """Mint a Checkout URL that bills a target user on a short (default 2-day)
+    cycle and auto-refunds every charge, to validate recurring billing without
+    a month-long wait. LIVE money, master-admin only, and inert unless
+    STRIPE_TEST_BILLING_ENABLED is on."""
+    if not settings.STRIPE_TEST_BILLING_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    email = body.user_email.strip().lower()
+    user_rows = (
+        supabase.table("users").select("id,email").eq("email", email).limit(1).execute().data or []
+    )
+    if not user_rows:
+        raise HTTPException(status_code=404, detail=f"No user account found for {email}")
+    target = user_rows[0]
+
+    price_id = _resolve_base_subscription_price(
+        settings, body.plan_type, body.currency, body.billing_cycle
+    )
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No Stripe price configured for {body.plan_type}/{body.currency}/{body.billing_cycle}",
+        )
+
+    try:
+        result = service.create_subscription_checkout(
+            price_id=price_id,
+            user_email=target["email"],
+            user_id=target["id"],
+            metadata={"planType": body.plan_type},
+            test_billing=True,
+        )
+        logger.info(
+            "Test-billing checkout minted for user=%s plan=%s by admin=%s",
+            target["id"], body.plan_type, _admin.id,
+        )
+        return CheckoutResponse(**result)
+    except stripe_lib.StripeError:
+        logger.exception("Stripe error minting test checkout for %s", email)
+        raise HTTPException(status_code=400, detail="Payment processing failed")
+    except Exception:
+        logger.exception("Unexpected error minting test checkout for %s", email)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 def ensure_user_owns_subscription(

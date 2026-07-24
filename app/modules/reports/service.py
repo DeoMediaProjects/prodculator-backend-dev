@@ -1007,7 +1007,8 @@ class ReportService:
                 'infrastructure_tier,infrastructure_score,infrastructure_notes,'
                 'hemisphere,cert_weeks_min,cert_weeks_max,'
                 'payment_weeks_min,payment_weeks_max,'
-                'bankability_source_quality,bankability_suspended'
+                'bankability_source_quality,bankability_suspended,'
+                'bankability_real_world_confirms'
             )
         )
         datasets['_territory_profiles'] = {

@@ -9,6 +9,7 @@ from typing import Any
 
 import pdfplumber
 from anthropic import Anthropic
+from openai import OpenAI
 
 from app.core.config import Settings
 from app.modules.reports.validator import ReportValidator
@@ -54,6 +55,36 @@ def _analysis_cache_put(key: str, value: "tuple[ScriptAnalysisResult, dict[str, 
         _analysis_cache.move_to_end(key)
         while len(_analysis_cache) > _ANALYSIS_CACHE_MAX:
             _analysis_cache.popitem(last=False)
+
+
+class _ShimTextBlock:
+    """Mimics an Anthropic content block (.type/.text) for an OpenAI response."""
+
+    def __init__(self, text: str):
+        self.type = "text"
+        self.text = text
+
+
+class _ShimUsage:
+    """Mimics an Anthropic Usage object for an OpenAI response."""
+
+    def __init__(self, input_tokens: int | None, output_tokens: int | None):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.cache_read_input_tokens = None
+        self.cache_creation_input_tokens = None
+
+
+class _OpenAIResponseShim:
+    """Wraps an OpenAI chat-completion result so it has the same surface as an
+    Anthropic Message (.content, .stop_reason, .usage) — lets every existing
+    Anthropic-response consumer (_extract_text_response, stop_reason checks,
+    metrics logging) work unchanged regardless of which provider answered."""
+
+    def __init__(self, *, text: str, stop_reason: str, input_tokens: int | None, output_tokens: int | None):
+        self.content = [_ShimTextBlock(text)]
+        self.stop_reason = stop_reason
+        self.usage = _ShimUsage(input_tokens, output_tokens)
 
 
 class ClaudeUnavailableError(Exception):
@@ -254,6 +285,7 @@ class ScriptAnalysisService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.client = self._build_client(settings.ANTHROPIC_ANALYSIS_TIMEOUT)
+        self._last_llm_provider = "anthropic"
 
     def _build_client(self, timeout_seconds: int) -> Anthropic:
         return Anthropic(
@@ -262,43 +294,86 @@ class ScriptAnalysisService:
             max_retries=0,  # We handle retries ourselves in _call_anthropic_with_retry
         )
 
+    def _openai_configured(self) -> bool:
+        return bool(getattr(self.settings, "OPENAI_API_KEY", "") and getattr(self.settings, "OPENAI_MODEL", ""))
+
+    def _build_openai_client(self, timeout_seconds: int) -> OpenAI:
+        return OpenAI(
+            api_key=self.settings.OPENAI_API_KEY,
+            timeout=float(timeout_seconds),
+            max_retries=0,  # We handle retries ourselves in _call_openai_with_retry
+        )
+
     def check_available(self) -> None:
         """Pre-flight reachability probe — call BEFORE charging for a report.
 
         Issues a minimal (max_tokens=1) request against the configured model with
-        a short timeout. Raises ClaudeUnavailableError if the API can't be reached
-        for any reason (missing key, connection/timeout/overloaded/rate-limit, or
-        an unexpected error), so the caller can refuse to charge and surface
-        "Scriptelligence is currently not available" to the user. Returns None when
-        the probe succeeds.
+        a short timeout. Raises ClaudeUnavailableError only if BOTH Anthropic and
+        (when configured) the OpenAI fallback are unreachable, so the caller can
+        refuse to charge and surface "Scriptelligence is currently not available"
+        to the user. Returns None when either provider is reachable.
         """
         if not self.settings.ANTHROPIC_API_KEY:
-            raise ClaudeUnavailableError("Anthropic API key is not configured")
+            anthropic_error: Exception | None = ClaudeUnavailableError("Anthropic API key is not configured")
+        else:
+            timeout = getattr(self.settings, "ANTHROPIC_HEALTHCHECK_TIMEOUT", 10) or 10
+            client = self._build_client(timeout)
+            anthropic_error = None
+            try:
+                client.messages.create(
+                    model=self.settings.ANTHROPIC_MODEL,
+                    max_tokens=1,
+                    messages=[{"role": "user", "content": "ping"}],
+                )
+            except Exception as exc:
+                if self._is_rate_limit_error(exc):
+                    kind = "rate_limit"
+                elif self._is_timeout_error(exc):
+                    kind = "timeout"
+                elif self._is_connection_error(exc):
+                    kind = "connection"
+                elif self._is_quota_or_auth_error(exc):
+                    kind = "quota_or_auth"
+                else:
+                    kind = "other"
+                logger.error(
+                    "Claude availability probe failed: kind=%s exc_type=%s error=%s",
+                    kind,
+                    type(exc).__name__,
+                    exc,
+                )
+                anthropic_error = exc
+
+        if anthropic_error is None:
+            return
+
+        if not self._openai_configured():
+            raise ClaudeUnavailableError(f"Anthropic API unavailable: {anthropic_error}") from anthropic_error
 
         timeout = getattr(self.settings, "ANTHROPIC_HEALTHCHECK_TIMEOUT", 10) or 10
-        client = self._build_client(timeout)
+        openai_client = self._build_openai_client(timeout)
         try:
-            client.messages.create(
-                model=self.settings.ANTHROPIC_MODEL,
+            openai_client.chat.completions.create(
+                model=self.settings.OPENAI_MODEL,
                 max_tokens=1,
                 messages=[{"role": "user", "content": "ping"}],
             )
-        except Exception as exc:
-            if self._is_rate_limit_error(exc):
-                kind = "rate_limit"
-            elif self._is_timeout_error(exc):
-                kind = "timeout"
-            elif self._is_connection_error(exc):
-                kind = "connection"
-            else:
-                kind = "other"
+        except Exception as openai_exc:
             logger.error(
-                "Claude availability probe failed: kind=%s exc_type=%s error=%s",
-                kind,
-                type(exc).__name__,
-                exc,
+                "OpenAI fallback availability probe also failed: exc_type=%s error=%s",
+                type(openai_exc).__name__,
+                openai_exc,
             )
-            raise ClaudeUnavailableError(f"Anthropic API unavailable ({kind}): {exc}") from exc
+            raise ClaudeUnavailableError(
+                f"Anthropic unavailable ({anthropic_error}) and OpenAI fallback "
+                f"also unavailable ({openai_exc})"
+            ) from openai_exc
+
+        logger.warning(
+            "Anthropic unavailable (%s) — OpenAI fallback is reachable and will "
+            "be used for this session's generations",
+            anthropic_error,
+        )
 
     def _stage_max_tokens(self, stage: str) -> int:
         legacy = self.settings.ANTHROPIC_MAX_TOKENS
@@ -383,7 +458,7 @@ class ScriptAnalysisService:
         script_title: str,
     ) -> tuple[ScriptAnalysisResult, dict[str, Any]]:
         """Analyze script and return result plus metadata about the analysis path."""
-        if not self.settings.ANTHROPIC_API_KEY:
+        if not self.settings.ANTHROPIC_API_KEY and not self._openai_configured():
             raise ValueError("Anthropic API key is not configured")
 
         # Reuse a previously computed analysis for the same script + model,
@@ -554,11 +629,7 @@ class ScriptAnalysisService:
                 chunk_results.append(chunk_payload)
             except Exception as exc:
                 failed_chunks += 1
-                if (
-                    self._is_connection_error(exc)
-                    or self._is_timeout_error(exc)
-                    or self._is_rate_limit_error(exc)
-                ):
+                if self._is_provider_unavailable_error(exc):
                     availability_failures += 1
                 stop_reason = self._infer_stop_reason(exc)
                 if stop_reason:
@@ -721,7 +792,7 @@ class ScriptAnalysisService:
 
         last_error: Exception | None = None
         for prompt_text in prompt_attempts:
-            response = self._call_anthropic_with_retry(
+            response = self._call_llm_with_retry(
                 system_prompt=SCRIPT_CHUNK_EXTRACTION_PROMPT,
                 user_content=(
                     f"Chunk {chunk_index} of {total_chunks}.\n"
@@ -1346,6 +1417,121 @@ class ScriptAnalysisService:
                 )
                 sleep(delay)
 
+    def _call_llm_with_retry(self, **kwargs):
+        """Try Anthropic first; on a provider-unavailable failure (rate-limit
+        exhausted, timeout, connection, or quota/auth), fall back to OpenAI with
+        the IDENTICAL system_prompt/user_content/temperature/stage — same
+        instructions, different model, not a degraded path. If OpenAI isn't
+        configured, or also fails, the original Anthropic exception propagates
+        so existing error handling (ClaudeUnavailableError classification,
+        report-failed-and-refund) is unchanged.
+        """
+        self._last_llm_provider = "anthropic"
+        try:
+            return self._call_anthropic_with_retry(**kwargs)
+        except Exception as exc:
+            if not self._is_provider_unavailable_error(exc) or not self._openai_configured():
+                raise
+            logger.warning(
+                "Anthropic unavailable at stage=%s (%s) — falling back to OpenAI model=%s",
+                kwargs.get("stage"), exc, self.settings.OPENAI_MODEL,
+            )
+            try:
+                response = self._call_openai_with_retry(**kwargs)
+            except Exception:
+                logger.exception(
+                    "OpenAI fallback also failed at stage=%s — propagating original Anthropic error",
+                    kwargs.get("stage"),
+                )
+                raise exc
+            self._last_llm_provider = "openai"
+            return response
+
+    def _call_openai_with_retry(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        temperature: float,
+        stage: str,
+        output_config: dict[str, Any] | None = None,
+    ):
+        """Mirrors _call_anthropic_with_retry's retry loop and returns a response
+        shaped like an Anthropic Message (.content blocks, .stop_reason, .usage)
+        so every downstream consumer (_extract_text_response, the max_tokens
+        stop_reason check, metrics logging) works unmodified regardless of which
+        provider actually served the request."""
+        retry_delays = [8, 20]
+        max_attempts = len(retry_delays) + 1
+        stage_max_tokens = self._stage_max_tokens(stage)
+        stage_timeout = self._stage_timeout(stage)
+        for attempt in range(1, max_attempts + 1):
+            try:
+                client = self._build_openai_client(stage_timeout)
+                logger.info(
+                    "OpenAI request: stage=%s attempt=%s/%s model=%s max_tokens=%s timeout=%s prompt_chars=%s",
+                    stage, attempt, max_attempts, self.settings.OPENAI_MODEL,
+                    stage_max_tokens, stage_timeout, len(user_content),
+                )
+                import time as _time
+                _t0 = _time.monotonic()
+                stream = client.chat.completions.create(
+                    model=self.settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    temperature=temperature,
+                    max_tokens=stage_max_tokens,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                )
+                text_parts: list[str] = []
+                finish_reason = None
+                usage = None
+                for event in stream:
+                    if event.choices:
+                        delta = event.choices[0].delta
+                        if delta and delta.content:
+                            text_parts.append(delta.content)
+                        if event.choices[0].finish_reason:
+                            finish_reason = event.choices[0].finish_reason
+                    if getattr(event, "usage", None):
+                        usage = event.usage
+                _elapsed = _time.monotonic() - _t0
+                stop_reason = "max_tokens" if finish_reason == "length" else "end_turn"
+                logger.info(
+                    "OpenAI API call completed: stage=%s attempt=%s elapsed=%.1fs finish_reason=%s "
+                    "input_tokens=%s output_tokens=%s",
+                    stage, attempt, _elapsed, finish_reason,
+                    getattr(usage, "prompt_tokens", None),
+                    getattr(usage, "completion_tokens", None),
+                )
+                return _OpenAIResponseShim(
+                    text="".join(text_parts),
+                    stop_reason=stop_reason,
+                    input_tokens=getattr(usage, "prompt_tokens", None),
+                    output_tokens=getattr(usage, "completion_tokens", None),
+                )
+            except Exception as exc:
+                logger.error(
+                    "OpenAI request failed: stage=%s attempt=%s/%s exc_type=%s error=%s",
+                    stage, attempt, max_attempts, type(exc).__name__, exc,
+                )
+                is_retryable = (
+                    self._is_rate_limit_error(exc)
+                    or self._is_timeout_error(exc)
+                    or self._is_connection_error(exc)
+                )
+                if not is_retryable or attempt >= max_attempts:
+                    raise
+                delay = retry_delays[attempt - 1]
+                logger.warning(
+                    "OpenAI retryable error at stage=%s attempt=%s/%s, retrying in %ss",
+                    stage, attempt, max_attempts, delay,
+                )
+                sleep(delay)
+
     @staticmethod
     def _is_rate_limit_error(exc: Exception) -> bool:
         message = str(exc).lower()
@@ -1366,8 +1552,9 @@ class ScriptAnalysisService:
 
     @staticmethod
     def _is_connection_error(exc: Exception) -> bool:
-        from anthropic import APIConnectionError
-        if isinstance(exc, APIConnectionError):
+        from anthropic import APIConnectionError as AnthropicAPIConnectionError
+        from openai import APIConnectionError as OpenAIAPIConnectionError
+        if isinstance(exc, (AnthropicAPIConnectionError, OpenAIAPIConnectionError)):
             return True
         message = str(exc).lower()
         return (
@@ -1375,6 +1562,38 @@ class ScriptAnalysisService:
             or "broken pipe" in message
             or "connectionerror" in message
             or "apiconnectionerror" in message
+        )
+
+    @staticmethod
+    def _is_quota_or_auth_error(exc: Exception) -> bool:
+        """Billing/auth failures (e.g. out-of-credits) — distinct from rate-limit,
+        timeout, or connection errors, but equally a "this provider is unavailable"
+        condition. Not retryable against the same provider; triggers the OpenAI
+        fallback (or, in check_available, fails the pre-flight probe) instead of
+        being silently treated as a content-processing error."""
+        message = str(exc).lower()
+        return (
+            "credit balance" in message
+            or "insufficient_quota" in message
+            or "exceeded your current quota" in message
+            or "invalid_api_key" in message
+            or "invalid x-api-key" in message
+            or "authentication_error" in message
+            or "permission_error" in message
+            or "incorrect api key" in message
+        )
+
+    @classmethod
+    def _is_provider_unavailable_error(cls, exc: Exception) -> bool:
+        """True for any failure that means 'this provider could not serve the
+        request' (as opposed to a content/parsing problem) — the trigger
+        condition for both the OpenAI fallback and the ClaudeUnavailableError
+        classification in _analyze_chunked."""
+        return (
+            cls._is_rate_limit_error(exc)
+            or cls._is_timeout_error(exc)
+            or cls._is_connection_error(exc)
+            or cls._is_quota_or_auth_error(exc)
         )
 
     @staticmethod
@@ -1770,7 +1989,7 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
         """
         from app.modules.reports.builder import ReportBuilder
 
-        if not self.settings.ANTHROPIC_API_KEY:
+        if not self.settings.ANTHROPIC_API_KEY and not self._openai_configured():
             raise ValueError("Anthropic API key is not configured")
 
         started = perf_counter()
@@ -1815,7 +2034,7 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
         )
 
         try:
-            response = self._call_anthropic_with_retry(
+            response = self._call_llm_with_retry(
                 system_prompt=self._NARRATIVE_FILL_PROMPT,
                 user_content=user_message,
                 temperature=0.2,
