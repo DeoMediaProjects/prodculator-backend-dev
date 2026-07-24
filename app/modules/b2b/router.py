@@ -59,6 +59,7 @@ async def create_checkout(
     user: AuthUser = Depends(get_current_user),
     service: B2BService = Depends(get_b2b_service),
     stripe_service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ):
     product = B2B_PRODUCTS.get(body.product_type)
     if not product:
@@ -76,6 +77,10 @@ async def create_checkout(
         )
 
     try:
+        # See the B2C checkout: when compressed-cycle billing test mode is ON
+        # (ops flag, OFF by default), route the public B2B checkout through the
+        # short-cycle $1 auto-refund test price so a demo subscriber can watch a
+        # renewal fire and be kept whole. OFF → real price, no refund.
         result = stripe_service.create_b2b_subscription_checkout(
             price_id=price_id,
             user_email=user.email,
@@ -84,6 +89,7 @@ async def create_checkout(
             currency=body.currency,
             delivery_frequency=body.delivery_frequency,
             extra_recipient_email=str(body.extra_recipient_email) if body.extra_recipient_email else None,
+            test_billing=settings.STRIPE_TEST_BILLING_ENABLED,
         )
         return B2BCheckoutResponse(**result)
     except stripe_lib.StripeError:

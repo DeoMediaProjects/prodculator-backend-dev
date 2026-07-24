@@ -99,13 +99,14 @@ def test_checkout_and_update_payment_method_success(client, auth_user):
 
 
 class _CapturingStripeService:
-    """Records the price_id the endpoint resolved before calling Stripe."""
+    """Records what the endpoint resolved/passed before calling Stripe."""
 
     def __init__(self):
         self.received = {}
 
-    def create_subscription_checkout(self, price_id, user_email, user_id, metadata=None):
+    def create_subscription_checkout(self, price_id, user_email, user_id, metadata=None, test_billing=False):
         self.received["price_id"] = price_id
+        self.received["test_billing"] = test_billing
         return {"session_id": "cs_resolved", "url": "https://checkout.stripe.test/resolved"}
 
 
@@ -175,6 +176,57 @@ def test_subscription_checkout_annual_cycle_resolves_annual_price(client, auth_u
     )
     assert resp.status_code == 200
     assert capturing.received["price_id"] == "price_prof_annual_gbp_live"
+
+    client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_subscription_checkout_test_billing_off_by_default(client, auth_user):
+    """Normal operation: the public checkout does NOT route through test billing,
+    so real customers are charged the real price and never auto-refunded."""
+    capturing = _CapturingStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_with_prices  # flag defaults False
+
+    resp = client.post(
+        "/api/payments/subscription-checkout",
+        headers={"Authorization": "Bearer token"},
+        json={"price_id": "price_x", "plan_type": "professional"},
+    )
+    assert resp.status_code == 200
+    assert capturing.received["test_billing"] is False
+
+    client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_subscription_checkout_routes_through_test_billing_when_enabled(client, auth_user):
+    """With STRIPE_TEST_BILLING_ENABLED on (demo/ops flag), the public checkout
+    routes through the short-cycle $1 auto-refund test price so a demo subscriber
+    can watch a renewal fire and be kept whole."""
+    capturing = _CapturingStripeService()
+
+    def _settings_test_billing_on():
+        return Settings(
+            _env_file=None,
+            JWT_SECRET_KEY="x" * 64,
+            STRIPE_TEST_BILLING_ENABLED=True,
+            STRIPE_PRICE_PROFESSIONAL_GBP="price_prof_gbp_live",
+            STRIPE_PRICE_PROFESSIONAL_USD="price_prof_usd_live",
+        )
+
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_test_billing_on
+
+    resp = client.post(
+        "/api/payments/subscription-checkout",
+        headers={"Authorization": "Bearer token"},
+        json={"price_id": "price_x", "plan_type": "professional"},
+    )
+    assert resp.status_code == 200
+    assert capturing.received["test_billing"] is True
 
     client.app.dependency_overrides.pop(get_settings, None)
 
