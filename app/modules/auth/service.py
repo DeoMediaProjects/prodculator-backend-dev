@@ -13,6 +13,7 @@ from app.core.security import (
     revoke_token,
 )
 from app.modules.admin.schemas import AdminTokenResponse, AdminUser
+from app.modules.auth.disposable_email import is_disposable_email
 from app.modules.auth.schemas import AuthUser, SignUpResponse, TokenResponse
 from app.modules.email.service import EmailService
 
@@ -39,6 +40,16 @@ class AuthService:
         Returns SignUpResponse (no tokens) because the user must confirm their
         email address before they can log in.
         """
+        # Explorer (free) plan is one report per person; block the easy way to
+        # farm free accounts — disposable/temporary email domains. Paired with
+        # the existing unique-email + verify-before-login rules, this is the
+        # practical enforcement of "one free signup per person".
+        if is_disposable_email(email):
+            raise ValueError(
+                "Please sign up with a permanent email address — temporary or "
+                "disposable email addresses aren't allowed."
+            )
+
         try:
             auth_response = self.supabase.auth.sign_up(
                 {

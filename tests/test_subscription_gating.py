@@ -101,7 +101,7 @@ class FakeStripeService:
         return {"session_id": "cs_test", "url": "https://checkout.stripe.test"}
 
     @staticmethod
-    def create_subscription_checkout(price_id, user_email, user_id, metadata=None):
+    def create_subscription_checkout(price_id, user_email, user_id, metadata=None, test_billing=False):
         return {"session_id": "cs_sub", "url": "https://checkout.stripe.test/sub"}
 
     @staticmethod
@@ -598,7 +598,7 @@ class TestSubscriptionCheckoutPlanType:
 
         class TrackingStripeService:
             @staticmethod
-            def create_subscription_checkout(price_id, user_email, user_id, metadata=None):
+            def create_subscription_checkout(price_id, user_email, user_id, metadata=None, test_billing=False):
                 calls.append({"price_id": price_id, "metadata": metadata})
                 return {"session_id": "cs_sub", "url": "https://checkout.stripe.test/sub"}
 
@@ -622,7 +622,7 @@ class TestSubscriptionCheckoutPlanType:
 
         class TrackingStripeService:
             @staticmethod
-            def create_subscription_checkout(price_id, user_email, user_id, metadata=None):
+            def create_subscription_checkout(price_id, user_email, user_id, metadata=None, test_billing=False):
                 calls.append({"metadata": metadata})
                 return {"session_id": "cs_sub", "url": "https://checkout.stripe.test/sub"}
 
