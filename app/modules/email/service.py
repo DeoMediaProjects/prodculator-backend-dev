@@ -35,9 +35,11 @@ EMAIL_SUBJECTS: dict[str, str] = {
     "support_inquiry_confirmation": "We received your Prodculator inquiry",
     "contact_message": "New Prodculator contact message",
     "contact_message_confirmation": "We received your message",
-    "b2b_subscription_active": "Your B2B intelligence subscription is active",
-    "b2b_subscription_updated": "Your B2B intelligence subscription was updated",
-    "b2b_intelligence_ready": "Your B2B intelligence PDF is ready",
+    "b2b_subscription_active": "Your Business Intelligence subscription is active",
+    "b2b_subscription_updated": "Your Business Intelligence subscription was updated",
+    "b2b_intelligence_ready": "Your Business Intelligence PDF is ready",
+    "b2b_intelligence_held": "Your intelligence report is on hold",
+    "b2b_admin_alert": "Business Intelligence: action needed",
 }
 
 

@@ -191,6 +191,24 @@ def _run_subscription_reconciler() -> None:
         db.close()
 
 
+def _run_b2b_monthly_aggregate_close() -> None:
+    """Daily: store the closed month's raw aggregate for each B2B product.
+
+    Runs ahead of the delivery job so quarterly/yearly reports can compose from
+    stored months rather than re-querying the signal pool.
+    """
+    from app.core.config import get_settings
+    from app.modules.b2b.service import run_b2b_monthly_aggregate_close
+
+    settings = get_settings()
+    try:
+        stored = run_b2b_monthly_aggregate_close(settings)
+        if stored:
+            logger.info("Scheduler: stored %d B2B monthly aggregate(s)", stored)
+    except Exception:
+        logger.exception("Scheduler: B2B monthly aggregate close failed")
+
+
 def _run_b2b_auto_delivery() -> None:
     """Daily: generate due B2B monthly/quarterly intelligence deliveries."""
     from app.core.config import get_settings
@@ -242,6 +260,14 @@ def start_scheduler() -> None:
     # Always registered — B2B auto-delivery serves manual-contract subscriptions
     # too, so it must run even when Stripe and the scraper are disabled. This means
     # the scheduler always has at least one job (no "no jobs registered" early-out).
+    # Store closed months first, so the delivery job below can compose from them.
+    _scheduler.add_job(
+        _run_b2b_monthly_aggregate_close,
+        trigger=CronTrigger(hour=4, minute=0),
+        id="b2b_monthly_aggregate_close",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
     _scheduler.add_job(
         _run_b2b_auto_delivery,
         trigger=CronTrigger(hour=4, minute=30),

@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
+    <h2>Your intelligence report is on hold</h2>
+    <p>Your {{ product_title }} report for {{ period_start }} to {{ period_end }} is on hold.</p>
+    <p>
+      There were not enough anonymised production signals in this period to produce a report while
+      protecting individual privacy. To keep every figure aggregate and non-identifying, we hold a
+      report rather than deliver a thin or empty one.
+    </p>
+    <p>
+      Nothing is lost. As more consented production data accumulates, your next scheduled report
+      resumes automatically. If you need this specific period sooner, reply to this email and our
+      team can widen the window or advise on timing.
+    </p>
+    <p>
+      <a href="{{ b2b_url }}" style="color: #111; font-weight: 700;">Open Business Intelligence</a>
+    </p>
+    <p style="color: #666; font-size: 13px;">
+      Request ID: {{ request_id }}
+    </p>
+  </body>
+</html>

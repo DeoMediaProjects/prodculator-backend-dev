@@ -183,6 +183,10 @@ class Settings(BaseSettings):
     BREVO_FROM_EMAIL: str = "noreply@prodculator.com"
     BREVO_FROM_NAME: str = "Prodculator"
     CONTACT_EMAIL: str = "support@prodculator.com"
+    # Ops recipient for Business Intelligence operational alerts (a scheduled
+    # delivery held for insufficient data, a generation/delivery failure).
+    # Falls back to CONTACT_EMAIL when blank.
+    B2B_ADMIN_ALERT_EMAIL: str = ""
 
     # Firebase / Google Auth
     FIREBASE_PROJECT_ID: str = ""

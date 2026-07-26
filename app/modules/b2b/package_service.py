@@ -163,18 +163,67 @@ class PackageService:
     def product_template(product_type: str) -> list[str]:
         return PRODUCT_TEMPLATES.get(product_type, PRODUCT_TEMPLATES["strategic_trend"])
 
+    # --- spec translation -------------------------------------------------
+    @staticmethod
+    def _spec_for(sec: SectionDef) -> dict[str, Any]:
+        """SectionDef -> the spec dict B2BService._facts_from_specs consumes."""
+        return {
+            "kind": sec.kind,
+            "key": sec.signal_field,
+            "title": sec.title,
+            "flatten": sec.flatten,
+        }
+
+    def _signal_counts(
+        self, section_keys: list[str], rows: list[dict[str, Any]]
+    ) -> dict[str, dict[str, int]]:
+        """Raw per-section segment counts, computed by the SAME code that renders.
+
+        Preview and generate share this so the two can never disagree about how
+        a value is bucketed or whether a blank counts as a segment. Previously
+        preview had its own counter with different numeric bands and it silently
+        dropped empty values, so it could promise a section that then rendered
+        differently (or vice versa).
+        """
+        defs = [
+            SECTION_BY_KEY[key]
+            for key in section_keys
+            if key in SECTION_BY_KEY and SECTION_BY_KEY[key].part == "signals"
+        ]
+        if not defs:
+            return {}
+        facts = self.b2b._facts_from_specs([self._spec_for(sec) for sec in defs], rows)
+        return {
+            sec.key: (section.get("counts") or {})
+            for sec, section in zip(defs, facts.get("sections") or [])
+        }
+
     # --- sufficiency preview: what WOULD render, before committing ---
     def preview(
-        self, *, section_keys: list[str], period_start: date, period_end: date,
+        self,
+        *,
+        section_keys: list[str],
+        period_start: date,
+        period_end: date,
+        blocked_keys: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         rows = self.b2b._load_signals(period_start, period_end)
         signal_count = len(rows)
         overall_ok = signal_count >= PRIVACY_MIN_OVERALL
+        counts_by_key = self._signal_counts(section_keys, rows)
+        blocked_keys = blocked_keys or {}
         out_sections: list[dict[str, Any]] = []
         for key in section_keys:
             sec = SECTION_BY_KEY.get(key)
             if not sec:
                 out_sections.append({"key": key, "status": "unknown", "renderable": False})
+                continue
+            if key in blocked_keys:
+                out_sections.append({
+                    "key": key, "title": sec.title, "part": sec.part,
+                    "status": "blocked_exclusive", "renderable": False,
+                    "exclusivity": blocked_keys[key],
+                })
                 continue
             if sec.part == "context":
                 available = self.datasets.count(sec.dataset)
@@ -186,7 +235,7 @@ class PackageService:
                 })
                 continue
             # signal section: count distinct qualifying segments
-            segs = self._segment_counts(rows, sec)
+            segs = counts_by_key.get(key, {})
             qualifying = {k: v for k, v in segs.items() if v >= PRIVACY_MIN_SEGMENT}
             renderable = overall_ok and len(qualifying) > 0
             out_sections.append({
@@ -210,34 +259,92 @@ class PackageService:
             "renderable_sections": sum(1 for s in out_sections if s["renderable"]),
         }
 
-    def _segment_counts(self, rows: list[dict[str, Any]], sec: SectionDef) -> dict[str, int]:
-        from collections import Counter
-        c: Counter[str] = Counter()
-        for row in rows:
-            val = row.get(sec.signal_field)
-            if sec.kind == "month":
-                val = str(val)[:7] if val else None
-            values = val if (sec.flatten and isinstance(val, list)) else [val]
-            for v in values:
-                if v is None or v == "":
-                    continue
-                if sec.kind == "numeric_band":
-                    c[self._band(v)] += 1
-                else:
-                    c[str(v)] += 1
-        return dict(c)
+    # --- generate: compose a deliverable package ---------------------------
+    def compose(
+        self,
+        *,
+        section_keys: list[str],
+        period_start: date,
+        period_end: date,
+        title: str,
+        client_name: str | None = None,
+        dataset_limit: int = 25,
+    ) -> dict[str, Any]:
+        """Build deliverable metrics for an admin-composed package.
+
+        Part B (signals) is routed through B2BService._facts_from_specs and
+        _facts_to_metrics, so a bespoke report inherits the identical privacy
+        floors as a standard product -- there is no bespoke suppression path to
+        get wrong. Part A (curated market context) is volume-independent and is
+        prepended.
+        """
+        known = [key for key in section_keys if key in SECTION_BY_KEY]
+        signal_defs = [SECTION_BY_KEY[k] for k in known if SECTION_BY_KEY[k].part == "signals"]
+        context_defs = [SECTION_BY_KEY[k] for k in known if SECTION_BY_KEY[k].part == "context"]
+
+        rows = self.b2b._load_signals(period_start, period_end) if signal_defs else []
+        facts = self.b2b._facts_from_specs([self._spec_for(s) for s in signal_defs], rows)
+        metrics = self.b2b._facts_to_metrics(
+            "bespoke",
+            facts,
+            period_start=period_start,
+            period_end=period_end,
+            title=title,
+            extra={
+                "client_name": client_name,
+                "composed_section_keys": known,
+                "unknown_section_keys": [k for k in section_keys if k not in SECTION_BY_KEY],
+            },
+        )
+
+        # Privacy floors govern signal-derived output only. A context-only
+        # package has no signals to protect, so it must not be treated as
+        # insufficient just because the period happens to be quiet.
+        if not signal_defs:
+            metrics["insufficient_data"] = False
+            metrics["sections"] = []
+
+        if not metrics["insufficient_data"]:
+            context_sections = [self._context_section(sec, dataset_limit) for sec in context_defs]
+            metrics["sections"] = [s for s in context_sections if s] + metrics["sections"]
+
+        return metrics
+
+    def _context_section(self, sec: SectionDef, limit: int) -> dict[str, Any] | None:
+        records = self.datasets.fetch(sec.dataset, limit=limit)
+        if not records:
+            return {
+                "title": sec.title,
+                "summary": f"No {sec.dataset} records are currently available.",
+                "kind": "dataset",
+                "columns": [],
+                "records": [],
+                "rows": [],
+            }
+        columns = self.datasets.display_columns(sec.dataset, records)
+        return {
+            "title": sec.title,
+            "summary": (
+                f"{len(records)} curated {sec.dataset} record(s). "
+                "Market context is editorially maintained and volume-independent."
+            ),
+            "kind": "dataset",
+            "columns": columns,
+            "records": [
+                {col: self._cell(record.get(col)) for col in columns} for record in records
+            ],
+            "rows": [],
+        }
 
     @staticmethod
-    def _band(v: Any) -> str:
-        try:
-            n = int(v)
-        except (TypeError, ValueError):
-            return "unknown"
-        edges = [(10, "1–9"), (25, "10–24"), (50, "25–49"), (100, "50–99"), (10**9, "100+")]
-        for hi, lbl in edges:
-            if n < hi:
-                return lbl
-        return "100+"
+    def _cell(value: Any) -> str:
+        if value is None:
+            return "-"
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value if v is not None) or "—"
+        if isinstance(value, dict):
+            return ", ".join(f"{k}: {v}" for k, v in value.items()) or "—"
+        return str(value)
 
 
 class DatasetFetcher:
@@ -245,13 +352,40 @@ class DatasetFetcher:
 
     _TABLES = {
         "incentives": "incentive_programs",
-        "festivals": "festivals",
+        # The festival table is `film_festivals`. This previously pointed at a
+        # non-existent "festivals" table, and because count()/fetch() swallow
+        # exceptions the Festival Calendar section silently reported
+        # empty_dataset forever instead of failing loudly.
+        "festivals": "film_festivals",
         "distributors": "distributors",
         "comparables": "comparable_productions",
     }
 
+    # Preferred display columns per dataset, in report order. Intersected with
+    # the columns actually present, so a schema change degrades to fewer columns
+    # rather than raising or rendering blanks.
+    _DISPLAY_COLUMNS = {
+        "incentives": ["territory", "program", "rate", "cap", "status"],
+        "festivals": ["name", "location", "submission_deadline", "tier", "year"],
+        "distributors": ["name", "primary_market", "rights_type", "budget_tier_fit"],
+        "comparables": ["title", "year", "primary_territory", "budget_usd", "incentive_used"],
+    }
+
+    _HIDDEN_COLUMNS = {"id", "created_at", "updated_at", "source_url", "filmfreeway_url"}
+
     def __init__(self, db: Any):
         self.db = db
+
+    def display_columns(self, dataset: str | None, records: list[dict[str, Any]]) -> list[str]:
+        if not records:
+            return []
+        present = set(records[0].keys())
+        preferred = [c for c in self._DISPLAY_COLUMNS.get(dataset or "", []) if c in present]
+        if preferred:
+            return preferred
+        # Unknown dataset or fully renamed schema: fall back to the first few
+        # meaningful columns so the section still carries information.
+        return [c for c in records[0] if c not in self._HIDDEN_COLUMNS][:5]
 
     def count(self, dataset: str | None) -> int:
         table = self._TABLES.get(dataset or "")

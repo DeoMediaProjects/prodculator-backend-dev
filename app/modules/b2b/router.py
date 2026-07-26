@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, EmailStr
 import stripe as stripe_lib
 
 from app.core.config import Settings, get_settings
@@ -17,6 +18,7 @@ from app.modules.b2b.schemas import (
     B2BIntelligenceRequestResponse,
     B2BProductResponse,
     B2BSubscriptionListResponse,
+    B2BSubscriptionResponse,
 )
 from app.modules.b2b.service import B2B_PRODUCTS, B2BService, process_request_task
 from app.modules.payments.service import StripeService
@@ -51,6 +53,32 @@ async def list_subscriptions(
     service: B2BService = Depends(get_b2b_service),
 ):
     return {"items": service.list_user_subscriptions(user.id)}
+
+
+class B2BRecipientUpdate(BaseModel):
+    """Set (or clear, with null) the additional recipient on your subscription."""
+
+    extra_recipient_email: EmailStr | None = None
+
+
+@router.patch("/subscriptions/{subscription_id}/recipients", response_model=B2BSubscriptionResponse)
+async def update_subscription_recipients(
+    subscription_id: str,
+    body: B2BRecipientUpdate,
+    user: AuthUser = Depends(get_current_user),
+    service: B2BService = Depends(get_b2b_service),
+):
+    """Manage the distribution list for your own Business Intelligence subscription."""
+    subscription = service.set_extra_recipient(
+        subscription_id,
+        user.id,
+        str(body.extra_recipient_email) if body.extra_recipient_email else None,
+    )
+    if not subscription:
+        # Same response for "does not exist" and "not yours" so the endpoint
+        # cannot be used to probe for other companies' subscription ids.
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return subscription
 
 
 @router.post("/checkout", response_model=B2BCheckoutResponse)

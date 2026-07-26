@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Any, ClassVar
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -170,6 +170,59 @@ class B2BIntelligenceRequest(SQLModel, table=True):
     error_message: str | None = None
     delivered_at: datetime | None = None
     completed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class B2BMonthlyAggregate(SQLModel, table=True):
+    """Stored monthly facts — the atomic unit of Business Intelligence reporting.
+
+    Quarterly composes three of these and yearly twelve, rather than re-querying
+    the signal pool. `facts` holds RAW, UNSUPPRESSED counters: privacy floors are
+    applied in the renderer, so a segment below the floor in each single month
+    but above it across the quarter still surfaces once composed.
+    """
+
+    __tablename__: ClassVar[str] = "b2b_monthly_aggregates"  # type: ignore[assignment]
+    __table_args__ = (
+        UniqueConstraint("product_type", "period_month", name="uq_b2b_monthly_aggregates_product_month"),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    product_type: str = Field(index=True, nullable=False)
+    period_month: date = Field(index=True, nullable=False)  # first day of the month
+    signal_count: int = Field(default=0)
+    facts: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class B2BClientEntitlement(SQLModel, table=True):
+    """What a B2B client is contractually owed, and what they hold exclusively.
+
+    Exclusivity is enforced at package composition: while a module is exclusive
+    to one subscription and `reverts_at` has not passed, no other client's
+    package may include the sections that module covers.
+    """
+
+    __tablename__: ClassVar[str] = "b2b_client_entitlements"  # type: ignore[assignment]
+    __table_args__ = (
+        UniqueConstraint(
+            "b2b_subscription_id",
+            "module_key",
+            name="uq_b2b_client_entitlements_subscription_module",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    b2b_subscription_id: str = Field(index=True, nullable=False)
+    module_key: str = Field(index=True, nullable=False)
+    module_label: str | None = None
+    # SECTION_LIBRARY keys this module covers; empty for a contracted-but-unbuilt module.
+    section_keys: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    is_exclusive: bool = Field(default=False)
+    reverts_at: date | None = None  # None + exclusive => perpetual
+    notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
