@@ -24,7 +24,7 @@ def test_anonymous_scenario_returns_teaser_not_401(client):
     assert payload["budget_amount"] == 4_000_000
     # Every territory row (if the test DB has any seeded) must be redacted.
     for territory in payload["territories"]:
-        assert territory["net_saving_display"] == "Sign up to view"
+        assert territory["net_saving_display"] == "Upgrade to view"
         assert territory["payment_timeline"] is None
         assert territory["min_spend"] is None
         assert territory["fx_rate"] is None

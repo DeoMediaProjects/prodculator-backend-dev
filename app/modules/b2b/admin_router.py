@@ -217,7 +217,11 @@ from datetime import date as _date  # noqa: E402
 
 from pydantic import BaseModel  # noqa: E402
 
-from app.modules.b2b.package_service import PackageService  # noqa: E402
+from app.modules.b2b.entitlement_service import (  # noqa: E402
+    EntitlementConflict,
+    EntitlementService,
+)
+from app.modules.b2b.package_service import SECTION_BY_KEY, PackageService  # noqa: E402
 
 
 def get_package_service(
@@ -226,10 +230,17 @@ def get_package_service(
     return PackageService(service)
 
 
+def get_entitlement_service(
+    db: DatabaseClient = Depends(get_supabase),
+) -> EntitlementService:
+    return EntitlementService(db)
+
+
 class PackagePreviewRequest(BaseModel):
     section_keys: list[str]
     period_start: _date
     period_end: _date
+    subscription_id: str | None = None
 
 
 class BespokeGenerateRequest(BaseModel):
@@ -265,11 +276,226 @@ async def package_preview(
     body: PackagePreviewRequest,
     _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
     pkg: PackageService = Depends(get_package_service),
+    entitlements: EntitlementService = Depends(get_entitlement_service),
 ):
     """Sufficiency preview: which sections/segments WOULD render for the period,
-    before anything is generated or delivered."""
+    before anything is generated or delivered.
+
+    Sections locked to another client by exclusivity are surfaced here too, so an
+    admin finds out at preview time rather than being refused at generate time.
+    """
+    blocked = {
+        conflict["section_key"]: conflict
+        for conflict in entitlements.conflicts_for(
+            subscription_id=body.subscription_id, section_keys=body.section_keys
+        )
+    }
     return pkg.preview(
         section_keys=body.section_keys,
         period_start=body.period_start,
         period_end=body.period_end,
+        blocked_keys=blocked,
     )
+
+
+class AggregateBackfillRequest(BaseModel):
+    product_type: str
+    period_start: _date
+    period_end: _date
+
+
+class EntitlementGrantRequest(BaseModel):
+    b2b_subscription_id: str
+    module_key: str
+    module_label: str | None = None
+    section_keys: list[str] = []
+    is_exclusive: bool = False
+    reverts_at: _date | None = None
+    notes: str | None = None
+
+
+@router.get("/entitlements")
+async def list_entitlements(
+    subscription_id: str | None = Query(default=None),
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    entitlements: EntitlementService = Depends(get_entitlement_service),
+):
+    """The entitlement registry: what each client is owed and holds exclusively."""
+    rows = (
+        entitlements.list_for_subscription(subscription_id)
+        if subscription_id
+        else entitlements.list_all()
+    )
+    today = _date.today()
+    return {
+        "entitlements": [
+            {**row, "exclusivity_in_force": entitlements.is_in_force(row, today)} for row in rows
+        ]
+    }
+
+
+@router.post("/entitlements")
+async def grant_entitlement(
+    body: EntitlementGrantRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    entitlements: EntitlementService = Depends(get_entitlement_service),
+):
+    """Grant or update an entitlement. Idempotent per (subscription, module)."""
+    unknown = [key for key in body.section_keys if key not in SECTION_BY_KEY]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown section keys: {', '.join(unknown)}")
+    if body.is_exclusive:
+        # Two clients holding the same section exclusively is unsatisfiable, and
+        # silently accepting it would mean both contracts look honoured in the
+        # registry while composition blocks both.
+        clash = entitlements.conflicts_for(
+            subscription_id=body.b2b_subscription_id, section_keys=body.section_keys
+        )
+        if clash:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Those sections are already exclusive to another client",
+                    "conflicts": clash,
+                },
+            )
+    return entitlements.grant(
+        subscription_id=body.b2b_subscription_id,
+        module_key=body.module_key,
+        module_label=body.module_label,
+        section_keys=body.section_keys,
+        is_exclusive=body.is_exclusive,
+        reverts_at=body.reverts_at,
+        notes=body.notes,
+    )
+
+
+@router.delete("/entitlements/{entitlement_id}")
+async def revoke_entitlement(
+    entitlement_id: str,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    entitlements: EntitlementService = Depends(get_entitlement_service),
+):
+    if not entitlements.revoke(entitlement_id):
+        raise HTTPException(status_code=404, detail="Entitlement not found")
+    return {"revoked": True, "id": entitlement_id}
+
+
+@router.post("/package/generate")
+async def package_generate(
+    body: BespokeGenerateRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    service: B2BService = Depends(get_b2b_service),
+    pkg: PackageService = Depends(get_package_service),
+    entitlements: EntitlementService = Depends(get_entitlement_service),
+):
+    """Generate a bespoke admin-composed package as a PDF.
+
+    Runs the composed sections through the same privacy floors as a standard
+    product, and refuses outright if any section is exclusively licensed to a
+    different client.
+    """
+    if not body.section_keys:
+        raise HTTPException(status_code=400, detail="At least one section is required")
+    if body.period_start > body.period_end:
+        raise HTTPException(status_code=400, detail="period_start must not be after period_end")
+
+    try:
+        entitlements.assert_available(
+            subscription_id=body.subscription_id, section_keys=body.section_keys
+        )
+    except EntitlementConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "conflicts": exc.conflicts},
+        ) from exc
+
+    subscription = (
+        service.get_subscription(body.subscription_id) if body.subscription_id else None
+    )
+    if body.subscription_id and not subscription:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+
+    metrics = pkg.compose(
+        section_keys=body.section_keys,
+        period_start=body.period_start,
+        period_end=body.period_end,
+        title=body.title,
+        client_name=body.client_name or (subscription or {}).get("company_name"),
+    )
+    if metrics.get("insufficient_data"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The period does not contain enough consented signals to clear "
+                    "the privacy floor. Widen the period or drop the signal sections."
+                ),
+                "signal_count": metrics.get("source_signal_count"),
+                "thresholds": metrics.get("thresholds"),
+            },
+        )
+
+    admin_email = getattr(_admin, "email", None) or "admin@prodculator.com"
+    user_id = (subscription or {}).get("user_id") or getattr(_admin, "id", None) or "admin"
+    try:
+        request_row = service.generate_bespoke_report(
+            metrics=metrics,
+            user_id=user_id,
+            recipient_email=admin_email,
+            period_start=body.period_start,
+            period_end=body.period_end,
+            subscription_id=body.subscription_id,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {
+        "request_id": request_row["id"],
+        "status": request_row.get("status"),
+        "title": body.title,
+        "section_count": len(metrics.get("sections") or []),
+        "signal_count": metrics.get("source_signal_count"),
+        "suppressed_segments": len(metrics.get("suppressed_segments") or []),
+    }
+
+
+@router.get("/aggregates/{product_type}")
+async def list_monthly_aggregates(
+    product_type: str,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    service: B2BService = Depends(get_b2b_service),
+):
+    """Which months are stored for a product, and how many signals each holds.
+
+    Quarterly composes from three stored months and yearly from twelve, so this
+    is how an admin sees whether a period can be composed yet.
+    """
+    stored = service.get_monthly_aggregates(product_type)
+    months = [
+        {"period_month": key, "signal_count": row.get("signal_count") or 0}
+        for key, row in sorted(stored.items())
+    ]
+    return {
+        "product_type": product_type,
+        "months": months,
+        "stored_month_count": len(months),
+        "yearly_available": len(months) >= 12,
+    }
+
+
+@router.post("/aggregates/backfill")
+async def backfill_monthly_aggregates(
+    body: AggregateBackfillRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    service: B2BService = Depends(get_b2b_service),
+):
+    """Recompute and store every month in the range. Idempotent."""
+    if body.product_type not in B2B_PRODUCTS:
+        raise HTTPException(status_code=404, detail="Unknown product type")
+    if body.period_start > body.period_end:
+        raise HTTPException(status_code=400, detail="period_start must not be after period_end")
+    stored = service.backfill_monthly_aggregates(
+        body.product_type, body.period_start, body.period_end
+    )
+    return {"product_type": body.product_type, "months_stored": stored}

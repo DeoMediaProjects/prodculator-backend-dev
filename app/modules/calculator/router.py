@@ -22,7 +22,7 @@ _TEASER_REDACTIONS: dict = {
     "fx_rate": None,
     "fx_rate_date": None,
     "net_saving": 0.0,
-    "net_saving_display": "Sign up to view",
+    "net_saving_display": "Upgrade to view",
     "payment_timeline": None,
     "min_spend": None,
     "financial_return_score": None,

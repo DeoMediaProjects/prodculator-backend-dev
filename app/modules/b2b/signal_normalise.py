@@ -46,6 +46,9 @@ CANONICAL_GENRES = {
     "drama", "thriller", "sci-fi", "horror", "comedy", "romance", "action",
     "adventure", "fantasy", "mystery", "documentary", "biopic", "period",
     "western", "animation", "musical", "crime", "war", "sports", "family",
+    # Kept in sync with the frontend genre picker (AnalysisWizard GENRE_OPTIONS).
+    "history", "music", "superhero", "coming-of-age", "psychological",
+    "disaster", "spy", "noir",
 }
 
 # GBP-normalised budget bands (Decision R-1). Thresholds in GBP.

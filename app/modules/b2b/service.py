@@ -5,7 +5,6 @@ import calendar
 import logging
 from collections import Counter
 from datetime import date, datetime, timezone
-from statistics import mean
 from typing import Any
 from uuid import uuid4
 
@@ -134,6 +133,73 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
         "price_attrs": {},
     },
 }
+
+
+# Declarative section layout per product. Both the raw-facts stage and the
+# render stage walk this list, so a stored monthly aggregate and a freshly
+# queried period always produce the same sections in the same order.
+#
+# `kind` describes how a section is DERIVED from signal rows. Everything except
+# "headcount" reduces to a Counter[str], which is what makes months summable.
+_DEFAULT_SECTION_SPECS: tuple[dict[str, Any], ...] = (
+    {"kind": "distribution", "key": "territory", "title": "Territory Demand Distribution"},
+    {"kind": "distribution", "key": "budget_range", "title": "Budget Range Mix"},
+    {"kind": "distribution", "key": "genres", "title": "Genre Trend Signals", "flatten": True},
+    {"kind": "distribution", "key": "format", "title": "Format Mix"},
+    {"kind": "month", "key": "submission_month", "title": "Monthly Planning Volume"},
+)
+
+SECTION_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
+    "camera_equipment": (
+        {"kind": "distribution", "key": "territory", "title": "Production Volume by Territory"},
+        {"kind": "distribution", "key": "camera_equipment", "title": "Camera & Equipment Mix", "flatten": True},
+        {"kind": "distribution", "key": "format", "title": "Production Type Distribution"},
+        {"kind": "distribution", "key": "genres", "title": "Genre Mix", "flatten": True},
+        {"kind": "month", "key": "submission_month", "title": "Monthly Upload Volume"},
+    ),
+    "production_services": (
+        {"kind": "numeric_band", "key": "crew_size", "title": "Crew Size Distribution"},
+        {"kind": "headcount", "key": "headcount", "title": "Total Headcount Trend Analysis"},
+        {"kind": "distribution", "key": "budget_range", "title": "Budget Range Breakdown"},
+        {"kind": "distribution", "key": "territory", "title": "Territory Demand Mix"},
+        {"kind": "distribution", "key": "format", "title": "Format Distribution"},
+    ),
+    "crew_casting": (
+        {"kind": "numeric_band", "key": "principal_cast", "title": "Principal Cast Demand"},
+        {"kind": "numeric_band", "key": "supporting_cast", "title": "Supporting Cast Demand"},
+        {"kind": "numeric_band", "key": "background_extras", "title": "Extras Demand"},
+        {"kind": "distribution", "key": "genres", "title": "Genre Mix", "flatten": True},
+        {"kind": "month", "key": "submission_month", "title": "Submission Timing Clusters"},
+    ),
+}
+
+HEADCOUNT_KEYS = ("crew_size", "principal_cast", "supporting_cast", "background_extras")
+
+
+def section_specs(product_type: str) -> tuple[dict[str, Any], ...]:
+    return SECTION_SPECS.get(product_type, _DEFAULT_SECTION_SPECS)
+
+
+def month_start(value: date | datetime) -> date:
+    if isinstance(value, datetime):
+        value = value.date()
+    return value.replace(day=1)
+
+
+def month_end(value: date | datetime) -> date:
+    start = month_start(value)
+    return start.replace(day=calendar.monthrange(start.year, start.month)[1])
+
+
+def months_in_range(start: date | datetime, end: date | datetime) -> list[date]:
+    """Every month-start from `start`'s month through `end`'s month, inclusive."""
+    cursor = month_start(start)
+    last = month_start(end)
+    months: list[date] = []
+    while cursor <= last:
+        months.append(cursor)
+        cursor = month_start(add_months(datetime.combine(cursor, datetime.min.time()), 1))
+    return months
 
 
 def add_months(value: datetime, months: int) -> datetime:
@@ -288,6 +354,34 @@ class B2BService:
         if subscription:
             self.notify_subscription_updated(subscription, sorted(updates.keys()))
         return subscription
+
+    def set_extra_recipient(
+        self, subscription_id: str, user_id: str, email: str | None
+    ) -> dict[str, Any] | None:
+        """Client-side recipient management for one's OWN subscription.
+
+        Ownership is checked here rather than in the router so no caller can
+        edit another company's distribution list. Returns None when the
+        subscription does not exist or is not the caller's.
+
+        The data model has two slots -- the account holder (`recipient_email`,
+        derived from the user and therefore not removable) and one additional
+        address. This manages the additional slot.
+        """
+        subscription = self.get_subscription(subscription_id)
+        if not subscription or subscription.get("user_id") != user_id:
+            return None
+
+        cleaned = self._clean_email(email)
+        updates = {"extra_recipient_email": cleaned, "updated_at": _utcnow()}
+        result = (
+            self.db.table("b2b_subscriptions")
+            .update(updates)
+            .eq("id", subscription_id)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else {**subscription, **updates}
 
     def get_subscription(self, subscription_id: str) -> dict[str, Any] | None:
         rows = (
@@ -447,11 +541,19 @@ class B2BService:
             return
 
         try:
-            metrics = self.build_metrics(
+            metrics = self.build_period_metrics(
                 product_type=request_row["product_type"],
                 period_start=self._parse_date(request_row["period_start"]),
                 period_end=self._parse_date(request_row["period_end"]),
             )
+            # Hold-and-notify: never deliver a thin or empty report. When the
+            # period lacks enough consented signals to clear the privacy floor,
+            # hold the request and notify the client + ops instead of generating
+            # a report with nothing renderable in it.
+            if metrics.get("insufficient_data"):
+                self._hold_request(request_row, metrics)
+                return
+
             html = self.render_pdf_html(metrics)
             pdf_bytes = self.pdf_service.generate_pdf_bytes(html)
             if not pdf_bytes:
@@ -487,28 +589,212 @@ class B2BService:
                     "updated_at": _utcnow(),
                 }
             ).eq("id", request_id).execute()
+            self._notify_admin_alert(
+                heading="A Business Intelligence report failed to generate",
+                message=(
+                    f"Request {request_id} could not be generated and has been marked failed. "
+                    "The client was not charged for delivery; investigate before the next run."
+                ),
+                details={
+                    "Request ID": request_id,
+                    "Product": request_row.get("product_type"),
+                    "Period": f"{_as_iso(request_row.get('period_start'))} to {_as_iso(request_row.get('period_end'))}",
+                    "Error": str(exc)[:300],
+                },
+            )
+
+    def _hold_request(self, request_row: dict[str, Any], metrics: dict[str, Any]) -> None:
+        """Mark a request held (not failed) for insufficient data, persist the
+        computed metrics for context, and notify the client and ops."""
+        count = metrics.get("source_signal_count", 0)
+        floor = (metrics.get("thresholds") or {}).get("minimum_overall_records", PRIVACY_MIN_OVERALL)
+        reason = (
+            f"On hold: {count} consented production signal(s) in this period, "
+            f"below the {floor} required to protect privacy."
+        )
+        held_at = _utcnow()
+        self.db.table("b2b_intelligence_requests").update(
+            {
+                "status": "held",
+                "metrics": metrics,
+                "error_message": reason,
+                "updated_at": held_at,
+            }
+        ).eq("id", request_row["id"]).execute()
+        request_row.update({"status": "held", "metrics": metrics, "error_message": reason})
+        logger.info(
+            "B2B request %s held for insufficient data (%s < %s)",
+            request_row["id"], count, floor,
+        )
+        self._notify_request_held(request_row, metrics)
+        self._notify_admin_alert(
+            heading="A scheduled Business Intelligence report was held",
+            message=(
+                "There were not enough consented production signals to generate this report "
+                "while protecting privacy, so it was held rather than delivered empty."
+            ),
+            details={
+                "Request ID": request_row["id"],
+                "Product": request_row.get("product_type"),
+                "Period": f"{_as_iso(request_row.get('period_start'))} to {_as_iso(request_row.get('period_end'))}",
+                "Signals": f"{count} (need {floor})",
+            },
+        )
+
+    def _notify_request_held(self, request_row: dict[str, Any], metrics: dict[str, Any]) -> None:
+        recipients = [
+            request_row.get("recipient_email"),
+            self._clean_email(request_row.get("extra_recipient_email")),
+        ]
+        product_title = metrics.get("title") or self._product(request_row["product_type"])["title"]
+        for email in [e for e in recipients if e]:
+            try:
+                self.email_service.send(
+                    email,
+                    "b2b_intelligence_held",
+                    {
+                        "product_title": product_title,
+                        "period_start": _as_iso(request_row.get("period_start")),
+                        "period_end": _as_iso(request_row.get("period_end")),
+                        "request_id": request_row["id"],
+                        # Existing clients land on their own dashboard, not the catalogue.
+                        "b2b_url": f"{self.settings.FRONTEND_URL.rstrip('/')}/business-intelligence",
+                    },
+                )
+            except Exception:
+                logger.warning("Failed to send B2B hold notice to %s", email, exc_info=True)
+
+    def _notify_admin_alert(
+        self, *, heading: str, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        """Best-effort ops alert. Never raises — an alert failure must not affect
+        the request's own outcome."""
+        recipient = (
+            getattr(self.settings, "B2B_ADMIN_ALERT_EMAIL", "") or self.settings.CONTACT_EMAIL or ""
+        ).strip()
+        if not recipient:
+            return
+        try:
+            self.email_service.send(
+                recipient,
+                "b2b_admin_alert",
+                {"heading": heading, "message": message, "details": details or {}},
+            )
+        except Exception:
+            logger.warning("Failed to send B2B admin alert", exc_info=True)
 
     def build_metrics(self, *, product_type: str, period_start: date, period_end: date) -> dict[str, Any]:
-        product = self._product(product_type)
         rows = self._load_signals(period_start, period_end)
+        facts = self._build_raw_facts(product_type, rows)
+        return self._facts_to_metrics(
+            product_type,
+            facts,
+            period_start=period_start,
+            period_end=period_end,
+        )
+
+    def _build_raw_facts(self, product_type: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """Raw facts for a standard product's fixed section layout."""
+        return self._facts_from_specs(section_specs(product_type), rows)
+
+    def _facts_from_specs(
+        self, specs: "list[dict[str, Any]] | tuple[dict[str, Any], ...]", rows: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Reduce signal rows to RAW, UNSUPPRESSED counters for any spec list.
+
+        No privacy floor is applied here. Sub-threshold counts MUST survive into
+        storage so that a segment which is below the floor in any single month
+        but above it across a quarter still becomes visible when months are
+        composed. Suppression happens in `_facts_to_metrics` (the renderer).
+
+        Bespoke packages route through this too, so an admin-composed report is
+        counted and suppressed by exactly the same code as a standard product.
+        """
+        sections: list[dict[str, Any]] = []
+        for spec in specs:
+            kind = spec["kind"]
+            if kind == "headcount":
+                sections.append(
+                    {
+                        "title": spec["title"],
+                        "key": spec["key"],
+                        "kind": "headcount",
+                        "stats": self._headcount_stats(rows),
+                    }
+                )
+                continue
+
+            counter: Counter[str] = Counter()
+            if kind == "distribution":
+                flatten = bool(spec.get("flatten"))
+                for row in rows:
+                    value = row.get(spec["key"])
+                    values = value if flatten and isinstance(value, list) else [value]
+                    for entry in values:
+                        if self._is_missing(entry):
+                            continue
+                        counter[self._label(entry)] += 1
+            elif kind == "numeric_band":
+                for row in rows:
+                    value = row.get(spec["key"])
+                    if self._is_missing(value):
+                        continue
+                    counter[self._numeric_band(value)] += 1
+            elif kind == "month":
+                for row in rows:
+                    counter[self._parse_date(row.get("submission_date")).strftime("%Y-%m")] += 1
+            else:  # pragma: no cover - guards against a malformed spec
+                raise ValueError(f"Unknown section kind: {kind}")
+
+            sections.append(
+                {
+                    "title": spec["title"],
+                    "key": spec["key"],
+                    "kind": "counter",
+                    "counts": dict(counter),
+                }
+            )
+
+        return {"signal_count": len(rows), "sections": sections}
+
+    def _facts_to_metrics(
+        self,
+        product_type: str,
+        facts: dict[str, Any],
+        *,
+        period_start: date,
+        period_end: date,
+        extra: dict[str, Any] | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply privacy floors to raw facts and produce the deliverable metrics.
+
+        This is the renderer. The floors live here and there is no bypass.
+
+        `title` is supplied for bespoke packages, which have no entry in
+        B2B_PRODUCTS; standard products resolve their title from the catalogue.
+        """
+        signal_count = int(facts.get("signal_count") or 0)
         suppressed_segments: list[dict[str, Any]] = []
         metrics: dict[str, Any] = {
             "product_type": product_type,
-            "title": product["title"],
+            "title": title or self._product(product_type)["title"],
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
             "generated_at": _utcnow().isoformat(),
-            "source_signal_count": len(rows),
+            "source_signal_count": signal_count,
             "thresholds": {
                 "minimum_overall_records": PRIVACY_MIN_OVERALL,
                 "minimum_segment_records": PRIVACY_MIN_SEGMENT,
             },
-            "insufficient_data": len(rows) < PRIVACY_MIN_OVERALL,
+            "insufficient_data": signal_count < PRIVACY_MIN_OVERALL,
             "sections": [],
             "suppressed_segments": suppressed_segments,
         }
-        if len(rows) < PRIVACY_MIN_OVERALL:
-            metrics["sections"].append(
+        if extra:
+            metrics.update(extra)
+        if signal_count < PRIVACY_MIN_OVERALL:
+            metrics["sections"] = [
                 {
                     "title": "Privacy Threshold",
                     "summary": (
@@ -518,53 +804,373 @@ class B2BService:
                     ),
                     "rows": [],
                 }
-            )
+            ]
             return metrics
 
         sections: list[dict[str, Any]] = []
-        if product_type == "camera_equipment":
-            sections.extend(
-                [
-                    self._distribution_section(rows, "territory", "Production Volume by Territory", suppressed_segments),
-                    self._distribution_section(rows, "camera_equipment", "Camera & Equipment Mix", suppressed_segments, flatten=True),
-                    self._distribution_section(rows, "format", "Production Type Distribution", suppressed_segments),
-                    self._distribution_section(rows, "genres", "Genre Mix", suppressed_segments, flatten=True),
-                    self._month_section(rows, suppressed_segments),
-                ]
-            )
-        elif product_type == "production_services":
-            sections.extend(
-                [
-                    self._numeric_band_section(rows, "crew_size", "Crew Size Distribution", suppressed_segments),
-                    self._headcount_section(rows),
-                    self._distribution_section(rows, "budget_range", "Budget Range Breakdown", suppressed_segments),
-                    self._distribution_section(rows, "territory", "Territory Demand Mix", suppressed_segments),
-                    self._distribution_section(rows, "format", "Format Distribution", suppressed_segments),
-                ]
-            )
-        elif product_type == "crew_casting":
-            sections.extend(
-                [
-                    self._numeric_band_section(rows, "principal_cast", "Principal Cast Demand", suppressed_segments),
-                    self._numeric_band_section(rows, "supporting_cast", "Supporting Cast Demand", suppressed_segments),
-                    self._numeric_band_section(rows, "background_extras", "Extras Demand", suppressed_segments),
-                    self._distribution_section(rows, "genres", "Genre Mix", suppressed_segments, flatten=True),
-                    self._month_section(rows, suppressed_segments, title="Submission Timing Clusters"),
-                ]
-            )
-        else:
-            sections.extend(
-                [
-                    self._distribution_section(rows, "territory", "Territory Demand Distribution", suppressed_segments),
-                    self._distribution_section(rows, "budget_range", "Budget Range Mix", suppressed_segments),
-                    self._distribution_section(rows, "genres", "Genre Trend Signals", suppressed_segments, flatten=True),
-                    self._distribution_section(rows, "format", "Format Mix", suppressed_segments),
-                    self._month_section(rows, suppressed_segments, title="Monthly Planning Volume"),
-                ]
-            )
+        for section in facts.get("sections") or []:
+            if section.get("kind") == "headcount":
+                sections.append(self._headcount_section_from_stats(section))
+            else:
+                sections.append(
+                    self._counter_section(
+                        Counter(section.get("counts") or {}),
+                        section["title"],
+                        suppressed_segments,
+                        section["key"],
+                    )
+                )
 
         metrics["sections"] = [section for section in sections if section]
         return metrics
+
+    # ------------------------------------------------------------------
+    # Monthly aggregates: monthly is the atomic unit. Quarterly composes from
+    # three stored months and yearly from twelve, rather than re-querying the
+    # signal pool (Implementation Plan section 3).
+    # ------------------------------------------------------------------
+
+    def build_monthly_aggregate(self, product_type: str, month: date | datetime) -> dict[str, Any]:
+        """Compute and store RAW facts for a single month. Idempotent."""
+        start = month_start(month)
+        rows = self._load_signals(start, month_end(start))
+        facts = self._build_raw_facts(product_type, rows)
+        record = {
+            "id": str(uuid4()),
+            "product_type": product_type,
+            # Date/datetime columns take real objects, not ISO strings.
+            "period_month": start,
+            "signal_count": facts["signal_count"],
+            "facts": facts,
+            "updated_at": _utcnow(),
+        }
+        # Reflected tables carry no Python-side defaults, so timestamps are set
+        # explicitly. created_at is only sent on first write; a recompute must
+        # refresh updated_at without rewriting when the month was first stored.
+        if not self.get_monthly_aggregates(product_type, [start]):
+            record["created_at"] = _utcnow()
+        self.db.table("b2b_monthly_aggregates").upsert(
+            record, on_conflict="product_type,period_month"
+        ).execute()
+        logger.info(
+            "Stored B2B monthly aggregate product=%s month=%s signals=%s",
+            product_type,
+            start.isoformat(),
+            facts["signal_count"],
+        )
+        return record
+
+    def get_monthly_aggregates(
+        self, product_type: str, months: list[date] | None = None
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch stored aggregates keyed by ISO month-start."""
+        query = (
+            self.db.table("b2b_monthly_aggregates")
+            .select("*")
+            .eq("product_type", product_type)
+        )
+        if months:
+            query = query.in_("period_month", [month_start(m) for m in months])
+        result = query.execute()
+        stored: dict[str, dict[str, Any]] = {}
+        for row in result.data or []:
+            key = _as_iso(self._parse_date(row.get("period_month")))
+            if key:
+                stored[key] = row
+        return stored
+
+    def ensure_monthly_aggregates(
+        self, product_type: str, months: list[date]
+    ) -> dict[str, dict[str, Any]]:
+        """Return stored aggregates for `months`, computing any that are missing."""
+        stored = self.get_monthly_aggregates(product_type, months)
+        for month in months:
+            key = month_start(month).isoformat()
+            if key not in stored:
+                stored[key] = self.build_monthly_aggregate(product_type, month)
+        return stored
+
+    @staticmethod
+    def compose_facts(facts_list: list[dict[str, Any]]) -> dict[str, Any]:
+        """Sum RAW facts across months.
+
+        Counters are summed label-by-label BEFORE any privacy floor is applied,
+        which is what lets a segment that is sub-threshold in each individual
+        month surface once the months are combined.
+        """
+        signal_count = 0
+        order: list[tuple[str, str, str]] = []
+        counters: dict[tuple[str, str, str], Counter[str]] = {}
+        headcounts: dict[tuple[str, str, str], dict[str, int]] = {}
+
+        for facts in facts_list:
+            signal_count += int(facts.get("signal_count") or 0)
+            for section in facts.get("sections") or []:
+                ident = (section.get("kind"), section.get("title"), section.get("key"))
+                if ident not in counters and ident not in headcounts:
+                    order.append(ident)
+                if section.get("kind") == "headcount":
+                    stats = section.get("stats") or {}
+                    agg = headcounts.setdefault(
+                        ident, {"values_count": 0, "sum": 0, "max": 0, "rows_total": 0}
+                    )
+                    agg["values_count"] += int(stats.get("values_count") or 0)
+                    agg["sum"] += int(stats.get("sum") or 0)
+                    agg["max"] = max(agg["max"], int(stats.get("max") or 0))
+                    agg["rows_total"] += int(stats.get("rows_total") or 0)
+                else:
+                    counters.setdefault(ident, Counter()).update(section.get("counts") or {})
+
+        sections: list[dict[str, Any]] = []
+        for kind, title, key in order:
+            ident = (kind, title, key)
+            if kind == "headcount":
+                sections.append(
+                    {"title": title, "key": key, "kind": "headcount", "stats": headcounts[ident]}
+                )
+            else:
+                sections.append(
+                    {"title": title, "key": key, "kind": "counter", "counts": dict(counters[ident])}
+                )
+
+        return {"signal_count": signal_count, "sections": sections}
+
+    def compose_from_months(
+        self,
+        product_type: str,
+        months: list[date],
+        *,
+        compare_to: list[date] | None = None,
+    ) -> dict[str, Any]:
+        """Build deliverable metrics by composing stored monthly aggregates.
+
+        `compare_to` supplies the preceding period for the month-on-month
+        comparison section (SOW 4.3).
+        """
+        if not months:
+            raise ValueError("compose_from_months requires at least one month")
+
+        ordered = sorted(month_start(m) for m in months)
+        stored = self.ensure_monthly_aggregates(product_type, ordered)
+        facts_list = [
+            stored[m.isoformat()].get("facts") or {}
+            for m in ordered
+            if m.isoformat() in stored
+        ]
+        composed = self.compose_facts(facts_list)
+
+        extra: dict[str, Any] = {
+            "composed_from_months": [m.isoformat() for m in ordered],
+            "composition": "monthly" if len(ordered) == 1 else f"{len(ordered)}-month",
+        }
+
+        metrics = self._facts_to_metrics(
+            product_type,
+            composed,
+            period_start=ordered[0],
+            period_end=month_end(ordered[-1]),
+            extra=extra,
+        )
+
+        if compare_to:
+            previous_months = sorted(month_start(m) for m in compare_to)
+            previous_stored = self.ensure_monthly_aggregates(product_type, previous_months)
+            previous = self.compose_facts(
+                [
+                    previous_stored[m.isoformat()].get("facts") or {}
+                    for m in previous_months
+                    if m.isoformat() in previous_stored
+                ]
+            )
+            comparison = self.month_on_month(composed, previous)
+            if comparison and not metrics.get("insufficient_data"):
+                metrics["sections"].append(comparison)
+            metrics["comparison_months"] = [m.isoformat() for m in previous_months]
+
+        return metrics
+
+    def month_on_month(
+        self, current_facts: dict[str, Any], previous_facts: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Period-over-period movement, reported only for displayable segments.
+
+        Deltas are computed from raw counts but a row is emitted only when the
+        label clears the segment floor in at least one of the two periods --
+        otherwise the comparison table would leak sub-threshold counts that the
+        main sections deliberately suppress.
+        """
+        previous_totals: dict[str, int] = {}
+        for section in previous_facts.get("sections") or []:
+            if section.get("kind") == "headcount":
+                continue
+            for label, count in (section.get("counts") or {}).items():
+                previous_totals[f"{section.get('key')}::{label}"] = int(count)
+
+        rows: list[dict[str, Any]] = []
+        for section in current_facts.get("sections") or []:
+            if section.get("kind") == "headcount":
+                continue
+            for label, count in (section.get("counts") or {}).items():
+                current = int(count)
+                prior = previous_totals.get(f"{section.get('key')}::{label}", 0)
+                if current < PRIVACY_MIN_SEGMENT and prior < PRIVACY_MIN_SEGMENT:
+                    continue
+                delta = current - prior
+                rows.append(
+                    {
+                        "label": f"{section.get('title')} - {label}",
+                        "current": current,
+                        "previous": prior,
+                        "delta": delta,
+                        "percentage_change": (
+                            round((delta / prior) * 100, 1) if prior else None
+                        ),
+                    }
+                )
+
+        if not rows:
+            return None
+
+        rows.sort(key=lambda row: abs(row["delta"]), reverse=True)
+        risers = sum(1 for row in rows if row["delta"] > 0)
+        fallers = sum(1 for row in rows if row["delta"] < 0)
+        return {
+            "title": "Period-on-Period Movement",
+            "summary": (
+                f"{risers} segment(s) grew and {fallers} declined against the "
+                "preceding period."
+            ),
+            "rows": rows,
+            "kind": "comparison",
+        }
+
+    def build_period_metrics(
+        self,
+        *,
+        product_type: str,
+        period_start: date,
+        period_end: date,
+        compare: bool = True,
+    ) -> dict[str, Any]:
+        """Delivery entry point.
+
+        Periods that align to whole calendar months compose from stored monthly
+        aggregates (so quarterly = three stored months, never a re-query) and
+        gain a period-on-period comparison. Ad-hoc ranges that do not align to
+        month boundaries fall back to a direct signal query.
+        """
+        start = self._parse_date(period_start)
+        end = self._parse_date(period_end)
+        if start != month_start(start) or end != month_end(end) or start > end:
+            return self.build_metrics(
+                product_type=product_type, period_start=start, period_end=end
+            )
+
+        months = months_in_range(start, end)
+        compare_to: list[date] | None = None
+        if compare:
+            span = len(months)
+            compare_to = [
+                month_start(add_months(datetime.combine(month, datetime.min.time()), -span))
+                for month in months
+            ]
+        return self.compose_from_months(product_type, months, compare_to=compare_to)
+
+    def yearly_available(self, product_type: str, months: list[date]) -> bool:
+        """Yearly composition unlocks only once twelve stored months exist."""
+        stored = self.get_monthly_aggregates(product_type, months)
+        return len(months) >= 12 and len(stored) >= 12
+
+    def backfill_monthly_aggregates(
+        self, product_type: str, start: date | datetime, end: date | datetime
+    ) -> int:
+        """Recompute and store every month between `start` and `end` inclusive."""
+        months = months_in_range(start, end)
+        for month in months:
+            self.build_monthly_aggregate(product_type, month)
+        return len(months)
+
+    def generate_bespoke_report(
+        self,
+        *,
+        metrics: dict[str, Any],
+        user_id: str,
+        recipient_email: str,
+        period_start: date,
+        period_end: date,
+        subscription_id: str | None = None,
+        extra_recipient_email: str | None = None,
+        deliver: bool = False,
+    ) -> dict[str, Any]:
+        """Persist and render an admin-composed bespoke package.
+
+        Recorded as an `enterprise` request with `request_type="admin"` so it
+        appears in the normal delivery history and reuses the same storage,
+        download and resend paths as a standard product.
+
+        Delivery is OPT-IN: an admin composing a package is usually iterating,
+        and emailing a client on every generate would be worse than useless.
+        """
+        if metrics.get("insufficient_data"):
+            raise ValueError(
+                "The composed package does not clear the privacy floor for this period."
+            )
+
+        request_id = str(uuid4())
+        now = _utcnow()
+        row: dict[str, Any] = {
+            "id": request_id,
+            "user_id": user_id,
+            "b2b_subscription_id": subscription_id,
+            "product_type": "enterprise",
+            "status": "processing",
+            "request_type": "admin",
+            "period_start": period_start,
+            "period_end": period_end,
+            "recipient_email": recipient_email,
+            "extra_recipient_email": self._clean_email(extra_recipient_email),
+            "created_at": now,
+            "updated_at": now,
+        }
+        inserted = self.db.table("b2b_intelligence_requests").insert(row).execute()
+        request_row = (inserted.data or [row])[0]
+
+        try:
+            html = self.render_pdf_html(metrics)
+            pdf_bytes = self.pdf_service.generate_pdf_bytes(html)
+            if not pdf_bytes:
+                raise RuntimeError("PDF generation temporarily unavailable")
+
+            storage_path = self.storage_path(request_row)
+            self.db.storage.from_("reports").upload(
+                storage_path,
+                pdf_bytes,
+                {"content-type": "application/pdf", "x-upsert": "true"},
+            )
+            pdf_url = self.db.storage.from_("reports").get_s3_key(storage_path)
+            completed_at = _utcnow()
+            update = {
+                "status": "completed",
+                "metrics": metrics,
+                "pdf_url": pdf_url,
+                "completed_at": completed_at,
+                "updated_at": completed_at,
+            }
+            self.db.table("b2b_intelligence_requests").update(update).eq("id", request_id).execute()
+            request_row.update(update)
+            if deliver:
+                self.deliver_request_pdf(request_row, pdf_bytes)
+            return request_row
+        except Exception as exc:
+            logger.exception("Bespoke B2B package generation failed: request_id=%s", request_id)
+            self.db.table("b2b_intelligence_requests").update(
+                {
+                    "status": "failed",
+                    "error_message": str(exc),
+                    "updated_at": _utcnow(),
+                }
+            ).eq("id", request_id).execute()
+            raise
 
     def render_pdf_html(self, metrics: dict[str, Any]) -> str:
         try:
@@ -573,22 +1179,59 @@ class B2BService:
         except TemplateNotFound:
             return f"<html><body><pre>{metrics}</pre></body></html>"
 
-    def deliver_request_pdf(self, request_row: dict[str, Any], pdf_bytes: bytes | None = None) -> list[str]:
-        if pdf_bytes is None:
-            pdf_bytes = self.download_request_pdf(request_row)
+    def recipients_for(self, request_row: dict[str, Any]) -> list[str]:
         recipients = [
             request_row.get("recipient_email"),
             self._clean_email(request_row.get("extra_recipient_email")),
         ]
-        clean_recipients = [email for email in recipients if email]
-        encoded = base64.b64encode(pdf_bytes).decode("ascii")
+        # De-duplicate while preserving order: the primary and extra recipient can
+        # legitimately be the same address, and nobody wants the report twice.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for email in recipients:
+            if not email or email.lower() in seen:
+                continue
+            seen.add(email.lower())
+            unique.append(email)
+        return unique
+
+    def watermarked_pdf(self, metrics: dict[str, Any], recipient: str) -> bytes | None:
+        """Render a copy of the report stamped with the recipient's address.
+
+        Per-recipient watermarking (SOW 4.4): each recipient's PDF carries their
+        own address, so a leaked document is traceable to the copy it came from.
+        """
+        html = self.render_pdf_html({**metrics, "watermark_recipient": recipient})
+        return self.pdf_service.generate_pdf_bytes(html)
+
+    def deliver_request_pdf(self, request_row: dict[str, Any], pdf_bytes: bytes | None = None) -> list[str]:
+        clean_recipients = self.recipients_for(request_row)
         metrics = request_row.get("metrics") or {}
         filename = (
             f"{request_row['product_type']}-"
             f"{_as_iso(request_row.get('period_start'))}-"
             f"{_as_iso(request_row.get('period_end'))}.pdf"
         )
+        fallback_bytes: bytes | None = pdf_bytes
         for email in clean_recipients:
+            # Each recipient gets their OWN watermarked render. If watermarking
+            # fails we still deliver the un-watermarked copy rather than
+            # withholding a paid-for report, but we say so loudly in the log.
+            personalised: bytes | None = None
+            if metrics:
+                try:
+                    personalised = self.watermarked_pdf(metrics, email)
+                except Exception:
+                    logger.warning(
+                        "Per-recipient watermarking failed for request=%s; sending unwatermarked copy",
+                        request_row.get("id"),
+                        exc_info=True,
+                    )
+            if personalised is None:
+                if fallback_bytes is None:
+                    fallback_bytes = self.download_request_pdf(request_row)
+                personalised = fallback_bytes
+            encoded = base64.b64encode(personalised).decode("ascii")
             self.email_service.send(
                 email,
                 "b2b_intelligence_ready",
@@ -597,7 +1240,7 @@ class B2BService:
                     "period_start": _as_iso(request_row.get("period_start")),
                     "period_end": _as_iso(request_row.get("period_end")),
                     "request_id": request_row["id"],
-                    "b2b_url": f"{self.settings.FRONTEND_URL.rstrip('/')}/b2b",
+                    "b2b_url": f"{self.settings.FRONTEND_URL.rstrip('/')}/business-intelligence",
                 },
                 attachments=[{"filename": filename, "content": encoded}],
             )
@@ -659,7 +1302,8 @@ class B2BService:
             {
                 "product_title": self._product(subscription["product_type"])["title"],
                 "delivery_frequency": subscription.get("delivery_frequency", "monthly"),
-                "b2b_url": f"{self.settings.FRONTEND_URL.rstrip('/')}/b2b",
+                # A newly-active subscriber's home is their dashboard.
+                "b2b_url": f"{self.settings.FRONTEND_URL.rstrip('/')}/business-intelligence",
             },
         )
 
@@ -704,71 +1348,49 @@ class B2BService:
         result = query.execute()
         return result.data or []
 
-    def _distribution_section(
-        self,
-        rows: list[dict[str, Any]],
-        key: str,
-        title: str,
-        suppressed_segments: list[dict[str, Any]],
-        *,
-        flatten: bool = False,
-    ) -> dict[str, Any]:
-        counter: Counter[str] = Counter()
-        for row in rows:
-            value = row.get(key)
-            values = value if flatten and isinstance(value, list) else [value]
-            for entry in values:
-                label = self._label(entry)
-                counter[label] += 1
-        return self._counter_section(counter, title, suppressed_segments, key)
+    @staticmethod
+    def _headcount_stats(rows: list[dict[str, Any]]) -> dict[str, int]:
+        """Summable headcount facts.
 
-    def _numeric_band_section(
-        self,
-        rows: list[dict[str, Any]],
-        key: str,
-        title: str,
-        suppressed_segments: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        counter: Counter[str] = Counter()
-        for row in rows:
-            counter[self._numeric_band(row.get(key))] += 1
-        return self._counter_section(counter, title, suppressed_segments, key)
-
-    def _month_section(
-        self,
-        rows: list[dict[str, Any]],
-        suppressed_segments: list[dict[str, Any]],
-        *,
-        title: str = "Monthly Upload Volume",
-    ) -> dict[str, Any]:
-        counter: Counter[str] = Counter()
-        for row in rows:
-            submitted = self._parse_date(row.get("submission_date"))
-            counter[submitted.strftime("%Y-%m")] += 1
-        return self._counter_section(counter, title, suppressed_segments, "submission_month")
-
-    def _headcount_section(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        Stores `sum` and `values_count` rather than a mean, so composing months
+        can recompute the true mean. Averaging monthly averages would weight a
+        month with 2 signals the same as a month with 200.
+        """
         values: list[int] = []
         for row in rows:
-            total = sum(
-                int(row.get(key) or 0)
-                for key in ("crew_size", "principal_cast", "supporting_cast", "background_extras")
-            )
+            total = sum(int(row.get(key) or 0) for key in HEADCOUNT_KEYS)
             if total > 0:
                 values.append(total)
-        if not values:
+        return {
+            "values_count": len(values),
+            "sum": sum(values),
+            "max": max(values) if values else 0,
+            "rows_total": len(rows),
+        }
+
+    def _headcount_section_from_stats(self, section: dict[str, Any]) -> dict[str, Any]:
+        stats = section.get("stats") or {}
+        title = section.get("title") or "Total Headcount Trend Analysis"
+        values_count = int(stats.get("values_count") or 0)
+        rows_total = int(stats.get("rows_total") or 0)
+        if not values_count:
             return {
-                "title": "Total Headcount Trend Analysis",
+                "title": title,
                 "summary": "No headcount metadata was available for the selected period.",
                 "rows": [],
             }
+        average = int(stats.get("sum") or 0) / values_count
         return {
-            "title": "Total Headcount Trend Analysis",
-            "summary": f"Average declared headcount across anonymised productions: {mean(values):.1f}",
+            "title": title,
+            "summary": f"Average declared headcount across anonymised productions: {average:.1f}",
             "rows": [
-                {"label": "Signals with headcount metadata", "count": len(values), "percentage": round(len(values) / len(rows) * 100, 1)},
-                {"label": "Average declared headcount", "count": round(mean(values), 1), "percentage": None},
-                {"label": "Maximum declared headcount", "count": max(values), "percentage": None},
+                {
+                    "label": "Signals with headcount metadata",
+                    "count": values_count,
+                    "percentage": round(values_count / rows_total * 100, 1) if rows_total else None,
+                },
+                {"label": "Average declared headcount", "count": round(average, 1), "percentage": None},
+                {"label": "Maximum declared headcount", "count": int(stats.get("max") or 0), "percentage": None},
             ],
         }
 
@@ -806,6 +1428,18 @@ class B2BService:
             else f"No segment met the {PRIVACY_MIN_SEGMENT}-record display threshold."
         )
         return {"title": title, "summary": summary, "rows": rows}
+
+    @staticmethod
+    def _is_missing(value: Any) -> bool:
+        """A field the producer never filled in is not a segment.
+
+        Counting blanks as an "Unspecified" bucket let a section with no data at
+        all clear the display threshold — a Crew Size Distribution built from 12
+        signals that declared no crew size would render "Unspecified: 12 (100%)".
+        Excluding them also means percentages are shares of KNOWN values, which
+        is what the sufficiency preview has always reported.
+        """
+        return value is None or (isinstance(value, str) and not value.strip())
 
     @staticmethod
     def _label(value: Any) -> str:
@@ -886,6 +1520,41 @@ def process_request_task(request_id: str, settings: Settings | None = None) -> N
         db.close()
 
 
+def run_b2b_monthly_aggregate_close(
+    settings: Settings | None = None, *, today: date | None = None
+) -> int:
+    """Store the closed month's RAW aggregate for every product.
+
+    Monthly is the atomic unit: quarterly and yearly reports compose these
+    stored months instead of re-querying the signal pool. Runs before the
+    delivery job so the months a delivery needs are already on disk.
+
+    Idempotent — re-running a month upserts rather than duplicating, so a
+    missed day self-heals on the next run.
+    """
+    settings = settings or get_settings()
+    db = create_client()
+    stored = 0
+    try:
+        service = B2BService(db, settings)
+        reference = today or _utcnow().date()
+        closed_month = month_start(add_months(datetime.combine(reference, datetime.min.time()), -1))
+        for product_type in B2B_PRODUCTS:
+            try:
+                service.build_monthly_aggregate(product_type, closed_month)
+                stored += 1
+            except Exception:
+                # One bad product must not stop the rest from being stored.
+                logger.exception(
+                    "Failed to store B2B monthly aggregate product=%s month=%s",
+                    product_type,
+                    closed_month.isoformat(),
+                )
+    finally:
+        db.close()
+    return stored
+
+
 def run_due_b2b_auto_deliveries(settings: Settings | None = None) -> int:
     settings = settings or get_settings()
     db = create_client()
@@ -915,8 +1584,13 @@ def run_due_b2b_auto_deliveries(settings: Settings | None = None) -> int:
                 continue
 
             months = interval_months(subscription.get("delivery_frequency") or "monthly")
-            period_start = add_months(due_at, -months).date()
-            period_end = due_at.date()
+            # Scheduled deliveries cover COMPLETED calendar months. This lets them
+            # compose from stored monthly aggregates (monthly is the atomic unit,
+            # so quarterly = three stored months) and stops a signal dated on a
+            # boundary day being counted in two consecutive reports, which the
+            # previous [prev-month-day-N .. this-month-day-N] range allowed.
+            period_start = month_start(add_months(due_at, -months))
+            period_end = month_end(add_months(due_at, -1))
             request = service.create_intelligence_request(
                 user_id=subscription["user_id"],
                 user_email=user["email"],
