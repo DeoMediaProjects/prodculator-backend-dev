@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -8,7 +8,7 @@ from app.core.cache import get_redis
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
-from app.core.territories import resolve_territory
+from app.core.territories import Territory, resolve_territory
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,18 @@ async def readiness_check(db: DatabaseClient = Depends(get_supabase)):
 
 
 @router.get("/territories")
-async def list_territories(supabase: DatabaseClient = Depends(get_supabase)):
+async def list_territories(
+    supabase: DatabaseClient = Depends(get_supabase),
+    include_all: bool = Query(
+        default=False,
+        description=(
+            "Also return territories with no active incentive, flagged via "
+            "hasActiveIncentive=false. Used by the intake picker, which asks "
+            "where a production is being considered rather than where a rebate "
+            "can be computed."
+        ),
+    ),
+):
     """Return only territories the platform has active incentive coverage for.
 
     A territory is included only when it has at least one active,
@@ -102,14 +113,34 @@ async def list_territories(supabase: DatabaseClient = Depends(get_supabase)):
         if t and t.parent:
             covered.add(t.parent.label)
 
+    # `include_all` adds the territories the platform knows but has no ACTIVE
+    # incentive for: South Africa (DTIC programme suspended since March 2024),
+    # Nigeria (no formal rebate) and Brazil (pending admin verification).
+    #
+    # The intake picker asks where a production is being CONSIDERED, which is a
+    # different question from where a rebate can be computed. Excluding them
+    # there contradicts the guidance on the records themselves ("never write off
+    # South Africa as a territory, write off the incentive until reinstated") and
+    # it silently drops that demand from the Business Intelligence signal pool.
+    # Rebate-ranking callers keep the default, covered-only list.
+    labels = set(covered)
+    if include_all:
+        labels |= {
+            t.label for t in Territory
+            if t.iso != "EU" and not t.is_sub_territory
+        }
+
     result = []
-    for label in sorted(covered):
+    for label in sorted(labels):
         t = resolve_territory(label)
         result.append({
             "label": label,
             "iso": t.iso if t else None,
             "parent": t.parent.label if t and t.parent else None,
             "isSubTerritory": t.is_sub_territory if t else False,
+            # Additive, so existing consumers are unaffected. False means the
+            # territory is selectable but carries no bankable incentive today.
+            "hasActiveIncentive": label in covered,
         })
 
     return result
