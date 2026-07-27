@@ -12,6 +12,7 @@ from jinja2 import TemplateNotFound
 
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient, create_client
+from app.modules.b2b.report_model import build_report_view
 from app.modules.email.service import EmailService
 from app.modules.reports.pdf_service import PDFService
 
@@ -163,6 +164,21 @@ SECTION_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
         {"kind": "distribution", "key": "budget_range", "title": "Budget Range Breakdown"},
         {"kind": "distribution", "key": "territory", "title": "Territory Demand Mix"},
         {"kind": "distribution", "key": "format", "title": "Format Distribution"},
+    ),
+    # The flagship. Its section mix is driven by the approved report template:
+    # the diverging territory chart needs BOTH territory readings, and the genre
+    # and format pages need the two cross-tabulations.
+    "production_trend": (
+        {"kind": "distribution", "key": "territories_considered", "title": "Territories Under Consideration", "flatten": True},
+        {"kind": "distribution", "key": "territories_recommended", "title": "Engine-Recommended Territories", "flatten": True},
+        {"kind": "distribution", "key": "budget_range", "title": "Budget Band Breakdown"},
+        {"kind": "distribution", "key": "format", "title": "Production Type Distribution"},
+        {"kind": "distribution", "key": "genres", "title": "Genre Mix", "flatten": True},
+        {"kind": "month", "key": "submission_month", "title": "Monthly Planning Volume"},
+        {"kind": "crosstab", "key": "genre_format", "title": "Genre by Format",
+         "row_key": "genres", "row_flatten": True, "col_key": "format"},
+        {"kind": "crosstab", "key": "format_month", "title": "Format Volume by Month",
+         "row_key": "format", "col_key": "submission_month"},
     ),
     "crew_casting": (
         {"kind": "numeric_band", "key": "principal_cast", "title": "Principal Cast Demand"},
@@ -657,6 +673,11 @@ class B2BService:
                         "period_start": _as_iso(request_row.get("period_start")),
                         "period_end": _as_iso(request_row.get("period_end")),
                         "request_id": request_row["id"],
+                        "reason": request_row.get("error_message"),
+                        "signal_count": metrics.get("source_signal_count"),
+                        "minimum_signals": (metrics.get("thresholds") or {}).get(
+                            "minimum_overall_records", PRIVACY_MIN_OVERALL
+                        ),
                         # Existing clients land on their own dashboard, not the catalogue.
                         "b2b_url": f"{self.settings.FRONTEND_URL.rstrip('/')}/business-intelligence",
                     },
@@ -720,6 +741,24 @@ class B2BService:
                         "key": spec["key"],
                         "kind": "headcount",
                         "stats": self._headcount_stats(rows),
+                    }
+                )
+                continue
+
+            if kind == "crosstab":
+                # Cells are keyed "row||col" so a crosstab stays a flat counter
+                # and therefore sums across months exactly like any other one.
+                cells: Counter[str] = Counter()
+                for row in rows:
+                    for rv in self._spec_values(row, spec["row_key"], spec.get("row_flatten")):
+                        for cv in self._spec_values(row, spec["col_key"], spec.get("col_flatten")):
+                            cells[f"{rv}||{cv}"] += 1
+                sections.append(
+                    {
+                        "title": spec["title"],
+                        "key": spec["key"],
+                        "kind": "crosstab",
+                        "counts": dict(cells),
                     }
                 )
                 continue
@@ -811,6 +850,8 @@ class B2BService:
         for section in facts.get("sections") or []:
             if section.get("kind") == "headcount":
                 sections.append(self._headcount_section_from_stats(section))
+            elif section.get("kind") == "crosstab":
+                sections.append(self._crosstab_section(section, suppressed_segments))
             else:
                 sections.append(
                     self._counter_section(
@@ -929,8 +970,11 @@ class B2BService:
                     {"title": title, "key": key, "kind": "headcount", "stats": headcounts[ident]}
                 )
             else:
+                # Preserve the ORIGINAL kind. Flattening everything to "counter"
+                # here would strip crosstabs of their kind, so a composed quarter
+                # would silently render its matrices as flat distributions.
                 sections.append(
-                    {"title": title, "key": key, "kind": "counter", "counts": dict(counters[ident])}
+                    {"title": title, "key": key, "kind": kind or "counter", "counts": dict(counters[ident])}
                 )
 
         return {"signal_count": signal_count, "sections": sections}
@@ -986,8 +1030,59 @@ class B2BService:
             if comparison and not metrics.get("insufficient_data"):
                 metrics["sections"].append(comparison)
             metrics["comparison_months"] = [m.isoformat() for m in previous_months]
+            # Drives the direction-of-travel figure on the dashboard tiles.
+            metrics["previous_signal_count"] = int(previous.get("signal_count") or 0)
+            metrics["period_volumes"] = self._period_volumes(product_type, ordered, previous_months)
 
         return metrics
+
+    def _period_volumes(
+        self, product_type: str, current: list[date], previous: list[date]
+    ) -> list[dict[str, Any]]:
+        """Signal volume per equal-length window, oldest first, for the trend line.
+
+        Extends back four windows where stored months allow, so the trend shows a
+        run rather than a single step. Windows with no stored months are omitted
+        instead of being drawn as zero, which would imply a real collapse.
+        """
+        span = len(current) or 1
+        windows: list[list[date]] = []
+        cursor = previous or [
+            month_start(add_months(datetime.combine(m, datetime.min.time()), -span))
+            for m in current
+        ]
+        for _ in range(3):
+            windows.insert(0, cursor)
+            cursor = [
+                month_start(add_months(datetime.combine(m, datetime.min.time()), -span))
+                for m in cursor
+            ]
+        windows.append(current)
+
+        stored = self.get_monthly_aggregates(
+            product_type, [m for window in windows for m in window]
+        )
+        volumes: list[dict[str, Any]] = []
+        for window in windows:
+            present = [stored[m.isoformat()] for m in window if m.isoformat() in stored]
+            if not present:
+                continue
+            volumes.append(
+                {
+                    "label": self._window_label(window),
+                    "value": sum(int(r.get("signal_count") or 0) for r in present),
+                }
+            )
+        return volumes
+
+    @staticmethod
+    def _window_label(window: list[date]) -> str:
+        start = window[0]
+        if len(window) == 1:
+            return start.strftime("%b %y")
+        if len(window) == 3:
+            return f"Q{(start.month - 1) // 3 + 1} {start.strftime('%y')}"
+        return f"{start.strftime('%b %y')}"
 
     def month_on_month(
         self, current_facts: dict[str, Any], previous_facts: dict[str, Any]
@@ -1173,11 +1268,35 @@ class B2BService:
             raise
 
     def render_pdf_html(self, metrics: dict[str, Any]) -> str:
+        """Render the deliverable PDF markup for a set of metrics.
+
+        The view model does the mapping from metrics to the approved page
+        structure and builds the inline SVG charts, so the template stays
+        declarative.
+        """
         try:
             template = self.pdf_service.env.get_template("b2b_intelligence.html")
-            return template.render(metrics=metrics)
         except TemplateNotFound:
             return f"<html><body><pre>{metrics}</pre></body></html>"
+        report = build_report_view(
+            metrics,
+            client_name=metrics.get("client_name"),
+            reference=self._report_reference(metrics),
+        )
+        return template.render(metrics=metrics, report=report)
+
+    @staticmethod
+    def _report_reference(metrics: dict[str, Any]) -> str:
+        """Stable human reference, e.g. BI-PRO-2026Q2 v1.0."""
+        product = str(metrics.get("product_type") or "bi")
+        code = "".join(part[0] for part in product.split("_"))[:3].upper() or "BI"
+        months = metrics.get("composed_from_months") or []
+        if len(months) == 3:
+            year, month = int(months[0][:4]), int(months[0][5:7])
+            period = f"{year}Q{(month - 1) // 3 + 1}"
+        else:
+            period = str(metrics.get("period_start") or "")[:7].replace("-", "")
+        return f"BI-{code}-{period} v1.0"
 
     def recipients_for(self, request_row: dict[str, Any]) -> list[str]:
         recipients = [
@@ -1394,6 +1513,75 @@ class B2BService:
             ],
         }
 
+    def _crosstab_section(
+        self, section: dict[str, Any], suppressed_segments: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Render a crosstab as an ordered grid with the per-cell floor applied.
+
+        Cross-tabs are more identifying than a single distribution, because a
+        cell pins a record down on two axes at once. The segment floor is
+        therefore applied per CELL, and a row or column left entirely empty is
+        dropped rather than shown as a band of zeroes.
+        """
+        title = section.get("title") or "Cross Tabulation"
+        key = section.get("key") or "crosstab"
+        cells: dict[tuple[str, str], int] = {}
+        for compound, count in (section.get("counts") or {}).items():
+            row_label, _, col_label = str(compound).partition("||")
+            if col_label:
+                cells[(row_label, col_label)] = int(count)
+
+        kept = {rc: n for rc, n in cells.items() if n >= PRIVACY_MIN_SEGMENT}
+        for (row_label, col_label), count in cells.items():
+            if count < PRIVACY_MIN_SEGMENT:
+                suppressed_segments.append(
+                    {
+                        "section": title,
+                        "field": key,
+                        "label": f"{row_label} x {col_label}",
+                        "count": count,
+                        "minimum": PRIVACY_MIN_SEGMENT,
+                    }
+                )
+        if not kept:
+            return {
+                "title": title,
+                "key": key,
+                "kind": "crosstab",
+                "summary": (
+                    f"No combination reached the {PRIVACY_MIN_SEGMENT}-record threshold, "
+                    "so this cross-tabulation is withheld."
+                ),
+                "cols": [],
+                "row_labels": [],
+                "data": [],
+                "rows": [],
+            }
+
+        row_totals: Counter[str] = Counter()
+        col_totals: Counter[str] = Counter()
+        for (row_label, col_label), count in kept.items():
+            row_totals[row_label] += count
+            col_totals[col_label] += count
+        # Columns that are months read chronologically; everything else by volume.
+        col_labels = sorted(col_totals) if key.endswith("_month") else [
+            label for label, _ in col_totals.most_common()
+        ]
+        row_labels = [label for label, _ in row_totals.most_common()]
+        data = [[kept.get((r, c), 0) for c in col_labels] for r in row_labels]
+        return {
+            "title": title,
+            "key": key,
+            "kind": "crosstab",
+            "summary": (
+                f"{len(kept)} combination(s) met the {PRIVACY_MIN_SEGMENT}-record threshold."
+            ),
+            "cols": col_labels,
+            "row_labels": row_labels,
+            "data": data,
+            "rows": [],
+        }
+
     def _counter_section(
         self,
         counter: Counter[str],
@@ -1427,7 +1615,17 @@ class B2BService:
             if rows
             else f"No segment met the {PRIVACY_MIN_SEGMENT}-record display threshold."
         )
-        return {"title": title, "summary": summary, "rows": rows}
+        # `key` travels with the rendered section so the PDF layer can choose the
+        # right chart for it without re-deriving anything from the title.
+        return {"title": title, "key": key, "kind": "distribution", "summary": summary, "rows": rows}
+
+    def _spec_values(self, row: dict[str, Any], key: str, flatten: Any = False) -> list[str]:
+        """Label values a single signal contributes for one crosstab axis."""
+        if key in ("submission_month", "submission_date"):
+            return [self._parse_date(row.get("submission_date")).strftime("%Y-%m")]
+        value = row.get(key)
+        values = value if flatten and isinstance(value, list) else [value]
+        return [self._label(v) for v in values if not self._is_missing(v)]
 
     @staticmethod
     def _is_missing(value: Any) -> bool:

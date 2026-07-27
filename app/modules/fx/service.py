@@ -110,6 +110,8 @@ _FALLBACK_DATE = date(2026, 3, 1)  # Update when refreshing rates
 
 _CACHE_TTL_SECONDS = 86_400  # 24 hours
 _CACHE_KEY_PREFIX = "fx_rate"
+# How long to stop talking to Redis after it fails to answer.
+_CACHE_COOLDOWN_SECONDS = 120
 _WARNING_THROTTLE_SECONDS = 300
 _API_RATE_LIMIT_COOLDOWN_SECONDS = 300
 
@@ -121,23 +123,56 @@ class FXService:
 
     _api_blocked_until_monotonic: float = 0.0
     _warning_last_logged: dict[str, float] = {}
+    _cache_unavailable_until_monotonic: float = 0.0
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._redis = self._build_redis()
 
     def _build_redis(self):
-        """Build a synchronous Redis client (not asyncio — used in sync pipeline)."""
+        """Build a synchronous Redis client (not asyncio, used in sync pipeline)."""
         try:
             import redis as redis_lib
+            from redis.backoff import NoBackoff
+            from redis.retry import Retry
+
             return redis_lib.from_url(
                 self.settings.REDIS_URL,
                 decode_responses=True,
-                socket_timeout=2,
-                socket_connect_timeout=2,
+                socket_timeout=1,
+                socket_connect_timeout=1,
+                # One attempt only. redis-py retries connection errors by
+                # default, which multiplies the connect timeout on every lookup
+                # when the server is down.
+                retry=Retry(NoBackoff(), 0),
+                retry_on_timeout=False,
             )
         except Exception:
             return None
+
+    def _cache_client(self):
+        """The Redis client, or None while the cache is considered unavailable.
+
+        Without this, a Redis that is simply not running costs a full connect
+        timeout on EVERY rate lookup. Pricing a scenario touches many currency
+        pairs, so that became minutes of wall time, and because the calculator
+        runs synchronously inside an async endpoint it took the entire API down
+        with it. One failure now parks the cache for a cooldown, and every
+        lookup after that skips it instantly and falls through to the API or the
+        offline table.
+        """
+        if self._redis is None:
+            return None
+        if time.monotonic() < FXService._cache_unavailable_until_monotonic:
+            return None
+        return self._redis
+
+    @classmethod
+    def _mark_cache_unavailable(cls, exc: Exception) -> None:
+        cls._cache_unavailable_until_monotonic = time.monotonic() + _CACHE_COOLDOWN_SECONDS
+        logger.warning(
+            "FX cache unavailable, skipping it for %ss: %s", _CACHE_COOLDOWN_SECONDS, exc
+        )
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -209,6 +244,12 @@ class FXService:
 
         # Get how many units of territory currency 1 unit of budget currency buys
         rate, _ = self.get_rate(bc, tc)
+        return self.score_from_rate(rate, bc, tc)
+
+    def score_from_rate(self, rate: float, bc: str, tc: str) -> tuple[int, str | None]:
+        """Score an already-resolved rate, so batch callers avoid re-fetching."""
+        if bc == tc:
+            return 50, None
 
         # Compute advantage based on the rate magnitude.
         # We use log-scale normalisation to handle extreme differentials
@@ -239,13 +280,31 @@ class FXService:
 
         Returns {territory_name: {"score": int, "warning": str|None, "currency": str}}
         """
+        bc = budget_currency.upper()
+
+        # Resolve every currency in ONE batch before scoring. This used to call
+        # the single-pair path per territory, which meant one HTTP round trip per
+        # territory: 37 sequential requests, each building a fresh TLS client,
+        # roughly 45 seconds of blocking work for a single What If scenario.
+        needed = sorted({
+            currency
+            for territory in territories
+            if (currency := TERRITORY_CURRENCY.get(territory)) is not None
+        })
+        rates = self.get_rates_batch(bc, needed) if needed else {}
+
         results: dict[str, dict] = {}
         for territory in territories:
             tc = TERRITORY_CURRENCY.get(territory)
             if tc is None:
                 results[territory] = {"score": 50, "warning": None, "currency": "UNKNOWN"}
                 continue
-            score, warning = self.compute_currency_advantage_score(budget_currency, tc)
+            entry = rates.get(tc)
+            if entry is None:
+                # get_rates_batch could not resolve this pair at all.
+                score, warning = self.compute_currency_advantage_score(bc, tc)
+            else:
+                score, warning = self.score_from_rate(entry[0], bc, tc)
             results[territory] = {"score": score, "warning": warning, "currency": tc}
         return results
 
@@ -297,11 +356,12 @@ class FXService:
         return f"{_CACHE_KEY_PREFIX}:{from_c}:{to_c}"
 
     def _cache_get(self, from_c: str, to_c: str) -> tuple[float, date] | None:
-        if self._redis is None:
+        client = self._cache_client()
+        if client is None:
             return None
         try:
             key = self._cache_key(from_c, to_c)
-            raw: str | None = self._redis.get(key)  # type: ignore[assignment]
+            raw: str | None = client.get(key)  # type: ignore[assignment]
             if raw is None:
                 return None
             # stored as "rate|YYYY-MM-DD"
@@ -312,18 +372,19 @@ class FXService:
             rate_date = date.fromisoformat(parts[1])
             return rate, rate_date
         except Exception as exc:
-            logger.debug("FX cache read failed: %s", exc)
+            self._mark_cache_unavailable(exc)
             return None
 
     def _cache_set(self, from_c: str, to_c: str, rate: float, rate_date: date) -> None:
-        if self._redis is None:
+        client = self._cache_client()
+        if client is None:
             return
         try:
             key = self._cache_key(from_c, to_c)
             value = f"{rate}|{rate_date.isoformat()}"
-            self._redis.setex(key, _CACHE_TTL_SECONDS, value)
+            client.setex(key, _CACHE_TTL_SECONDS, value)
         except Exception as exc:
-            logger.debug("FX cache write failed: %s", exc)
+            self._mark_cache_unavailable(exc)
 
     # ── API helpers ──────────────────────────────────────────────────────────
 

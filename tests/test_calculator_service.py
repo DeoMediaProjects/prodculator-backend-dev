@@ -48,6 +48,12 @@ class _FakeFX:
         self.currency_advantage_calls.append((budget_currency, territory_currency))
         return 77, None
 
+    def score_from_rate(self, _rate: float, budget_currency: str, territory_currency: str):
+        # The calculator scores from the already-batched rate rather than
+        # re-resolving the pair, so the fake mirrors that path.
+        self.currency_advantage_calls.append((budget_currency, territory_currency))
+        return 77, None
+
 
 def _incentive() -> dict:
     return {
