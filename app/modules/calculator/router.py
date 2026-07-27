@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
@@ -63,7 +64,12 @@ async def compute_scenario(
     - Professional and above: the full scenario.
     """
     service = CalculatorService(supabase, settings)
-    result = service.compute_scenario(request)
+    # compute_scenario is synchronous and does network and database work. Called
+    # directly from an async endpoint it blocks the event loop, so one slow
+    # scenario stalls every other request in the process, which is why the whole
+    # dashboard froze whenever What If was opened. A worker thread keeps a slow
+    # calculation slow for that caller alone.
+    result = await run_in_threadpool(service.compute_scenario, request)
     if not _has_full_access(user):
         return _redact_for_teaser(result)
     return result

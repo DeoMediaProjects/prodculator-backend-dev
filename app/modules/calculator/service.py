@@ -212,12 +212,23 @@ class CalculatorService:
         final_programme = switched_programme or programme_name
 
         # ── Currency advantage ─────────────────────────────────────────────
-        ca_score, ca_warning = self.fx.compute_currency_advantage_score(
-            request.budget_currency, territory_currency,
-        )
-
-        # FX rate for this territory
+        # Score from the rate already resolved by the batch call above. Calling
+        # compute_currency_advantage_score here re-resolved the pair for every
+        # territory: 37 sequential HTTP round trips per scenario, each building
+        # a fresh TLS client. Because the calculator runs synchronously inside
+        # an async endpoint, that blocked the entire API for the duration.
         fx_info = fx_rates_from_budget.get(territory_currency)
+        if fx_info and fx_info.get("rate") is not None:
+            ca_score, ca_warning = self.fx.score_from_rate(
+                fx_info["rate"],
+                request.budget_currency.upper(),
+                territory_currency.upper(),
+            )
+        else:
+            ca_score, ca_warning = self.fx.compute_currency_advantage_score(
+                request.budget_currency, territory_currency,
+            )
+
         fx_rate = fx_info["rate"] if fx_info else None
         fx_rate_date = fx_info.get("rate_date") if fx_info else None
 
