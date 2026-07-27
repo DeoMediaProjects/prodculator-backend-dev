@@ -48,10 +48,10 @@ SECTION_LIBRARY: list[SectionDef] = [
                note="Declared production-company base."),
     SectionDef("sig_territory_considered", "Territories Under Consideration", "signals",
                "Territory Signals", signal_field="territories_considered", flatten=True,
-               note="Declared by producers at intake — forward-looking demand."),
+               note="Declared by producers at intake. Forward-looking demand."),
     SectionDef("sig_territory_recommended", "Engine-Recommended Territories", "signals",
                "Territory Signals", signal_field="territories_recommended", flatten=True,
-               note="Prodculator engine output — proprietary, unavailable elsewhere."),
+               note="Prodculator engine output. Proprietary and unavailable elsewhere."),
     SectionDef("sig_format", "Production Type Distribution", "signals",
                "Production Signals", signal_field="format"),
     SectionDef("sig_genre", "Genre Mix", "signals",
@@ -338,12 +338,13 @@ class PackageService:
 
     @staticmethod
     def _cell(value: Any) -> str:
+        """Format a dataset value for the PDF. Blank reads as "-", not an em dash."""
         if value is None:
             return "-"
         if isinstance(value, list):
-            return ", ".join(str(v) for v in value if v is not None) or "—"
+            return ", ".join(str(v) for v in value if v is not None) or "-"
         if isinstance(value, dict):
-            return ", ".join(f"{k}: {v}" for k, v in value.items()) or "—"
+            return ", ".join(f"{k}: {v}" for k, v in value.items()) or "-"
         return str(value)
 
 

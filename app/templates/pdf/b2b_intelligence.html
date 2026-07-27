@@ -1,182 +1,408 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      @page { margin: 24mm 18mm; }
-      body {
-        font-family: Arial, sans-serif;
-        color: #111;
-        font-size: 12px;
-        line-height: 1.45;
-      }
-      h1 {
-        font-size: 26px;
-        margin: 0 0 8px;
-      }
-      h2 {
-        font-size: 16px;
-        margin: 24px 0 8px;
-        border-bottom: 1px solid #ddd;
-        padding-bottom: 6px;
-      }
-      .meta {
-        color: #555;
-        margin-bottom: 20px;
-      }
-      .notice {
-        background: #f6f1df;
-        border: 1px solid #d7bf68;
-        padding: 10px 12px;
-        margin: 16px 0;
-      }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        margin-top: 8px;
-      }
-      th, td {
-        border-bottom: 1px solid #e5e5e5;
-        padding: 7px 6px;
-        text-align: left;
-      }
-      th {
-        background: #f7f7f7;
-        font-weight: 700;
-      }
-      .footer {
-        color: #777;
-        font-size: 10px;
-        margin-top: 28px;
-      }
-      /* Per-recipient watermark: repeated on every page via @page, so removing
-         it from one page does not remove it from the document. */
-      .wm-band {
-        color: #8a8a8a;
-        font-size: 9px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        border-bottom: 1px solid #e5e5e5;
-        padding-bottom: 6px;
-        margin-bottom: 14px;
-      }
-      .wm-diagonal {
-        position: fixed;
-        top: 45%;
-        left: 0;
-        right: 0;
-        text-align: center;
-        transform: rotate(-24deg);
-        font-size: 40px;
-        color: rgba(120, 120, 120, 0.10);
-        letter-spacing: 0.08em;
-        z-index: 0;
-      }
-    </style>
-  </head>
-  <body>
-    {% if metrics.watermark_recipient %}
-      <div class="wm-diagonal">{{ metrics.watermark_recipient }}</div>
-      <div class="wm-band">
-        Licensed copy prepared for {{ metrics.watermark_recipient }}. Not for redistribution.
-      </div>
-    {% endif %}
+{#
+  Business Intelligence report. Implements the client-approved template from the
+  handoff pack (B2B_Report_Template_DEV_NOTES).
 
-    <h1>{{ metrics.title }}</h1>
-    <div class="meta">
-      Period: {{ metrics.period_start }} to {{ metrics.period_end }}<br />
-      Generated: {{ metrics.generated_at }}<br />
-      Source signals: {{ metrics.source_signal_count }}
+  Cover rule, non-negotiable: low ink. White ground, black Prodculator logo, a
+  thin yellow band and a short yellow accent rule as the only brand fields, and
+  a slim dark footer strip as the only solid dark element. Clients print these.
+
+  Charts are inline SVG built in app/modules/b2b/charts.py, because WeasyPrint
+  does not run JavaScript. Every number here already passed the privacy floors.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{ report.full_title }}</title>
+<style>
+  @page {
+    size: A4; margin: 15mm 15mm 18mm 15mm;
+    @bottom-left { content: "Deo Media Limited · Company No. 15426752"; font-family: 'Helvetica Neue', Arial; font-size: 6.6pt; color: #9aa0a8; }
+    @bottom-center { content: "{{ report.full_title }} · Confidential"; font-family: 'Helvetica Neue', Arial; font-size: 6.6pt; color: #9aa0a8; }
+    @bottom-right { content: "Page " counter(page) " / " counter(pages); font-family: 'Helvetica Neue', Arial; font-size: 6.6pt; color: #9aa0a8; }
+  }
+  @page :first { margin: 0; @bottom-left { content: "" } @bottom-center { content: "" } @bottom-right { content: "" } }
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact }
+  body { font-family: 'Helvetica Neue', 'Segoe UI', Arial, sans-serif; color: #15171C; font-size: 9.6pt; line-height: 1.5 }
+
+  /* Cover: low ink-load */
+  .cover { height: 297mm; position: relative; page-break-after: always; background: #fff }
+  .cover-band { height: 8mm; background: #FFCF42 }
+  .cover-inner { padding: 24mm 20mm 0 20mm }
+  .cover-logo { height: 13mm; margin-bottom: 6mm }
+  .cover-rule { height: 1px; background: #e2e4e8; margin: 0 0 42mm 0 }
+  .cover-eyebrow { display: inline-block; font-size: 8pt; letter-spacing: 3px; text-transform: uppercase; color: #E6B72E; font-weight: 800; border: 1.2px solid #FFCF42; border-radius: 20px; padding: 2mm 6mm }
+  .cover-title { font-size: 33pt; font-weight: 800; letter-spacing: -.6px; line-height: 1.06; margin-top: 9mm; color: #15171C; max-width: 150mm }
+  .cover-title .y { color: #E6B72E }
+  .cover-accent { width: 44mm; height: 3px; background: #FFCF42; margin-top: 8mm }
+  .cover-sub { font-size: 12pt; color: #2a2d34; margin-top: 7mm; max-width: 132mm; line-height: 1.5 }
+  .cover-strip { position: absolute; bottom: 40mm; left: 20mm; right: 20mm; display: grid; grid-template-columns: repeat(4, 1fr); gap: 5mm; border-top: 1px solid #e2e4e8; padding-top: 7mm }
+  .cover-strip .l { font-size: 6.6pt; letter-spacing: 1.3px; text-transform: uppercase; color: #9aa0a8; font-weight: 700 }
+  .cover-strip .v { font-size: 10.5pt; font-weight: 700; margin-top: 1.5mm; color: #15171C }
+  .cover-foot { position: absolute; bottom: 0; left: 0; right: 0; height: 8mm; background: #15171C; display: flex; align-items: center; justify-content: space-between; padding: 0 20mm; font-size: 7.2pt; color: #c5c8cf }
+
+  .page { page-break-before: always }
+  .rowhead { display: flex; align-items: flex-end; justify-content: space-between; border-bottom: 2.5px solid #15171C; padding-bottom: 2.5mm; margin-bottom: 5mm }
+  .rowhead .sec { font-size: 8pt; letter-spacing: 2px; text-transform: uppercase; color: #E6B72E; font-weight: 800 }
+  .rowhead .title { font-size: 17pt; font-weight: 800; letter-spacing: -.3px; margin-top: 1mm }
+  .rowhead .meta { font-size: 8.3pt; color: #9aa0a8; font-weight: 600 }
+  .lead { color: #2a2d34; max-width: 170mm; margin-bottom: 5mm; font-size: 9.6pt }
+
+  .dash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin-bottom: 6mm }
+  .tile { background: #15171c; border-radius: 5px; padding: 5mm 5mm 4mm }
+  .tile .l { font-size: 6.8pt; letter-spacing: 1px; text-transform: uppercase; color: #FFCF42; font-weight: 700 }
+  .tile .v { font-size: 22pt; font-weight: 800; letter-spacing: -.5px; line-height: 1; margin-top: 2mm; color: #fff }
+  .tile .v.sm { font-size: 13pt; line-height: 1.15 }
+  .tile .d { font-size: 8pt; margin-top: 2.5mm; font-weight: 700 }
+  .tile .d.up { color: #7fd39b } .tile .d.dn { color: #e88a76 } .tile .d.flat { color: #9aa0a8 }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm }
+  .card { border: 1px solid #e2e4e8; border-radius: 5px; padding: 5mm 5.5mm; page-break-inside: avoid }
+  .card.hi { border-top: 3px solid #FFCF42 }
+  .card h4 { font-size: 10pt; font-weight: 800; margin-bottom: 1mm }
+  .card .cap { font-size: 8pt; color: #6a6e77; margin-bottom: 4mm }
+  .legend-dot { display: inline-flex; align-items: center; gap: 4px; font-size: 7.8pt; color: #6a6e77; margin-right: 10px }
+  .legend-dot i { width: 9px; height: 9px; border-radius: 2px; display: inline-block }
+  .legend-stack { display: flex; flex-direction: column; gap: 2.5mm; justify-content: center }
+
+  .readout { background: #f7f8fa; border-left: 3px solid #FFCF42; padding: 3.5mm 5mm; font-size: 8.6pt; color: #2a2d34; border-radius: 0 4px 4px 0; margin-top: 4mm }
+  .readout b { color: #15171C }
+  .callout { background: #15171c; border-radius: 5px; padding: 5mm 6mm; color: #e8eaee }
+  .callout .h { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; color: #FFCF42; font-weight: 800; margin-bottom: 2mm }
+  .callout p { font-size: 9.4pt; line-height: 1.55 }
+
+  table { width: 100%; border-collapse: collapse }
+  th { text-align: left; font-size: 7.4pt; letter-spacing: .7px; text-transform: uppercase; color: #6a6e77; font-weight: 700; padding: 2.5mm 3mm; border-bottom: 1.5px solid #15171C }
+  td { padding: 2.4mm 3mm; border-bottom: 0.5px solid #e2e4e8; font-size: 9.3pt }
+  td.r, th.r { text-align: right; font-variant-numeric: tabular-nums }
+  .pos { color: #2f7d4f; font-weight: 700 } .neg { color: #c0492f; font-weight: 700 }
+
+  .toc-row { display: flex; align-items: baseline; padding: 2.2mm 0; border-bottom: 0.5px solid #eef0f3 }
+  .toc-row .n { width: 9mm; color: #E6B72E; font-weight: 800 }
+  .toc-row .t { flex: 1; font-weight: 600 }
+  .toc-row .p { color: #9aa0a8 }
+  .how { background: #f7f8fa; border: 1px solid #e2e4e8; border-radius: 5px; padding: 5mm 6mm; margin-top: 6mm }
+  .how .h { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; color: #E6B72E; font-weight: 800; margin-bottom: 3mm }
+  .how .li { display: flex; gap: 4mm; padding: 1.5mm 0; font-size: 8.6pt; color: #2a2d34 }
+  .how .li b { color: #15171C }
+  .suppress { font-size: 8pt; color: #9aa0a8; font-style: italic; margin-top: 2mm }
+  .method { font-size: 8pt; color: #6a6e77; line-height: 1.65 }
+  .withheld { background: #f1f2f5; border: 1px dashed #e2e4e8; border-radius: 4px; padding: 6mm; font-size: 8.6pt; color: #6a6e77; text-align: center }
+  .wm { position: fixed; bottom: 2mm; left: 0; right: 0; text-align: center; font-size: 6.4pt; color: #9aa0a8; letter-spacing: .4px }
+</style>
+</head>
+<body>
+
+{% if metrics.watermark_recipient %}
+  {# Per-recipient watermark. Kept as a slim line, not a diagonal overlay: the
+     cover rule caps solid ink and an overlay would print badly. #}
+  <div class="wm">Licensed copy prepared for {{ metrics.watermark_recipient }}. Not for redistribution.</div>
+{% endif %}
+
+<!-- ============================ COVER ============================ -->
+<div class="cover">
+  <div class="cover-band"></div>
+  <div class="cover-inner">
+    {% if report.logo %}<img class="cover-logo" src="{{ report.logo }}" alt="Prodculator" />{% endif %}
+    <div class="cover-rule"></div>
+    <div class="cover-eyebrow">Business Intelligence · {{ report.cadence }}</div>
+    <div class="cover-title">{{ report.title_top }}<br /><span class="y">{{ report.title_bottom }}</span></div>
+    <div class="cover-accent"></div>
+    <div class="cover-sub">
+      Territory demand, budget movement, and genre and format trends across the Prodculator
+      production-planning pipeline. Prepared for slate and investment planning.
     </div>
+  </div>
+  <div class="cover-strip">
+    <div><div class="l">Reporting period</div><div class="v">{{ report.period_label }}</div></div>
+    <div><div class="l">Prepared for</div><div class="v">{{ report.client_name }}</div></div>
+    <div><div class="l">Basis</div><div class="v">{{ report.signal_count }} consented signals</div></div>
+    <div><div class="l">Reference</div><div class="v">{{ report.reference or report.period_label }}</div></div>
+  </div>
+  <div class="cover-foot">
+    <span>Deo Media Limited · Company No. 15426752 · Registered in England &amp; Wales</span>
+    <span>Confidential · Not for redistribution</span>
+  </div>
+</div>
 
-    <div class="notice">
-      This report uses anonymised aggregate platform metadata. Customer-facing
-      output requires at least {{ metrics.thresholds.minimum_overall_records }}
-      total signals and {{ metrics.thresholds.minimum_segment_records }} signals
-      per displayed segment.
-    </div>
+<!-- ======================= CONTENTS + HOW TO READ ======================= -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Contents</div><div class="title">What is in this report</div></div>
+    <div class="meta">{{ report.period_label }}</div>
+  </div>
 
-    {% for section in metrics.sections %}
-      <h2>{{ section.title }}</h2>
-      <p>{{ section.summary }}</p>
-      {% if section.kind == 'dataset' %}
-        {% if section.records %}
-          <table>
-            <thead>
-              <tr>
-                {% for col in section.columns %}
-                  <th>{{ col.replace('_', ' ')|title }}</th>
-                {% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for record in section.records %}
-                <tr>
-                  {% for col in section.columns %}
-                    <td>{{ record[col] }}</td>
-                  {% endfor %}
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% endif %}
-      {% elif section.rows %}
-        {% if section.kind == 'comparison' %}
-          <table>
-            <thead>
-              <tr>
-                <th>Segment</th>
-                <th>This period</th>
-                <th>Prior period</th>
-                <th>Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in section.rows %}
-                <tr>
-                  <td>{{ row.label }}</td>
-                  <td>{{ row.current }}</td>
-                  <td>{{ row.previous }}</td>
-                  <td>
-                    {{- '+' if row.delta > 0 else '' }}{{ row.delta }}
-                    {%- if row.percentage_change is not none %}
-                      ({{ '+' if row.percentage_change > 0 else '' }}{{ row.percentage_change }}%)
-                    {%- else %} (new)
-                    {%- endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% else %}
-          <table>
-            <thead>
-              <tr>
-                <th>Segment</th>
-                <th>Count</th>
-                <th>Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in section.rows %}
-                <tr>
-                  <td>{{ row.label }}</td>
-                  <td>{{ row.count }}</td>
-                  <td>{% if row.percentage is none %}N/A{% else %}{{ row.percentage }}%{% endif %}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% endif %}
-      {% endif %}
-    {% endfor %}
+  <div class="toc-row"><div class="n">01</div><div class="t">Executive dashboard</div><div class="p">The period in four numbers</div></div>
+  <div class="toc-row"><div class="n">02</div><div class="t">Territory demand</div><div class="p">Considered against recommended</div></div>
+  <div class="toc-row"><div class="n">03</div><div class="t">Budget concentration and movement</div><div class="p">GBP-normalised</div></div>
+  <div class="toc-row"><div class="n">04</div><div class="t">Genre and format trends</div><div class="p">Volume and cross-tabulation</div></div>
+  <div class="toc-row"><div class="n">05</div><div class="t">Emerging signals</div><div class="p">Period on period movers</div></div>
+  <div class="toc-row"><div class="n">06</div><div class="t">Market context and methodology</div><div class="p">Curated data and governance</div></div>
 
-    <p class="footer">
-      Prodculator Business Intelligence. Do not redistribute outside authorised recipients.
-      {%- if metrics.watermark_recipient %}
-        This copy is registered to {{ metrics.watermark_recipient }}.
-      {%- endif %}
+  <div class="how">
+    <div class="h">How to read this report</div>
+    <div class="li"><b>Two readings.</b><span>Charts pair graphite for what producers <b>declared</b> with yellow for what the Prodculator engine <b>computed</b>. The distance between the two is the signal.</span></div>
+    <div class="li"><b>Privacy floors.</b><span>A period needs {{ report.thresholds.minimum_overall_records | default(10) }} consented signals to report at all, and any single segment needs {{ report.thresholds.minimum_segment_records | default(5) }} to be displayed. Cross-tabulations apply the same floor per cell.</span></div>
+    <div class="li"><b>Withheld, never padded.</b><span>Anything under the floor is removed and labelled as withheld. It is never estimated, rounded up, or filled in.</span></div>
+    <div class="li"><b>Counts are counts.</b><span>Every figure is a real count of consented, non-internal production signals. Narrative explains the numbers; it never produces them.</span></div>
+    <div class="li"><b>Two-part structure.</b><span>Platform demand signals are aggregated from the pipeline. Market context is editorially curated and renders regardless of volume.</span></div>
+  </div>
+
+  {% if report.suppressed_count %}
+    <p class="suppress">
+      {{ report.suppressed_count }} segment(s) fell below the display threshold this period and have been withheld.
     </p>
-  </body>
-</html>
+  {% endif %}
+</div>
 
+<!-- ==================== 01 EXECUTIVE DASHBOARD ==================== -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Section 01</div><div class="title">Executive dashboard</div></div>
+    <div class="meta">{{ report.period_label }} at a glance</div>
+  </div>
+  <p class="lead">
+    The period in four numbers, followed by the single finding most worth acting on and the
+    volume trend behind it.
+  </p>
+
+  <div class="dash">
+    {% for kpi in report.kpis %}
+      <div class="tile">
+        <div class="l">{{ kpi.label }}</div>
+        <div class="v {{ 'sm' if kpi.small }}">{{ kpi.value }}</div>
+        <div class="d {{ kpi.direction.cls }}">{{ kpi.direction.text }}</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid2">
+    <div class="callout">
+      <div class="h">Headline finding</div>
+      <p>{{ report.headline }}</p>
+    </div>
+    <div class="card">
+      <h4>Pipeline volume trend</h4>
+      <div class="cap">Consented productions per period</div>
+      {% if report.has_trend %}
+        {{ report.trend_svg | safe }}
+      {% else %}
+        <div class="withheld">Not enough stored periods yet to plot a trend.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="readout"><b>What this means.</b> {{ report.dashboard_readout }}</div>
+</div>
+
+<!-- ==================== 02 TERRITORY DEMAND ==================== -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Section 02 · Demand signal</div><div class="title">Territory demand</div></div>
+    <div class="meta">{{ report.signal_count }} productions</div>
+  </div>
+  <p class="lead">
+    Two readings of the same pipeline: where productions are <b>considering</b> shooting, and where
+    the engine <b>recommends</b> they shoot on incentive grounds. The distance between the two bars
+    is the migration pressure a planner should watch.
+  </p>
+
+  <div class="card hi">
+    {% if report.territory.available %}
+      {% if report.territory.diverging %}
+        <div style="margin-bottom:4mm">
+          <span class="legend-dot"><i style="background:#3D4350"></i> Considering (declared)</span>
+          <span class="legend-dot"><i style="background:#FFCF42"></i> Recommended (computed)</span>
+        </div>
+      {% endif %}
+      {{ report.territory.svg | safe }}
+    {% else %}
+      <div class="withheld">Territory detail withheld: no territory reached the display threshold.</div>
+    {% endif %}
+  </div>
+
+  <div class="readout"><b>Reading the gap.</b> {{ report.territory.readout }}</div>
+</div>
+
+<!-- ==================== 03 BUDGET CONCENTRATION ==================== -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Section 03 · Demand signal</div><div class="title">Budget concentration and movement</div></div>
+    <div class="meta">GBP-normalised</div>
+  </div>
+  <p class="lead">
+    All budgets are converted to GBP at the submission-date rate before banding, so a Nigerian or
+    Hungarian budget is compared like for like with a UK one.
+  </p>
+
+  {% if report.budget.available %}
+    <div class="grid2">
+      <div class="card">
+        <h4>Budget band distribution</h4>
+        <div class="cap">{{ report.budget.covered }} reportable productions</div>
+        {{ report.budget.bars_svg | safe }}
+      </div>
+      <div class="card">
+        <h4>Concentration</h4>
+        <div class="cap">Share of pipeline</div>
+        <div style="display:flex;gap:6mm;align-items:center">
+          {{ report.budget.donut_svg | safe }}
+          <div class="legend-stack">
+            {% for item in report.budget.legend %}
+              <span class="legend-dot"><i style="background:{{ item.color }}"></i> {{ item.label }} · {{ item.pct }}%</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="withheld">Budget detail withheld: no band reached the display threshold.</div>
+  {% endif %}
+
+  <div class="readout"><b>What this means.</b> {{ report.budget.readout }}</div>
+</div>
+
+<!-- ==================== 04 GENRE AND FORMAT ==================== -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Section 04 · Demand signal</div><div class="title">Genre and format trends</div></div>
+    <div class="meta">{{ report.period_label }}</div>
+  </div>
+  <p class="lead">
+    Format volume across the months in this period, and the genre by format cross-tabulation
+    showing where each genre's demand actually lands.
+  </p>
+
+  <div class="grid2">
+    <div class="card">
+      <h4>Format volume by month</h4>
+      <div class="cap">{{ report.genre_format.months | join(' · ') if report.genre_format.months else 'Monthly split' }}</div>
+      {% if report.genre_format.grouped_available %}
+        {{ report.genre_format.grouped_svg | safe }}
+      {% else %}
+        <div class="withheld">Monthly format split withheld below the display threshold.</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h4>Genre by format</h4>
+      <div class="cap">Production count · deeper means higher demand</div>
+      {% if report.genre_format.matrix_available %}
+        {{ report.genre_format.matrix_svg | safe }}
+      {% else %}
+        <div class="withheld">Cross-tabulation withheld: no combination reached the per-cell threshold.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="readout"><b>What this means.</b> {{ report.genre_format.readout }}</div>
+</div>
+
+<!-- ==================== 05 EMERGING SIGNALS ==================== -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Section 05</div><div class="title">Emerging signals</div></div>
+    <div class="meta">Against the preceding period</div>
+  </div>
+  <p class="lead">
+    Segments that moved most against the preceding period. A segment appears here only if it
+    clears the display threshold in at least one of the two periods.
+  </p>
+
+  {% if report.movers.available %}
+    <table>
+      <thead>
+        <tr>
+          <th>Segment</th>
+          <th class="r">This period</th>
+          <th class="r">Prior period</th>
+          <th class="r">Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.movers.rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="r">{{ row.current }}</td>
+            <td class="r">{{ row.previous }}</td>
+            <td class="r {{ 'pos' if row.delta > 0 else 'neg' if row.delta < 0 else '' }}">
+              {{ '+' if row.delta > 0 else '' }}{{ row.delta }}{% if row.percentage_change is not none %} ({{ row.percentage_change }}%){% else %} (new){% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if report.movers.summary %}<div class="readout"><b>What this means.</b> {{ report.movers.summary }}</div>{% endif %}
+  {% else %}
+    <div class="withheld">
+      No prior period is stored for comparison yet, so period on period movement is not available.
+    </div>
+  {% endif %}
+</div>
+
+<!-- ============ 06 MARKET CONTEXT AND METHODOLOGY ============ -->
+<div class="page">
+  <div class="rowhead">
+    <div><div class="sec">Section 06</div><div class="title">Market context and methodology</div></div>
+    <div class="meta">Curated data and governance</div>
+  </div>
+
+  {% for section in report.context_sections %}
+    <div class="card" style="margin-bottom:5mm">
+      <h4>{{ section.title }}</h4>
+      <div class="cap">{{ section.summary }}</div>
+      {% if section.records %}
+        <table>
+          <thead>
+            <tr>{% for col in section.columns %}<th>{{ col.replace('_', ' ') | title }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody>
+            {% for record in section.records[:12] %}
+              <tr>{% for col in section.columns %}<td>{{ record[col] }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  {% for section in report.other_sections %}
+    <div class="card" style="margin-bottom:5mm">
+      <h4>{{ section.title }}</h4>
+      <div class="cap">{{ section.summary }}</div>
+      {% if section.rows %}
+        <table>
+          <thead><tr><th>Segment</th><th class="r">Count</th><th class="r">Share</th></tr></thead>
+          <tbody>
+            {% for row in section.rows %}
+              <tr>
+                <td>{{ row.label }}</td>
+                <td class="r">{{ row.count }}</td>
+                <td class="r">{% if row.percentage is none %}n/a{% else %}{{ row.percentage }}%{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <div class="how">
+    <div class="h">Methodology and governance</div>
+    <div class="li"><b>Source.</b><span>Anonymised production-planning metadata submitted to Prodculator by producers who explicitly consented to aggregate Business Intelligence use. Internal and test records are excluded at the point of reading, not filtered later.</span></div>
+    <div class="li"><b>Aggregation.</b><span>Monthly is the atomic unit. Each month is counted once and stored raw, and longer periods are composed from those stored months. Privacy floors are applied when the report is produced, so a segment that is too small in one month can still surface across a quarter.</span></div>
+    <div class="li"><b>Currency.</b><span>Budgets are normalised to GBP at the submission-date rate before banding.</span></div>
+    <div class="li"><b>Territory semantics.</b><span>"Considering" is declared by the producer at intake. "Recommended" is computed by the Prodculator engine on incentive and logistics grounds. They are never merged.</span></div>
+    <div class="li"><b>Exclusions.</b><span>Representation data is stored but sealed, and is excluded from every Business Intelligence read pending separate consent and legal sign-off.</span></div>
+    <div class="li"><b>Limits.</b><span>These are planning signals drawn from a pipeline, not a census of the industry. They indicate direction and relative weight, not absolute market size.</span></div>
+  </div>
+
+  <p class="method" style="margin-top:5mm">
+    Generated {{ report.generated_at }} for {{ report.client_name }}.
+    Period {{ report.period_start }} to {{ report.period_end }}, {{ report.signal_count }} consented signals.
+    {% if report.suppressed_count %}{{ report.suppressed_count }} segment(s) withheld below threshold.{% endif %}
+  </p>
+</div>
+
+</body>
+</html>
