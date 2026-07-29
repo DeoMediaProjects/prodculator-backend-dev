@@ -2055,11 +2055,28 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
         raw = self._extract_text_response(response)
         try:
             ai_narratives = self._parse_json_payload(raw)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError) as exc:
+            # Log why, not just how long. Truncation and malformed output both land
+            # here but need opposite responses: truncation means the token budget
+            # is too small for the number of territories, malformed means the
+            # prompt or model is at fault. Recording only raw_chars made the two
+            # indistinguishable, while the user saw the same bland "AI narrative
+            # generation unavailable" either way.
+            stop_reason = getattr(response, "stop_reason", None)
             logger.warning(
-                "Failed to parse narrative fill JSON, using defaults: raw_chars=%s",
+                "Failed to parse narrative fill JSON, using defaults: "
+                "raw_chars=%s stop_reason=%s max_tokens=%s error=%s tail=%r",
                 len(raw),
+                stop_reason,
+                self._stage_max_tokens(self._STAGE_PRODUCTION_ANALYSIS),
+                exc,
+                raw[-200:],
             )
+            if stop_reason == "max_tokens":
+                logger.error(
+                    "Narrative fill truncated at max_tokens, so this report ships "
+                    "without AI prose. Raise ANTHROPIC_MAX_TOKENS_REPORT."
+                )
             production_priority = datasets.get("_production_priority", "full")
             self._fill_narrative_defaults(skeleton, production_priority)
             ReportBuilder.compute_overall_scores(skeleton, production_priority)
