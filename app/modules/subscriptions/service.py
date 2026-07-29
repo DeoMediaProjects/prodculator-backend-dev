@@ -284,6 +284,34 @@ class SubscriptionService:
         user's monthly slot or their one free report."""
         return sum(1 for row in (rows or []) if (row or {}).get("status") != "failed")
 
+    @staticmethod
+    def _resolve_report_limit(subscription: dict, plan: str) -> int:
+        """Report allowance for a subscription, treating only -1 as unlimited.
+
+        A NULL report_limit used to mean unlimited, which was never a plan any
+        customer buys: no entry in PLAN_REPORT_LIMITS is unlimited. So a
+        subscription row missing that column, which a manual grant or an older
+        write path can easily produce, silently handed out unlimited reports and
+        showed the customer "Unlimited" on their dashboard. A missing value now
+        falls back to the plan's configured allowance, and -1 stays available as
+        an explicit sentinel for a deliberately uncapped account.
+        """
+        raw = subscription.get("report_limit")
+        if raw == -1:
+            return -1
+        if isinstance(raw, int) and raw >= 0:
+            return raw
+        fallback = PLAN_REPORT_LIMITS.get(plan, 1)
+        logger.warning(
+            "Subscription %s has no usable report_limit (%r); falling back to the "
+            "%s plan allowance of %s rather than treating it as unlimited.",
+            subscription.get("id"),
+            raw,
+            plan,
+            fallback,
+        )
+        return fallback
+
     def count_usage(
         self,
         user_id: str,
@@ -409,11 +437,11 @@ class SubscriptionService:
                 "reason": reason,
             }
 
-        report_limit = subscription.get("report_limit")
+        report_limit = self._resolve_report_limit(subscription, plan)
         period_start = subscription.get("current_period_start")
         period_end = subscription.get("current_period_end")
 
-        if report_limit in (-1, None):
+        if report_limit == -1:
             # Unlimited plan
             can_gen, reason = self.can_generate_report(user_id)
             return {
@@ -459,8 +487,10 @@ class SubscriptionService:
                 )
             return (True, "Free report available")
 
-        report_limit = subscription.get("report_limit")
-        if report_limit in (-1, None):
+        report_limit = self._resolve_report_limit(
+            subscription, normalize_plan(subscription.get("plan_type") or "free")
+        )
+        if report_limit == -1:
             return (True, "Unlimited reports")
 
         report_count = self.count_usage(
