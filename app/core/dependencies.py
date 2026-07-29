@@ -1,8 +1,15 @@
+import logging
+
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
-from app.core.auth_cookies import extract_access_token
+from app.core.auth_cookies import (
+    ACCESS_COOKIE,
+    CSRF_COOKIE,
+    REFRESH_COOKIE,
+    extract_access_token,
+)
 from app.core.cache import get_redis
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
@@ -17,11 +24,34 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 _USER_PROFILE_TTL = 300  # 5 minutes
 
+logger = logging.getLogger(__name__)
+
+
+def _auth_context(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str:
+    """Describe which credentials arrived, for 401 diagnostics.
+
+    Records presence only, never a token value, so this is safe to log. The
+    useful signal is the combination: an access cookie missing while the refresh
+    and CSRF cookies survive means the access token simply aged out and the
+    client should refresh, whereas all three missing means the browser dropped
+    the whole cookie set and a refresh cannot succeed. A bare 401 cannot tell
+    those apart, which is what made an unexpected sign-out impossible to trace.
+    """
+    cookies = request.cookies
+    return (
+        f"bearer={bool(credentials)} "
+        f"access_cookie={ACCESS_COOKIE in cookies} "
+        f"refresh_cookie={REFRESH_COOKIE in cookies} "
+        f"csrf_cookie={CSRF_COOKIE in cookies} "
+        f"path={request.url.path}"
+    )
+
 
 def _require_token(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str:
     """Return the access token from the Bearer header or the auth cookie, or 401."""
     token = extract_access_token(request, credentials.credentials if credentials else None)
     if not token:
+        logger.info("401 no credentials presented: %s", _auth_context(request, credentials))
         raise HTTPException(status_code=401, detail="Not authenticated")
     return token
 
@@ -46,10 +76,20 @@ async def get_current_user(
 
     try:
         user_response = supabase.auth.get_user(token)
-    except Exception:
+    except Exception as exc:
+        # The exception type and message carry the actual reason (expired
+        # signature, bad audience, malformed token). The response deliberately
+        # stays vague; the log does not have to be.
+        logger.info(
+            "401 token rejected (%s: %s): %s",
+            type(exc).__name__,
+            exc,
+            _auth_context(request, credentials),
+        )
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     if not user_response or not user_response.user:
+        logger.info("401 token resolved to no user: %s", _auth_context(request, credentials))
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Check token blocklist using the shared Redis pool (no open/close needed).
@@ -57,6 +97,9 @@ async def get_current_user(
         try:
             redis = get_redis()
             if await is_token_revoked(user_response.claims, redis):
+                logger.info(
+                    "401 token revoked: %s", _auth_context(request, credentials)
+                )
                 raise HTTPException(status_code=401, detail="Token has been revoked")
         except HTTPException:
             raise
@@ -84,6 +127,13 @@ async def get_current_user(
     )
 
     if not result.data:
+        # A valid token whose user row is gone. Worth a warning rather than info:
+        # it means the token and the database disagree about who exists.
+        logger.warning(
+            "401 valid token but no profile row: user_id=%s %s",
+            user_id,
+            _auth_context(request, credentials),
+        )
         raise HTTPException(status_code=401, detail="User profile not found")
 
     if result.data.get("is_blocked"):
