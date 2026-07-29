@@ -107,6 +107,12 @@ class FakeSupabase:
             "reports": [
                 {"id": "r1", "user_id": "user-1", "created_at": "2026-02-01T00:00:00Z"},
             ],
+            # Quota comes from the usage ledger, so a consumed slot is recorded
+            # here rather than inferred from the report row surviving.
+            "report_usage_events": [
+                {"id": "e1", "user_id": "user-1", "report_id": "r1", "report_type": "paid",
+                 "created_at": "2026-02-01T00:00:00Z", "voided_at": None},
+            ],
         }
 
     def table(self, table_name: str):

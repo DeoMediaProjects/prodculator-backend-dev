@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import redis as sync_redis
 
@@ -283,6 +284,70 @@ class SubscriptionService:
         user's monthly slot or their one free report."""
         return sum(1 for row in (rows or []) if (row or {}).get("status") != "failed")
 
+    def count_usage(
+        self,
+        user_id: str,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        report_type: str | None = None,
+    ) -> int:
+        """Count quota consumed by a user, from the append-only usage ledger.
+
+        This deliberately does NOT count rows in ``reports``. Doing so meant
+        deleting a report handed the slot back, so a one-report plan could be
+        used indefinitely by generating, downloading, then deleting. Ledger rows
+        outlive the reports they describe; a voided row (the report failed) stops
+        counting, so an outage still costs the user nothing.
+        """
+        query = (
+            self.supabase.table("report_usage_events")
+            .select("id, voided_at")
+            .eq("user_id", user_id)
+        )
+        if report_type is not None:
+            query = query.eq("report_type", report_type)
+        if period_start:
+            query = query.gte("created_at", period_start)
+        if period_end:
+            query = query.lte("created_at", period_end)
+        # The query wrapper has no IS NULL filter, so voided rows are excluded
+        # here, the same way _count_chargeable excludes failed reports.
+        rows = query.execute().data or []
+        return sum(1 for row in rows if not (row or {}).get("voided_at"))
+
+    def record_usage(self, user_id: str, report_id: str, report_type: str) -> None:
+        """Record that a report consumed quota. Never raises.
+
+        Quota is checked before generation starts, so the ledger row is written
+        at that point and voided later if the report fails. A failure to write
+        must not abort a report the user has already been cleared to generate,
+        so this logs and continues rather than propagating.
+        """
+        try:
+            self.supabase.table("report_usage_events").insert(
+                {
+                    "id": str(uuid4()),
+                    "user_id": user_id,
+                    "report_id": report_id,
+                    "report_type": report_type or "paid",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).execute()
+        except Exception:
+            logger.exception(
+                "Failed to record report usage: user_id=%s report_id=%s", user_id, report_id
+            )
+
+    def void_usage(self, report_id: str) -> None:
+        """Stop a usage event counting, because its report failed. Never raises."""
+        try:
+            self.supabase.table("report_usage_events").update(
+                {"voided_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("report_id", report_id).execute()
+        except Exception:
+            logger.exception("Failed to void report usage: report_id=%s", report_id)
+
     def get_credits_remaining(self, user_id: str) -> int:
         result = (
             self.supabase.table("users")
@@ -326,14 +391,7 @@ class SubscriptionService:
 
         if not subscription:
             # Free / pay-per-report path
-            free_reports_result = (
-                self.supabase.table("reports")
-                .select("id, status")
-                .eq("user_id", user_id)
-                .eq("report_type", "free")
-                .execute()
-            )
-            free_used = self._count_chargeable(free_reports_result.data)
+            free_used = self.count_usage(user_id, report_type="free")
             # Free users get exactly 1 lifetime trial
             limit: int | None = 1
             used = free_used
@@ -370,13 +428,7 @@ class SubscriptionService:
                 "reason": reason,
             }
 
-        query = self.supabase.table("reports").select("id, status").eq("user_id", user_id)
-        if period_start:
-            query = query.gte("created_at", period_start)
-        if period_end:
-            query = query.lte("created_at", period_end)
-
-        used = self._count_chargeable(query.execute().data)
+        used = self.count_usage(user_id, period_start=period_start, period_end=period_end)
         remaining = max(0, report_limit - used)
         can_gen, reason = self.can_generate_report(user_id)
         return {
@@ -399,14 +451,7 @@ class SubscriptionService:
             if credits > 0:
                 return (True, f"pay-per-report ({credits} credit(s) remaining)")
 
-            free_reports = (
-                self.supabase.table("reports")
-                .select("id, status")
-                .eq("user_id", user_id)
-                .eq("report_type", "free")
-                .execute()
-            )
-            free_report_count = self._count_chargeable(free_reports.data)
+            free_report_count = self.count_usage(user_id, report_type="free")
             if free_report_count > 0:
                 return (
                     False,
@@ -418,15 +463,11 @@ class SubscriptionService:
         if report_limit in (-1, None):
             return (True, "Unlimited reports")
 
-        query = self.supabase.table("reports").select("id, status").eq("user_id", user_id)
-        period_start = subscription.get("current_period_start")
-        period_end = subscription.get("current_period_end")
-        if period_start:
-            query = query.gte("created_at", period_start)
-        if period_end:
-            query = query.lte("created_at", period_end)
-
-        report_count = self._count_chargeable(query.execute().data)
+        report_count = self.count_usage(
+            user_id,
+            period_start=subscription.get("current_period_start"),
+            period_end=subscription.get("current_period_end"),
+        )
         if report_count >= report_limit:
             # Subscription limit hit — credits act as overflow capacity.
             # A user who bought pay-as-you-go credits and then subscribed should
