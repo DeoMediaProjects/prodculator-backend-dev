@@ -40,7 +40,13 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
         # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
         "price_gbp_cents": 160,
         "price_usd_cents": 200,
-        "self_service": True,
+        # Pricing is not finalised. Self-service purchase stays closed so no
+        # client can subscribe at a placeholder price (SOW 4.5), and the
+        # catalogue shows "Coming soon" rather than a figure. Flip
+        # pricing_status to "listed" and self_service to True once the real
+        # prices are set.
+        "self_service": False,
+        "pricing_status": "coming_soon",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_GBP",
             "usd": "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_USD",
@@ -63,7 +69,13 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
         # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
         "price_gbp_cents": 160,
         "price_usd_cents": 200,
-        "self_service": True,
+        # Pricing is not finalised. Self-service purchase stays closed so no
+        # client can subscribe at a placeholder price (SOW 4.5), and the
+        # catalogue shows "Coming soon" rather than a figure. Flip
+        # pricing_status to "listed" and self_service to True once the real
+        # prices are set.
+        "self_service": False,
+        "pricing_status": "coming_soon",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_PRODUCTION_SERVICES_GBP",
             "usd": "STRIPE_PRICE_B2B_PRODUCTION_SERVICES_USD",
@@ -86,7 +98,13 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
         # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
         "price_gbp_cents": 160,
         "price_usd_cents": 200,
-        "self_service": True,
+        # Pricing is not finalised. Self-service purchase stays closed so no
+        # client can subscribe at a placeholder price (SOW 4.5), and the
+        # catalogue shows "Coming soon" rather than a figure. Flip
+        # pricing_status to "listed" and self_service to True once the real
+        # prices are set.
+        "self_service": False,
+        "pricing_status": "coming_soon",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_CREW_CASTING_GBP",
             "usd": "STRIPE_PRICE_B2B_CREW_CASTING_USD",
@@ -109,7 +127,13 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
         # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
         "price_gbp_cents": 160,
         "price_usd_cents": 200,
-        "self_service": True,
+        # Pricing is not finalised. Self-service purchase stays closed so no
+        # client can subscribe at a placeholder price (SOW 4.5), and the
+        # catalogue shows "Coming soon" rather than a figure. Flip
+        # pricing_status to "listed" and self_service to True once the real
+        # prices are set.
+        "self_service": False,
+        "pricing_status": "coming_soon",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_PRODUCTION_TREND_GBP",
             "usd": "STRIPE_PRICE_B2B_PRODUCTION_TREND_USD",
@@ -131,6 +155,9 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
         "price_gbp_cents": None,
         "price_usd_cents": None,
         "self_service": False,
+        # Bespoke by design, not pending. Distinct from the "coming_soon"
+        # products, whose prices simply are not set yet.
+        "pricing_status": "custom_contract",
         "price_attrs": {},
     },
 }
@@ -264,6 +291,8 @@ class B2BService:
             "price_gbp_cents": product.get("price_gbp_cents"),
             "price_usd_cents": product.get("price_usd_cents"),
             "self_service": bool(product.get("self_service")),
+            # "coming_soon" | "custom_contract" | "listed"
+            "pricing_status": product.get("pricing_status", "listed"),
             "stripe_price_configured": {
                 currency: bool(getattr(self.settings, attr, ""))
                 for currency, attr in price_attrs.items()
