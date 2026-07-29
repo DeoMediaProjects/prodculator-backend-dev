@@ -12,7 +12,7 @@ from app.core.db import get_db_context
 from app.core.dependencies import get_current_admin, get_current_user
 from app.modules.admin.schemas import AdminUser
 from app.modules.b2b.router import get_stripe_service
-from app.modules.b2b.service import B2BService, process_request_task
+from app.modules.b2b.service import B2B_PRODUCTS, B2BService, process_request_task
 from app.modules.email.service import EmailService
 from app.modules.payments import router as payments_router
 from app.modules.reports.pdf_service import PDFService
@@ -121,6 +121,12 @@ def test_b2b_checkout_is_independent_from_normal_subscription(client, auth_user,
     _clear_tables()
     settings = get_settings()
     monkeypatch.setattr(settings, "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_GBP", "price_b2b_camera_gbp")
+    # Self-service purchase is closed catalogue-wide while pricing is being
+    # finalised. Re-open this one product so the assertion below still exercises
+    # a real checkout; the closure itself is covered by
+    # test_b2b_checkout_refused_while_pricing_unfinalised.
+    monkeypatch.setitem(B2B_PRODUCTS["camera_equipment"], "self_service", True)
+    monkeypatch.setitem(B2B_PRODUCTS["camera_equipment"], "pricing_status", "listed")
 
     db = _db()
     try:
@@ -156,6 +162,39 @@ def test_b2b_checkout_is_independent_from_normal_subscription(client, auth_user,
     assert response.status_code == 200
     assert response.json()["session_id"] == "cs_b2b"
     assert fake_stripe.kwargs["price_id"] == "price_b2b_camera_gbp"
+
+
+def test_b2b_checkout_refused_while_pricing_unfinalised(client, auth_user, monkeypatch):
+    """No client can buy at a placeholder price (SOW 4.5).
+
+    The catalogue ships with self_service off and pricing_status "coming_soon";
+    this pins the refusal so re-opening purchase has to be a deliberate edit
+    rather than something that drifts back on unnoticed.
+    """
+    _clear_tables()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_GBP", "price_b2b_camera_gbp")
+
+    fake_stripe = FakeB2BStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_stripe_service] = lambda: fake_stripe
+
+    response = client.post(
+        "/api/b2b/checkout",
+        headers=HEADERS,
+        json={
+            "product_type": "camera_equipment",
+            "currency": "gbp",
+            "delivery_frequency": "monthly",
+        },
+    )
+
+    assert response.status_code == 400
+    # The fake only grows a `kwargs` attribute when it is called, so its absence
+    # proves Stripe was never reached: no customer, no session, no charge.
+    assert not hasattr(fake_stripe, "kwargs")
+    assert B2B_PRODUCTS["camera_equipment"]["pricing_status"] == "coming_soon"
+    assert B2B_PRODUCTS["camera_equipment"]["self_service"] is False
 
 
 def test_b2b_request_requires_active_matching_subscription(client, auth_user):
