@@ -315,6 +315,13 @@ async def create_report(
         )
         # Record the submission so an immediate resubmit reuses this report.
         _remember_submission(dedupe_key, report_id)
+        # Consume plan quota in the append-only ledger rather than relying on the
+        # report row surviving. Quota used to be counted from `reports`, so
+        # deleting a finished report handed the slot back and a one-report plan
+        # could be reused indefinitely. Credit-funded reports do not touch plan
+        # quota — the credit itself is decremented below.
+        if not using_credit:
+            sub_service.record_usage(user.id, report_id, effective_report_type)
         _dispatch_report_job(
             background_tasks=background_tasks,
             report_id=report_id,
@@ -1561,9 +1568,19 @@ def process_report_task(
             )
             logger.info("Report marked failed: report_id=%s", report_id)
 
-            # Never charge for a report that didn't generate. The failed row is
-            # already excluded from the quota count; if it also consumed a
-            # pay-per-report credit, hand that credit back.
+            # Never charge for a report that didn't generate. Quota now lives in
+            # the usage ledger rather than being inferred from the report row, so
+            # the slot has to be released explicitly; marking the report failed no
+            # longer does it implicitly. A no-op when the report was credit-funded
+            # and so never wrote a ledger row.
+            try:
+                from app.modules.subscriptions.service import SubscriptionService
+
+                SubscriptionService(supabase).void_usage(report_id)
+            except Exception:
+                logger.exception("Failed to void report usage: report_id=%s", report_id)
+
+            # If it also consumed a pay-per-report credit, hand that credit back.
             if ((report_row or {}).get("request_metadata") or {}).get("_credit_consumed"):
                 try:
                     from app.modules.subscriptions.service import SubscriptionService

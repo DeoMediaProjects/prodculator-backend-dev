@@ -524,6 +524,9 @@ class TestSubscriptionStatus:
         db = FakeSupabase({
             "subscriptions": [],
             "reports": [{"id": "r-1", "user_id": "user-1", "report_type": "free"}],
+            "report_usage_events": [
+                {"id": "u-1", "user_id": "user-1", "report_id": "r-1", "report_type": "free", "created_at": "2026-04-10", "voided_at": None},
+            ],
         })
         client.app.dependency_overrides[get_current_user] = lambda: user
         client.app.dependency_overrides[get_supabase] = lambda: db
@@ -552,6 +555,9 @@ class TestSubscriptionStatus:
             }],
             # One paid report already used this period — hits the monthly cap.
             "reports": [{"id": "r-1", "user_id": "user-1", "report_type": "paid", "created_at": "2026-04-10"}],
+            "report_usage_events": [
+                {"id": "u-1", "user_id": "user-1", "report_id": "r-1", "report_type": "paid", "created_at": "2026-04-10", "voided_at": None},
+            ],
             "users": [{"id": "user-1", "credits_remaining": 1}],
         })
         client.app.dependency_overrides[get_current_user] = lambda: user
@@ -576,6 +582,9 @@ class TestSubscriptionStatus:
                 "current_period_end": "2026-05-01",
             }],
             "reports": [{"id": "r-1", "user_id": "user-1", "report_type": "paid", "created_at": "2026-04-10"}],
+            "report_usage_events": [
+                {"id": "u-1", "user_id": "user-1", "report_id": "r-1", "report_type": "paid", "created_at": "2026-04-10", "voided_at": None},
+            ],
             "users": [{"id": "user-1", "credits_remaining": 0}],
         })
         client.app.dependency_overrides[get_current_user] = lambda: user

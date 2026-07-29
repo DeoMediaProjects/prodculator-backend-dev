@@ -318,10 +318,13 @@ def test_usage_response_schema_always_includes_required_fields(client):
 class _InMemoryDB:
     """Minimal supabase-like DB stub for service-level tests."""
 
-    def __init__(self, *, subscriptions=None, reports=None, users=None):
+    def __init__(self, *, subscriptions=None, reports=None, users=None, usage_events=None):
         self._subscriptions: list[dict] = subscriptions or []
         self._reports: list[dict] = reports or []
         self._users: list[dict] = users or []
+        # Quota is counted from the usage ledger, not from surviving report
+        # rows, so deleting a report cannot refund a slot.
+        self._usage_events: list[dict] = usage_events or []
         self._query_state: dict = {}
 
     def table(self, name: str) -> "_InMemoryDB":
@@ -358,6 +361,7 @@ class _InMemoryDB:
         dataset = {
             "subscriptions": self._subscriptions,
             "reports": self._reports,
+            "report_usage_events": self._usage_events,
             "users": self._users,
         }.get(table, [])
 
@@ -404,6 +408,8 @@ def test_service_get_usage_free_one_free_report_used():
     db = _InMemoryDB(
         users=[{"id": "u1", "credits_remaining": 0}],
         reports=[{"id": "r1", "user_id": "u1", "report_type": "free", "created_at": "2026-04-01"}],
+        usage_events=[{"id": "e1", "user_id": "u1", "report_id": "r1", "report_type": "free",
+                       "created_at": "2026-04-01", "voided_at": None}],
     )
     svc = SubscriptionService(db)
     usage = svc.get_usage("u1", "free")
