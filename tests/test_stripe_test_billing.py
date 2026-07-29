@@ -1,4 +1,4 @@
-"""Tests for the compressed-cycle billing test feature (2-day price + auto-refund).
+"""Tests for the billing test feature (token-amount price + auto-refund).
 
 The security-critical property is that a refund fires ONLY for subscriptions
 explicitly tagged autoRefund="true" — a real customer's invoice must never be
@@ -116,7 +116,7 @@ def test_get_or_create_test_price_reuses_existing(monkeypatch):
     assert svc.get_or_create_test_price("price_real") == "price_existing_test"
 
 
-def test_get_or_create_test_price_creates_short_cycle_clone(monkeypatch):
+def test_get_or_create_test_price_creates_token_amount_clone(monkeypatch):
     svc = _service()
 
     monkeypatch.setattr(stripe.Price, "list", lambda **kwargs: SimpleNamespace(data=[]))
@@ -137,7 +137,13 @@ def test_get_or_create_test_price_creates_short_cycle_clone(monkeypatch):
     result = svc.get_or_create_test_price("price_real")
 
     assert result == "price_new_test"
-    assert captured["recurring"] == {"interval": "day", "interval_count": 2}
+    # The test price mirrors the real monthly cadence. What makes the test safe
+    # is the token amount plus the auto-refund, not a compressed cycle.
+    assert captured["recurring"] == {
+        "interval": "day",
+        "interval_count": svc.settings.STRIPE_TEST_BILLING_INTERVAL_DAYS,
+    }
+    assert svc.settings.STRIPE_TEST_BILLING_INTERVAL_DAYS == 30
     # Token amount, NOT the real £49 price.
     assert captured["unit_amount"] == 100
     assert captured["product"] == "prod_1"

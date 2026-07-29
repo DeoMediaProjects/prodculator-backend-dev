@@ -122,15 +122,22 @@ class Settings(BaseSettings):
 
     # ── Compressed-cycle billing test (LIVE money) ────────────────────────────
     # A controlled way to validate the recurring-charge machinery without
-    # waiting a full month. When enabled, admins can mint a Checkout that bills
-    # on a short (default 2-day) cycle and auto-refunds every charge so the test
-    # subscriber is kept whole. OFF by default — while false, the test endpoints
+    # charging a real plan price. When enabled, admins can mint a Checkout that
+    # bills a token amount on the normal monthly cycle and auto-refunds every
+    # charge so the test subscriber is kept whole. It is the amount and the
+    # refund that make this safe, not the cadence: the cadence deliberately
+    # matches production so the subscription behaves the way a tester expects.
+    # OFF by default — while false, the test endpoints
     # 404 AND the auto-refund webhook path is completely dormant (cannot refund
     # anything). A refund fires only for subscriptions explicitly tagged
     # metadata.autoRefund="true", so a real customer's invoice is never touched.
     STRIPE_TEST_BILLING_ENABLED: bool = False
     # Renewal cadence for the test price, in days (Stripe interval=day).
-    STRIPE_TEST_BILLING_INTERVAL_DAYS: int = 2
+    # 30 days mirrors the real monthly subscription so testers see the same
+    # period length and renewal date they would in production. The token amount
+    # and immediate auto-refund below are what keep the test cheap; compressing
+    # the cycle as well made the subscription itself behave unrealistically.
+    STRIPE_TEST_BILLING_INTERVAL_DAYS: int = 30
     # Amount the test price charges, in the currency's minor unit (100 = $1/£1).
     # Deliberately a token amount so real prices stay untouched and the residual
     # Stripe processing fee is negligible. Bump to test the real amount instead.

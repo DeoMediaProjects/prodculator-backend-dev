@@ -61,10 +61,10 @@ async def create_test_subscription_checkout(
     supabase: DatabaseClient = Depends(get_supabase),
     service: StripeService = Depends(get_stripe_service),
 ):
-    """Mint a Checkout URL that bills a target user on a short (default 2-day)
-    cycle and auto-refunds every charge, to validate recurring billing without
-    a month-long wait. LIVE money, master-admin only, and inert unless
-    STRIPE_TEST_BILLING_ENABLED is on."""
+    """Mint a Checkout URL that bills a target user a token amount on the normal
+    monthly cycle and auto-refunds every charge, to validate recurring billing
+    without charging a real plan price. LIVE money, master-admin only, and
+    inert unless STRIPE_TEST_BILLING_ENABLED is on."""
     if not settings.STRIPE_TEST_BILLING_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -191,10 +191,10 @@ async def create_subscription_checkout(
         )
 
     try:
-        # When compressed-cycle billing test mode is ON (a deliberate ops flag,
-        # OFF in normal operation), the public checkout mints a short-cycle
-        # (default 2-day) $1 subscription tagged for auto-refund, so a demo
-        # subscriber can watch a real renewal fire and be kept whole. OFF by
+        # When token-amount billing test mode is ON (a deliberate ops flag,
+        # OFF in normal operation), the public checkout mints a $1 subscription
+        # on the normal monthly cycle tagged for auto-refund, so a demo
+        # subscriber sees a real subscription and is kept whole. OFF by
         # default → charges the real plan price with no refund, exactly as
         # before.
         result = service.create_subscription_checkout(

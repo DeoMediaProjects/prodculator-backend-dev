@@ -50,9 +50,9 @@ async def create_b2b_test_checkout(
     supabase: DatabaseClient = Depends(get_supabase),
     service: B2BService = Depends(get_b2b_service),
 ):
-    """Mint a B2B Checkout URL that bills a target user on a short (default
-    2-day) cycle and auto-refunds every charge. LIVE money, master-admin only,
-    inert unless STRIPE_TEST_BILLING_ENABLED is on."""
+    """Mint a B2B Checkout URL that bills a target user a token amount on the
+    normal monthly cycle and auto-refunds every charge. LIVE money,
+    master-admin only, inert unless STRIPE_TEST_BILLING_ENABLED is on."""
     if not settings.STRIPE_TEST_BILLING_ENABLED:
         raise HTTPException(status_code=404, detail="Not found")
 

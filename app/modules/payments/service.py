@@ -60,8 +60,8 @@ class StripeService:
     ) -> dict:
         """Create a Stripe Checkout session for subscription.
 
-        When ``test_billing`` is True, swaps in a short-cycle (default 2-day)
-        test price cloned from ``price_id`` and tags the subscription so the
+        When ``test_billing`` is True, swaps in a token-amount test price
+        cloned from ``price_id`` and tags the subscription so the
         auto-refund webhook keeps the test subscriber whole. Never set from a
         normal user path — only the admin test endpoint passes it.
         """
@@ -351,12 +351,16 @@ class StripeService:
 
     # ── Compressed-cycle billing test helpers ────────────────────────────────
     def get_or_create_test_price(self, real_price_id: str) -> str:
-        """Find-or-create a short-cycle recurring price for billing tests.
+        """Find-or-create a token-amount recurring price for billing tests.
 
-        Cloned from the real price's product + currency, but with a short
-        interval (default 2 days) and a token unit amount so the real price is
-        never touched and the refunded charge is tiny. Idempotent via a
-        deterministic lookup_key, so repeated tests reuse the same price.
+        Cloned from the real price's product + currency, but with a token unit
+        amount so the real price is never touched and the refunded charge is
+        tiny. The interval matches the real monthly cadence (default 30 days) so
+        a tester sees the period length and renewal date they would in
+        production. Idempotent via a deterministic lookup_key that includes the
+        interval, so repeated tests reuse the same price and changing the
+        interval mints a new one rather than mutating a price Stripe has already
+        billed against.
         """
         interval_days = self.settings.STRIPE_TEST_BILLING_INTERVAL_DAYS
         unit_amount = self.settings.STRIPE_TEST_BILLING_UNIT_AMOUNT
