@@ -199,6 +199,47 @@ class StorageClient:
         """Which backend is live, for diagnostics in error paths."""
         return "s3" if self._use_s3 else "local"
 
+    def preflight(self) -> tuple[bool, str]:
+        """Check the configured storage target is actually reachable.
+
+        Report PDFs are uploaded at the very end of a multi-minute pipeline, so a
+        storage misconfiguration was only discovered after the whole analysis had
+        been paid for and run. Three consecutive production failures (a bucket
+        name that did not exist, a region mismatch, then a missing IAM policy)
+        were each knowable in one call at startup. Never raises: a probe that
+        crashes is worse than one that reports a problem.
+        """
+        if not self._use_s3:
+            root = Path(self.settings.STORAGE_ROOT)
+            try:
+                root.mkdir(parents=True, exist_ok=True)
+                probe = root / ".preflight"
+                probe.write_bytes(b"ok")
+                probe.unlink()
+            except Exception as exc:  # noqa: BLE001 - probe must not crash
+                return False, f"local root {root} not writable: {exc}"
+            return True, f"local disk ({root}), NOT durable across redeploys"
+
+        bucket = self.settings.AWS_S3_BUCKET_NAME
+        try:
+            import boto3
+            from botocore.config import Config
+
+            client = boto3.client(
+                "s3",
+                region_name=self.settings.AWS_S3_REGION,
+                aws_access_key_id=self.settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=self.settings.AWS_SECRET_ACCESS_KEY,
+                config=Config(connect_timeout=3, read_timeout=5, retries={"max_attempts": 1}),
+            )
+            client.head_bucket(Bucket=bucket)
+        except Exception as exc:  # noqa: BLE001 - probe must not crash
+            # head_bucket distinguishes the three real failure modes: 404 for a
+            # bucket that does not exist, 301 for one in another region, 403 for
+            # credentials without access.
+            return False, f"s3 bucket {bucket} ({self.settings.AWS_S3_REGION}) unreachable: {exc}"
+        return True, f"s3 bucket {bucket} ({self.settings.AWS_S3_REGION})"
+
     def from_(self, bucket: str) -> S3StorageBucket | _LocalStorageBucket:
         if self._use_s3:
             return S3StorageBucket(bucket, self.settings)
