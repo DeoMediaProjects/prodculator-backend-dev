@@ -1326,6 +1326,28 @@ def _dispatch_report_job(
     )
 
 
+def _user_facing_failure_reason(step: str | None) -> str:
+    """Describe a failed report in terms the recipient can act on.
+
+    Keyed on the pipeline step rather than the exception, so no provider or
+    infrastructure detail can leak into a customer's inbox no matter what threw.
+    Support correlates the specific cause via the report ID in the same email.
+    """
+    reasons = {
+        "extract_script_text": "We could not read the script file you uploaded.",
+        "script_analysis": "We could not finish analysing your script.",
+        "production_analysis": "We could not finish the production analysis.",
+        "pdf_render": "The analysis completed but we could not produce the PDF.",
+        "pdf_generate": "The analysis completed but we could not produce the PDF.",
+        "pdf_upload": "The analysis completed but we could not save the PDF.",
+        "persist_report": "The analysis completed but we could not save the report.",
+    }
+    return reasons.get(
+        step or "",
+        "We could not complete this report. No charge has been applied.",
+    )
+
+
 def process_report_task(
     report_id: str,
     user_id: str,
@@ -1565,9 +1587,21 @@ def process_report_task(
                     {
                         "script_title": (report_row or {}).get("script_title", "Unknown"),
                         "report_id": report_id,
-                        "error": str(exc),
+                        # A user-safe summary, never str(exc). This template sent
+                        # customers raw botocore text naming our bucket and the
+                        # failing S3 operation, which is both meaningless to them
+                        # and a description of our infrastructure. The exact
+                        # exception is already in the logs and on the report row.
+                        "error": _user_facing_failure_reason(current_step),
                     },
                 )
                 logger.debug("Sent failure email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send failure email for report_id=%s", report_id)
+
+            # Let the job itself fail. RQ previously logged "Job OK" for a run
+            # that threw, because this handler swallowed the exception once the
+            # report row was marked failed, so the queue's own view of the world
+            # disagreed with the report's. Nothing is enqueued with retry=, so
+            # re-raising records the failure without re-running any work.
+            raise

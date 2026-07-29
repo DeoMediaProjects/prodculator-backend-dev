@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -36,10 +37,12 @@ async def readiness_check(db: DatabaseClient = Depends(get_supabase)):
     backing services rather than just reporting config presence.
 
     The database is required: if it's unreachable we return 503 so the instance
-    is pulled from rotation. Redis is best-effort (the app degrades gracefully
-    without it), so a Redis failure is reported but does not fail readiness.
+    is pulled from rotation. Redis and storage are best-effort (the app degrades
+    without them), so a failure there is reported but does not fail readiness —
+    pulling the whole API over unreachable PDF storage would be worse than the
+    problem it signals.
     """
-    checks = {"database": False, "redis": False}
+    checks: dict[str, object] = {"database": False, "redis": False, "storage": False}
 
     try:
         db.session.execute(text("SELECT 1"))
@@ -52,6 +55,15 @@ async def readiness_check(db: DatabaseClient = Depends(get_supabase)):
         checks["redis"] = True
     except Exception as e:  # noqa: BLE001 - Redis is non-critical; report and continue
         logger.warning("Readiness: redis check failed: %s", e)
+
+    # Storage is checked here rather than at first use because report PDFs upload
+    # at the end of a multi-minute pipeline: without this, a bad bucket name,
+    # region or IAM policy only surfaces after a full paid analysis has run.
+    storage_ok, storage_detail = await run_in_threadpool(db.storage.preflight)
+    checks["storage"] = storage_ok
+    checks["storage_detail"] = storage_detail
+    if not storage_ok:
+        logger.error("Readiness: storage check failed: %s", storage_detail)
 
     ready = checks["database"]
     return JSONResponse(
