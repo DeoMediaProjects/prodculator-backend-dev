@@ -78,6 +78,13 @@ class ReportValidator:
                 key=lambda loc: loc.get("score", 0) if isinstance(loc, dict) else 0,
                 reverse=True,
             )
+            # Re-sorting the ranking alone used to leave budgetScenarios,
+            # paymentTiming and the incentive table in their pre-sort order,
+            # so the recommended-territory card mixed fields from two
+            # territories. Move the dependent sections with the ranking.
+            from app.modules.reports.builder import ReportBuilder
+            ReportBuilder.align_sections_to_rankings(report)
+
             # Update executiveSummary to match top-ranked territory
             top = rankings[0]
             if isinstance(top, dict) and top.get("name"):

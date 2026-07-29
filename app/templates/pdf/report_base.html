@@ -853,7 +853,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     </div>
     <div style="display:flex;gap:24px;font-size:10.5px;color:#3A382F;font-weight:500;padding:8px 0;border-top:1px solid var(--hairline)">
       {% if inc.estimatedRebate %}<span><b>Est. rebate:</b> {{ inc.estimatedRebate }}</span>{% endif %}
-      {% if inc.qualifyingSpend %}<span><b>Qualifying spend:</b> {{ inc.qualifyingSpend }}</span>{% endif %}
+      {# This is the programme's eligibility threshold (qualifying_spend_min), not
+         this production's qualifying spend, which lives on budgetScenarios. #}
+      {% if inc.qualifyingSpend %}<span><b>Min. qualifying spend:</b> {{ inc.qualifyingSpend }}</span>{% endif %}
       {% if inc.paymentSpeed %}<span><b>Payment:</b> {{ inc.paymentSpeed }}</span>{% endif %}
     </div>
     {% if inc.requirements %}

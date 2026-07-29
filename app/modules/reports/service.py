@@ -1057,13 +1057,25 @@ class ReportService:
             best = _best_incentive(rows, production_format)
 
             # Resolve FX rate for rebate cap enforcement (e.g. South Africa R25M).
-            # When budget_currency is GBP, fx_rates_from_budget gives GBP→cap_currency.
+            #
+            # The cap is clamped in GBP but displayed in the cap's own currency,
+            # so both legs must use the same rate or a capped rebate renders
+            # above its own ceiling. fx_rates_from_budget holds
+            # budget_currency→X, which _budget_to_display scales by
+            # budget_original/budget_gbp; deriving GBP→X the same way makes the
+            # round trip exact for any budget currency. Previously this was
+            # skipped unless the budget was already in GBP, so a non-GBP budget
+            # fell back to the static table and the two legs disagreed.
             rebate_cap_currency = best.get("rebate_cap_currency")
             fx_rate_to_gbp: float | None = None
-            if rebate_cap_currency and rebate_cap_currency != "GBP" and budget_currency == "GBP":
+            if rebate_cap_currency and rebate_cap_currency != "GBP":
                 fx_info = fx_rates_from_budget.get(rebate_cap_currency)
-                if fx_info and fx_info.get("rate"):
-                    fx_rate_to_gbp = fx_info["rate"]  # GBP → rebate_cap_currency
+                rate = fx_info.get("rate") if fx_info else None
+                if rate:
+                    if budget_original_amount and budget_original_amount > 0:
+                        fx_rate_to_gbp = rate * (budget_original_amount / budget_gbp)
+                    elif budget_currency == "GBP":
+                        fx_rate_to_gbp = rate  # GBP → rebate_cap_currency
 
             corrected = ReportValidator._compute_corrected_rebate(
                 best, budget_gbp, territory_incentives,

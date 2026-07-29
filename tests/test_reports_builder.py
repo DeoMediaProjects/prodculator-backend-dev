@@ -1097,3 +1097,81 @@ class TestFullBuild:
 
         # Should have at most 3 territories
         assert len(report["locationRankings"]) <= 3
+
+
+# ── Ranked ordering across sections ────────────────────────────────────────
+
+
+class TestSectionsFollowRankedOrder:
+    """Every territory-keyed section must lead with the top-ranked territory.
+
+    Sections used to be built from _select_territories() order while only
+    locationRankings was sorted, so the recommended-territory card could show
+    one territory's name beside another territory's programme and rebate.
+    """
+
+    @staticmethod
+    def _two_territory_datasets() -> dict:
+        # Weaker incentive listed first, so insertion order != ranked order.
+        weak = _make_incentive(
+            program="Sceal Uplift", territory="Ireland", rate_gross=8.0,
+        )
+        strong = _make_incentive(
+            program="KOFIC Location Incentive", territory="South Korea",
+            rate_gross=60.0,
+        )
+        return _make_datasets(
+            incentives=[weak, strong],
+            territory_financials={
+                "Ireland": {
+                    "programme": "Sceal Uplift",
+                    "net_rebate": "EUR 11,423,100",
+                    "total_budget": "EUR 35,148,000",
+                },
+                "South Korea": {
+                    "programme": "KOFIC Location Incentive",
+                    "net_rebate": "KRW 200,000,000",
+                    "total_budget": "KRW 55,000,000,000",
+                },
+            },
+        )
+
+    def test_top_ranked_territory_leads_every_section(self):
+        report = _build(self._two_territory_datasets())
+
+        rankings = report["locationRankings"]
+        assert len(rankings) == 2
+        top = rankings[0]["name"]
+        assert top == "South Korea", [
+            (loc["name"], loc["score"]) for loc in rankings
+        ]
+
+        scenarios = report["financialAnalysis"]["budgetScenarios"]
+        assert scenarios[0]["territory"] == top
+        assert report["incentiveEstimates"][0]["territory"] == top
+        assert report["territoryDeepDives"][0]["name"] == top
+
+    def test_recommended_card_fields_belong_to_one_territory(self):
+        report = _build(self._two_territory_datasets())
+
+        summary = report["executiveSummary"]
+        top_scenario = report["financialAnalysis"]["budgetScenarios"][0]
+
+        assert summary["recommendedTerritory"] == top_scenario["territory"]
+        assert summary["recommendedTerritoryRebate"] == top_scenario["netRebate"]
+
+    def test_provisional_ranking_leaves_weather_penalty_for_final_score(self):
+        """The pre-AI ranking pass must not consume weatherRiskImpact."""
+        rankings = [
+            {"name": "A", "incentiveStrength": 80, "weatherRiskImpact": -10},
+            {"name": "B", "incentiveStrength": 70},
+        ]
+        ReportBuilder._rank_territories_provisionally(rankings, "full")
+        by_name = {loc["name"]: loc for loc in rankings}
+        assert by_name["A"]["weatherRiskImpact"] == -10
+
+        report = {"locationRankings": rankings}
+        ReportBuilder.compute_overall_scores(report, "full")
+        # Penalty applied exactly once, by the authoritative post-AI pass.
+        scores = {loc["name"]: loc["score"] for loc in rankings}
+        assert scores["A"] == max(0, min(100, round(80 * 0.30 + 50 * 0.70) - 10))
