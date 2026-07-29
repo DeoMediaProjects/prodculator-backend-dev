@@ -600,7 +600,26 @@ class DatabaseClient:
         return TableQuery(self, table_name)
 
     def _table(self, table_name: str) -> Table:
-        return Table(table_name, self.metadata, extend_existing=True)
+        metadata = self.metadata
+        if table_name not in metadata.tables:
+            # Reflect this one table on demand.
+            #
+            # The shared MetaData is reflected once at process start. Without
+            # autoload, a table that did not exist at that moment (anything a
+            # migration adds during a deploy, while the previous process is
+            # still running) is constructed as a COLUMNLESS placeholder instead
+            # of raising, so the next column access fails with an opaque
+            # KeyError on the column name rather than saying the table is
+            # missing. Reflecting on demand picks up a newly migrated table
+            # without an app restart, and a genuinely absent table now fails
+            # loudly with NoSuchTableError.
+            return Table(
+                table_name,
+                metadata,
+                autoload_with=self.session.get_bind(),
+                extend_existing=True,
+            )
+        return Table(table_name, metadata, extend_existing=True)
 
     def close(self) -> None:
         self.session.close()

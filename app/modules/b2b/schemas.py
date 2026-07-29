@@ -26,6 +26,9 @@ class B2BProductResponse(BaseModel):
     price_gbp_cents: int | None = None
     price_usd_cents: int | None = None
     self_service: bool
+    # "coming_soon" while pricing is being finalised, "custom_contract" for
+    # bespoke agreements, "listed" once a real price is published.
+    pricing_status: Literal["coming_soon", "custom_contract", "listed"] = "listed"
     stripe_price_configured: dict[str, bool]
 
 

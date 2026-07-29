@@ -609,11 +609,25 @@ async def download_pdf(
         # which is exactly the kind of drift that produced silent 404s.
         s3_key = report.get("pdf_url")
         if not s3_key:
+            # The report row exists but no PDF was ever stored. Distinct from the
+            # object having gone missing afterwards, and the two need different
+            # remedies, so they are logged separately rather than sharing one
+            # anonymous 404.
+            logger.warning(
+                "PDF requested but report has no pdf_url: report_id=%s status=%s",
+                report_id,
+                report.get("status"),
+            )
             raise HTTPException(status_code=404, detail="PDF not found")
         try:
             pdf_bytes = supabase.storage.from_("reports").download_key(s3_key)
         except Exception:
-            logger.exception("PDF download from storage failed: report_id=%s key=%s", report_id, s3_key)
+            logger.exception(
+                "PDF download from storage failed: report_id=%s key=%s backend=%s",
+                report_id,
+                s3_key,
+                supabase.storage.backend_name,
+            )
             raise HTTPException(status_code=404, detail="PDF not found")
 
     return Response(

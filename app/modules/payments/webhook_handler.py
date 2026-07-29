@@ -247,7 +247,17 @@ class WebhookHandler:
         logger.info("Payment succeeded: %s", payment_intent.get("id"))
 
     def _handle_payment_failed(self, payment_intent: dict) -> None:
-        logger.error("Payment failed: %s", payment_intent.get("id"))
+        # Carry the decline reason. Logging only the payment-intent id forces a
+        # Stripe Dashboard lookup to answer "why", which is the one thing anyone
+        # reading this line wants to know.
+        error = payment_intent.get("last_payment_error") or {}
+        logger.error(
+            "Payment failed: %s code=%s decline_code=%s message=%s",
+            payment_intent.get("id"),
+            error.get("code"),
+            error.get("decline_code"),
+            error.get("message"),
+        )
 
     def _handle_subscription_updated(self, subscription: dict) -> None:
         subscription_id = subscription.get("id")

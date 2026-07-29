@@ -144,6 +144,9 @@ class _LocalStorageBucket:
 
 
 class StorageClient:
+    # Local-fallback warning is emitted once per process, not per instantiation.
+    _warned_local_fallback = False
+
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
         self._use_s3 = bool(
@@ -153,8 +156,33 @@ class StorageClient:
         )
         if self._use_s3:
             logger.debug("StorageClient: using S3 backend (bucket=%s)", self.settings.AWS_S3_BUCKET_NAME)
-        else:
-            logger.debug("StorageClient: using local filesystem fallback (root=%s)", self.settings.STORAGE_ROOT)
+        elif not StorageClient._warned_local_fallback:
+            # WARNING, not debug. On a container the local root is ephemeral, so
+            # a redeploy deletes stored PDFs while the report rows keep their
+            # pdf_url. Downloads then 404 for a report the user can still open,
+            # which is undiagnosable from a debug line nobody has enabled.
+            StorageClient._warned_local_fallback = True
+            missing = [
+                name
+                for name, value in (
+                    ("AWS_S3_BUCKET_NAME", self.settings.AWS_S3_BUCKET_NAME),
+                    ("AWS_ACCESS_KEY_ID", self.settings.AWS_ACCESS_KEY_ID),
+                    ("AWS_SECRET_ACCESS_KEY", self.settings.AWS_SECRET_ACCESS_KEY),
+                )
+                if not value
+            ]
+            logger.warning(
+                "StorageClient falling back to local disk (root=%s) because %s "
+                "not configured. Stored PDFs will not survive a restart or "
+                "redeploy on ephemeral container storage.",
+                self.settings.STORAGE_ROOT,
+                ", ".join(missing),
+            )
+
+    @property
+    def backend_name(self) -> str:
+        """Which backend is live, for diagnostics in error paths."""
+        return "s3" if self._use_s3 else "local"
 
     def from_(self, bucket: str) -> S3StorageBucket | _LocalStorageBucket:
         if self._use_s3:
