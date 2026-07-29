@@ -294,3 +294,43 @@ def test_headline_net_budget_format():
 
     assert entry["headline_net_budget"].startswith("approximately")
     assert "7,000,000" in entry["headline_net_budget"]  # £10M - £3M = £7M
+
+
+# ── Rebate cap FX round-trip ──────────────────────────────────────────────────
+
+
+def test_rebate_cap_round_trips_exactly_for_non_gbp_budget():
+    """A capped rebate must display at the cap, not above it.
+
+    The cap is clamped in GBP but rendered in the cap's own currency. The GBP
+    rate used to clamp was previously only resolved when the budget was
+    already in GBP; a EUR budget fell back to a static table while the display
+    leg used live FX, so a KRW200M cap rendered as ~KRW230M.
+    """
+    svc = _make_service()
+    incentive = _make_incentive(
+        territory="South Korea",
+        program_name="KOFIC Location Incentive",
+        rate_gross=25.0,
+        rate_net=25.0,
+        rate_type="cash_rebate",
+        currency="KRW",
+        qualifying_spend_cap_pct=None,
+    )
+    incentive["rebate_cap_amount"] = 200_000_000.0
+    incentive["rebate_cap_currency"] = "KRW"
+
+    datasets = _make_datasets(
+        budget_gbp=34_700_000,
+        incentives=[incentive],
+        budget_currency="EUR",
+        budget_original_amount=40_000_000,
+        fx_rates_from_budget={"KRW": {"rate": 1685.0, "rate_date": "2026-07-29"}},
+    )
+
+    svc._pre_compute_territory_financials(datasets)
+    entry = datasets["_territory_financials"]["South Korea"]
+
+    assert "200,000,000" in entry["gross_rebate"], entry["gross_rebate"]
+    assert "200,000,000" in entry["net_rebate"], entry["net_rebate"]
+    assert "capped" in (entry.get("rebate_cap_note") or "").lower()

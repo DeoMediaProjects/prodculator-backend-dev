@@ -175,6 +175,15 @@ class ReportBuilder:
     def build(self) -> dict:
         """Build the full report skeleton. AI-narrative fields are ``None``."""
         territories = self._select_territories()
+
+        # Rank first, then build every other section from the ranked order.
+        # Sections used to be built from _select_territories() order while only
+        # locationRankings was sorted (post-AI), so the recommended-territory
+        # card, budget scenarios and payment timing could each lead with a
+        # different territory than the ranked table.
+        location_rankings = self._build_location_rankings(territories)
+        self._rank_territories_provisionally(location_rankings, self._production_priority)
+        territories = self._ranked_territory_order(territories, location_rankings)
         self._territory_names = territories
 
         report: dict = {
@@ -184,7 +193,7 @@ class ReportBuilder:
             "scale": None,
             "complexity": None,
             # Deterministic sections
-            "locationRankings": self._build_location_rankings(territories),
+            "locationRankings": location_rankings,
             "incentiveEstimates": self._build_incentive_estimates(territories),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
@@ -309,6 +318,23 @@ class ReportBuilder:
         return all(r.get("is_supplementary") for r in rows)
 
     # ── Location Rankings ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _ranked_territory_order(
+        territories: list[str], rankings: list[dict],
+    ) -> list[str]:
+        """Reorder *territories* to match ranked *rankings*.
+
+        Territories with no incentive rows are dropped from rankings, so they
+        are kept here in their original relative order after the ranked ones —
+        they still appear in weather, funding and deep-dive sections.
+        """
+        ranked = [
+            loc["name"] for loc in rankings
+            if isinstance(loc, dict) and loc.get("name")
+        ]
+        seen = set(ranked)
+        return ranked + [t for t in territories if t not in seen]
 
     def _build_location_rankings(self, territories: list[str]) -> list[dict]:
         """Build locationRankings with all deterministic scores computed.
@@ -2296,6 +2322,88 @@ class ReportBuilder:
     # ── Post-AI merge and score computation ────────────────────────────────
 
     @staticmethod
+    def _weighted_score(loc: dict, weights: dict, weather_penalty: int) -> int:
+        """Weighted score across the six dimensions, plus the weather penalty.
+
+        Missing dimensions score a neutral 50 rather than zero, so a territory
+        is not punished for a dimension the AI declined to refine.
+        """
+        weighted_sum = 0.0
+        for dim, weight in weights.items():
+            val = loc.get(dim)
+            if isinstance(val, (int, float)):
+                weighted_sum += val * weight
+            else:
+                weighted_sum += 50 * weight
+        return max(0, min(100, int(round(weighted_sum)) + weather_penalty))
+
+    @classmethod
+    def _rank_territories_provisionally(cls, rankings: list[dict], production_priority: str) -> None:
+        """Score and sort *rankings* in place before the AI narrative call.
+
+        All six dimensions are already populated deterministically by
+        ``_build_location_rankings``; the AI only refines costEfficiency within
+        ±15. Ranking here means the narrative call sees territories in true
+        rank order, so the prose cannot disagree with the computed table.
+
+        Non-destructive: ``weatherRiskImpact`` is read but not consumed, so the
+        authoritative post-AI ``compute_overall_scores`` still applies it.
+        """
+        weights = SCORE_WEIGHTS.get(production_priority, SCORE_WEIGHTS["full"])
+        for loc in rankings:
+            if isinstance(loc, dict):
+                loc["score"] = cls._weighted_score(
+                    loc, weights, loc.get("weatherRiskImpact", 0) or 0
+                )
+        rankings.sort(
+            key=lambda loc: loc.get("score", 0) if isinstance(loc, dict) else 0,
+            reverse=True,
+        )
+
+    # Territory-keyed sections that must follow locationRankings order, as
+    # (path, key-holding-the-territory-name) pairs.
+    _RANK_ORDERED_SECTIONS: tuple[tuple[tuple[str, ...], str], ...] = (
+        (("incentiveEstimates",), "territory"),
+        (("financialAnalysis", "budgetScenarios"), "territory"),
+        (("financialAnalysis", "paymentTiming"), "territory"),
+        (("weatherLogistics",), "territory"),
+        (("territoryDeepDives",), "name"),
+    )
+
+    @classmethod
+    def align_sections_to_rankings(cls, report: dict) -> None:
+        """Re-sort every territory-keyed section to match locationRankings.
+
+        The AI may refine costEfficiency enough to reorder the ranking after
+        the skeleton was built, which would otherwise leave the recommended
+        card, budget scenarios and charts leading with a stale territory.
+        Sections may legitimately hold territories absent from the ranking
+        (e.g. no incentive rows); those keep their relative order at the end.
+        """
+        rankings = report.get("locationRankings")
+        if not isinstance(rankings, list):
+            return
+        order = {
+            loc["name"]: i for i, loc in enumerate(rankings)
+            if isinstance(loc, dict) and loc.get("name")
+        }
+        if not order:
+            return
+        fallback = len(order)
+
+        for path, name_key in cls._RANK_ORDERED_SECTIONS:
+            node: object = report
+            for part in path:
+                node = node.get(part) if isinstance(node, dict) else None
+            if not isinstance(node, list):
+                continue
+            node.sort(
+                key=lambda entry, k=name_key: order.get(
+                    entry.get(k) if isinstance(entry, dict) else None, fallback
+                )
+            )
+
+    @staticmethod
     def compute_overall_scores(
         report: dict,
         production_priority: str = "full",
@@ -2318,16 +2426,7 @@ class ReportBuilder:
             # Apply weather penalty before computing final score
             weather_penalty = loc.pop("weatherRiskImpact", 0) or 0
 
-            weighted_sum = 0.0
-            for dim, weight in weights.items():
-                val = loc.get(dim)
-                if isinstance(val, (int, float)):
-                    weighted_sum += val * weight
-                else:
-                    weighted_sum += 50 * weight  # default neutral for missing AI dims
-            new_score = int(round(weighted_sum))
-            new_score = max(0, min(100, new_score + weather_penalty))
-            loc["score"] = new_score
+            loc["score"] = ReportBuilder._weighted_score(loc, weights, weather_penalty)
 
         # Sort by descending score
         rankings.sort(
@@ -2343,6 +2442,10 @@ class ReportBuilder:
                 if isinstance(summary, dict):
                     summary["recommendedTerritory"] = top["name"]
                     summary["recommendedTerritoryScore"] = top.get("score")
+
+        # Keep every territory-keyed section in the same order as the ranking,
+        # in case the AI's costEfficiency refinement changed it.
+        ReportBuilder.align_sections_to_rankings(report)
 
         # Propagate scores to territoryDeepDives
         ranking_scores: dict[str, int] = {}
