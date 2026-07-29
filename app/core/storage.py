@@ -157,27 +157,42 @@ class StorageClient:
         if self._use_s3:
             logger.debug("StorageClient: using S3 backend (bucket=%s)", self.settings.AWS_S3_BUCKET_NAME)
         elif not StorageClient._warned_local_fallback:
-            # WARNING, not debug. On a container the local root is ephemeral, so
-            # a redeploy deletes stored PDFs while the report rows keep their
-            # pdf_url. Downloads then 404 for a report the user can still open,
-            # which is undiagnosable from a debug line nobody has enabled.
+            # On a container the local root is ephemeral, so a redeploy deletes
+            # stored PDFs while the report rows keep their pdf_url. Downloads then
+            # 404 for a report the user can still open, which is undiagnosable
+            # from a debug line nobody has enabled.
             StorageClient._warned_local_fallback = True
-            missing = [
-                name
-                for name, value in (
-                    ("AWS_S3_BUCKET_NAME", self.settings.AWS_S3_BUCKET_NAME),
-                    ("AWS_ACCESS_KEY_ID", self.settings.AWS_ACCESS_KEY_ID),
-                    ("AWS_SECRET_ACCESS_KEY", self.settings.AWS_SECRET_ACCESS_KEY),
-                )
-                if not value
-            ]
-            logger.warning(
-                "StorageClient falling back to local disk (root=%s) because %s "
-                "not configured. Stored PDFs will not survive a restart or "
-                "redeploy on ephemeral container storage.",
-                self.settings.STORAGE_ROOT,
-                ", ".join(missing),
+            settings_by_name = (
+                ("AWS_S3_BUCKET_NAME", self.settings.AWS_S3_BUCKET_NAME),
+                ("AWS_ACCESS_KEY_ID", self.settings.AWS_ACCESS_KEY_ID),
+                ("AWS_SECRET_ACCESS_KEY", self.settings.AWS_SECRET_ACCESS_KEY),
             )
+            missing = [name for name, value in settings_by_name if not value]
+            present = [name for name, value in settings_by_name if value]
+            if present:
+                # Partial config is a deployment mistake, not a dev fallback:
+                # something intended S3 here. Worse, when only one process is
+                # misconfigured, the worker writes a PDF to its own disk and
+                # records a key the API then cannot resolve, so the report looks
+                # complete and every download 404s. That earns an error, not a
+                # warning that scrolls past.
+                logger.error(
+                    "StorageClient has PARTIAL S3 configuration: %s set but %s "
+                    "missing, so it is writing to local disk (root=%s) despite "
+                    "S3 evidently being intended. If another process has the full "
+                    "credentials, PDFs written here will be unreadable there. Set "
+                    "the missing variables on every service.",
+                    ", ".join(present),
+                    ", ".join(missing),
+                    self.settings.STORAGE_ROOT,
+                )
+            else:
+                logger.warning(
+                    "StorageClient using local disk (root=%s): no AWS credentials "
+                    "configured. Expected in development. Stored PDFs will not "
+                    "survive a restart or redeploy on ephemeral container storage.",
+                    self.settings.STORAGE_ROOT,
+                )
 
     @property
     def backend_name(self) -> str:

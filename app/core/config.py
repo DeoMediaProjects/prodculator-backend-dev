@@ -152,13 +152,20 @@ class Settings(BaseSettings):
     # pipeline. Set ANTHROPIC_MODEL=claude-opus-4-8 in the env only if a specific
     # report genuinely needs Opus-level quality.
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
-    # Output cap. Lower than before (was 12000) to bound per-call output cost;
-    # the report JSON comfortably fits under this.
+    # Default output cap for stages without their own budget. Note this is NOT
+    # sufficient for the report narrative, which sets its own higher budget below.
     ANTHROPIC_MAX_TOKENS: int = 8000
     ANTHROPIC_ANALYSIS_TIMEOUT: int = 120
     ANTHROPIC_MAX_TOKENS_SCRIPT_CHUNK: int | None = None
     ANTHROPIC_MAX_TOKENS_SCRIPT_AGGREGATE: int | None = None
-    ANTHROPIC_MAX_TOKENS_REPORT: int | None = None
+    # The narrative fill writes prose for every ranked territory, so its output
+    # scales with territory count and is the largest generation in the pipeline.
+    # Left unset it inherited ANTHROPIC_MAX_TOKENS (8000) and was truncated
+    # mid-JSON on a real four-territory report, which failed the parse and shipped
+    # the report with "AI narrative generation unavailable" while still billing
+    # the user. The timeout comment below already assumed a ~12k-token generation;
+    # this makes the token budget agree with that, with headroom.
+    ANTHROPIC_MAX_TOKENS_REPORT: int | None = 16000
     ANTHROPIC_TIMEOUT_SCRIPT_CHUNK: int | None = 180
     ANTHROPIC_TIMEOUT_SCRIPT_AGGREGATE: int | None = None
     # The report narrative is a large (up to 12k-token) generation on a slow
