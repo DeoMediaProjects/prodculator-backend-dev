@@ -70,6 +70,9 @@ class _Query:
         return _Result(out)
 
 
+_OMITTED = object()  # distinguishes an absent column from an explicit NULL
+
+
 class _DB:
     def __init__(self, users=None, reports=None, subscriptions=None, usage_events=None):
         self.store = {
@@ -207,4 +210,63 @@ class TestDeletingAReportDoesNotRefundQuota:
              "created_at": "2026-01-10", "voided_at": "2026-01-10"},
         ])
         can_gen, _ = SubscriptionService(db).can_generate_report("u1")
+        assert can_gen is True
+
+
+class TestMissingReportLimitIsNotUnlimited:
+    """A subscription row with no report_limit must not mean unlimited.
+
+    No plan in PLAN_REPORT_LIMITS is unlimited, so a NULL in that column is
+    always a data gap (a manual grant, an older write path) rather than an
+    uncapped account. It previously granted unlimited reports and told the
+    customer "Unlimited" on their dashboard.
+    """
+
+    @staticmethod
+    def _db(report_limit, usage_events=()):
+        subscription = {
+            "id": "sub-1",
+            "user_id": "u1",
+            "status": "active",
+            "plan_type": "professional",
+            "current_period_start": "2026-01-01",
+            "current_period_end": "2026-02-01",
+        }
+        if report_limit is not _OMITTED:
+            subscription["report_limit"] = report_limit
+        return _DB(
+            users=[{"id": "u1", "credits_remaining": 0}],
+            subscriptions=[subscription],
+            reports=[],
+            usage_events=list(usage_events),
+        )
+
+    _USED_ONE = ({"id": "e1", "user_id": "u1", "report_type": "paid",
+                  "created_at": "2026-01-10", "voided_at": None},)
+
+    def test_null_report_limit_falls_back_to_the_plan_allowance(self):
+        db = self._db(None, self._USED_ONE)
+        can_gen, reason = SubscriptionService(db).can_generate_report("u1")
+        assert can_gen is False
+        assert "1/1" in reason
+
+    def test_absent_report_limit_column_falls_back_to_the_plan_allowance(self):
+        db = self._db(_OMITTED, self._USED_ONE)
+        can_gen, _ = SubscriptionService(db).can_generate_report("u1")
+        assert can_gen is False
+
+    def test_usage_reports_the_plan_allowance_not_unlimited(self):
+        usage = SubscriptionService(self._db(None, self._USED_ONE)).get_usage("u1", "professional")
+        assert usage["reports_limit"] == 1
+        assert usage["reports_remaining"] == 0
+        assert usage["can_generate"] is False
+
+    def test_explicit_minus_one_is_still_unlimited(self):
+        """-1 stays available as a deliberate uncapped sentinel."""
+        can_gen, reason = SubscriptionService(self._db(-1, self._USED_ONE)).can_generate_report("u1")
+        assert can_gen is True
+        assert "Unlimited" in reason
+
+    def test_unused_plan_allowance_still_permits_generation(self):
+        can_gen, _ = SubscriptionService(self._db(None)).can_generate_report("u1")
         assert can_gen is True
