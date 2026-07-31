@@ -18,6 +18,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# Operational scripts (demo-account seeding, backfills, reconciliation) are run
+# by hand from the Railway console, so they must exist inside the image — being
+# in the repo is not enough.
+COPY scripts ./scripts
 COPY .env.example ./.env.example
 COPY README.md ./README.md
 

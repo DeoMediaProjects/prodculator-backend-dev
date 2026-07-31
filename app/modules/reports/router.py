@@ -6,13 +6,16 @@ from pathlib import Path
 from threading import Lock
 from time import perf_counter, monotonic
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile,
+)
 from fastapi.responses import FileResponse
 
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.db import get_db_context
 from app.core.dependencies import get_supabase, get_current_user, get_optional_user, RequirePlan
+from app.core.limiter import limiter
 from app.core.queue import get_report_queue
 from app.core.storage import StorageClient, S3StorageBucket
 from app.modules.auth.schemas import AuthUser
@@ -151,8 +154,14 @@ def _generate_preview_response(
         raise HTTPException(status_code=500, detail="Failed to generate preview report")
 
 
+# Reachable without an account (get_optional_user) and runs the model
+# synchronously, so an unauthenticated caller can spend Anthropic tokens. The
+# per-IP cap is the only thing standing between that and an open faucet; plan
+# quota does not apply to anonymous previews.
 @router.post("/preview", response_model=PreviewReportResponse)
+@limiter.limit("5/minute")
 async def create_preview_report(
+    request: Request,
     body: CreateReportRequest,
     user: AuthUser | None = Depends(get_optional_user),
     service: ReportService = Depends(get_report_service),
@@ -175,8 +184,14 @@ async def create_preview_report(
     )
 
 
+# Each accepted request costs a full model run (ANTHROPIC_MAX_TOKENS_REPORT).
+# Plan quota caps reports per billing period, not per second, so without this a
+# single authenticated account could fan out concurrent requests and run up the
+# Anthropic bill before the quota ledger catches up.
 @router.post("")
+@limiter.limit("10/minute")
 async def create_report(
+    request: Request,
     background_tasks: BackgroundTasks,
     # Script file — required for paid/b2b, omitted for preview
     script_file: UploadFile | None = File(default=None),
