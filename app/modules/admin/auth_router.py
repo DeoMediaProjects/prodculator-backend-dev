@@ -11,6 +11,7 @@ from app.core.cache import get_redis_client
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_current_admin, get_supabase
+from app.core.limiter import limiter
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import AdminTokenResponse, AdminUser
 from app.modules.auth.schemas import RefreshTokenRequest, SignInRequest
@@ -36,8 +37,13 @@ def _set_admin_cookies(response: Response, token: AdminTokenResponse, settings: 
     )
 
 
+# Tighter than the 5/minute on user sign-in: an admin credential is the
+# highest-value target in the system, and no legitimate admin types their
+# password five times a minute.
 @router.post("/signin", response_model=AdminTokenResponse)
+@limiter.limit("5/minute")
 async def admin_signin(
+    request: Request,
     response: Response,
     body: SignInRequest,
     settings: Settings = Depends(get_settings),
