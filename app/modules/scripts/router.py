@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 
 
 from app.core.config import Settings, get_settings
-from app.core.dependencies import get_current_user
-from app.modules.auth.schemas import AuthUser
+from app.core.dependencies import get_current_admin
+from app.core.limiter import limiter
 from app.modules.scripts.schemas import (
     ScriptAnalysisResult,
     ValidateFileResponse,
@@ -17,9 +17,19 @@ def get_script_service(settings: Settings = Depends(get_settings)) -> ScriptAnal
     return ScriptAnalysisService(settings)
 
 
+# Both routes in this module back the DEV-only /test/script-analysis tester
+# (App.tsx gates that route on import.meta.env.DEV). The production upload flow
+# goes through POST /api/reports, which does its own analysis and enforces plan
+# quota. Neither route had a production caller, yet both were publicly
+# reachable — /validate with no auth at all — so they are admin-only now. If an
+# external client ever needs them, reinstate get_current_user plus a quota
+# check rather than dropping the guard.
 @router.post("/validate", response_model=ValidateFileResponse)
+@limiter.limit("20/minute")
 async def validate_script(
+    request: Request,
     file: UploadFile = File(...),
+    _admin=Depends(get_current_admin),
     service: ScriptAnalysisService = Depends(get_script_service),
 ):
     """Validate script file type and size."""
@@ -27,10 +37,16 @@ async def validate_script(
     return ValidateFileResponse(valid=valid, error=error)
 
 
+# _analyze_chunked issues several model calls per script and carries no plan
+# quota, so before this guard any authenticated account on any tier — including
+# free — could run up the Anthropic bill unmetered. Admin-only for the reason
+# above; the rate limit stays as a second ceiling.
 @router.post("/analyze", response_model=ScriptAnalysisResult)
+@limiter.limit("5/minute")
 async def analyze_script(
+    request: Request,
     file: UploadFile = File(...),
-    user: AuthUser = Depends(get_current_user),
+    _admin=Depends(get_current_admin),
     service: ScriptAnalysisService = Depends(get_script_service),
 ):
     """Upload and analyze a script file. Returns analysis result."""
