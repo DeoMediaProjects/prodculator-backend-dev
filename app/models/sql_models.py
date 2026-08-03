@@ -36,6 +36,9 @@ class User(SQLModel, table=True):
     # New accounts start unverified; set True once the email-verification link is
     # used (or for OAuth sign-ups, where the provider has already verified the email).
     email_verified: bool = Field(default=False)
+    # S3 object key for the account's uploaded logo, never a URL: the bucket is
+    # private and served by presigned URL, so a stored URL would expire in place.
+    logo_key: str | None = None
     is_blocked: bool = Field(default=False)
     blocked_at: datetime | None = None
     last_active: datetime | None = None
@@ -223,6 +226,33 @@ class B2BClientEntitlement(SQLModel, table=True):
     is_exclusive: bool = Field(default=False)
     reverts_at: date | None = None  # None + exclusive => perpetual
     notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class B2BPackageTemplate(SQLModel, table=True):
+    """A saved section composition for the admin package composer.
+
+    PRODUCT_TEMPLATES in package_service.py remains the canonical layout for the
+    five standard products; this holds the bespoke compositions an admin
+    assembles by hand, so they can be reloaded instead of rebuilt each time.
+
+    section_keys references SECTION_LIBRARY keys, which live in code rather than
+    data. A saved template can therefore outlive a key it points at, so the
+    composer validates against the live library on load and surfaces unknown
+    keys instead of failing.
+    """
+
+    __tablename__: ClassVar[str] = "b2b_package_templates"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    # Unique: the name is how an admin picks a template out of the list.
+    name: str = Field(index=True, unique=True, nullable=False)
+    description: str | None = None
+    # Ordered; the order is the render order.
+    section_keys: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    product_type: str | None = Field(default=None, index=True)
+    created_by: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

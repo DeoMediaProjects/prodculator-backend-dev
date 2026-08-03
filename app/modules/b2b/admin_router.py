@@ -217,6 +217,12 @@ from datetime import date as _date  # noqa: E402
 
 from pydantic import BaseModel  # noqa: E402
 
+from app.modules.b2b.composer_service import (  # noqa: E402
+    ConsentGrantRefused,
+    PackageTemplateService,
+    SignalPoolService,
+    TemplateNameConflict,
+)
 from app.modules.b2b.entitlement_service import (  # noqa: E402
     EntitlementConflict,
     EntitlementService,
@@ -234,6 +240,18 @@ def get_entitlement_service(
     db: DatabaseClient = Depends(get_supabase),
 ) -> EntitlementService:
     return EntitlementService(db)
+
+
+def get_template_service(
+    db: DatabaseClient = Depends(get_supabase),
+) -> PackageTemplateService:
+    return PackageTemplateService(db)
+
+
+def get_signal_pool_service(
+    db: DatabaseClient = Depends(get_supabase),
+) -> SignalPoolService:
+    return SignalPoolService(db)
 
 
 class PackagePreviewRequest(BaseModel):
@@ -499,3 +517,163 @@ async def backfill_monthly_aggregates(
         body.product_type, body.period_start, body.period_end
     )
     return {"product_type": body.product_type, "months_stored": stored}
+
+
+# ── Saved package templates (SOW 4.4: "save as template") ────────────────────
+
+
+class PackageTemplateSaveRequest(BaseModel):
+    name: str
+    section_keys: list[str]
+    description: str | None = None
+    product_type: str | None = None
+    # Present => update that template; absent => create a new one.
+    template_id: str | None = None
+
+
+@router.get("/package/templates")
+async def list_package_templates(
+    product_type: str | None = Query(default=None),
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    templates: PackageTemplateService = Depends(get_template_service),
+):
+    """Saved bespoke compositions.
+
+    Each template's keys are resolved against the live SECTION_LIBRARY so the
+    composer can show titles, and can warn about keys a later deploy removed
+    rather than silently dropping them.
+    """
+    rows = templates.list_all(product_type)
+    out = []
+    for row in rows:
+        keys = row.get("section_keys") or []
+        unknown = [k for k in keys if k not in SECTION_BY_KEY]
+        out.append(
+            {
+                **row,
+                "section_titles": [
+                    SECTION_BY_KEY[k].title for k in keys if k in SECTION_BY_KEY
+                ],
+                "unknown_section_keys": unknown,
+            }
+        )
+    return {"templates": out}
+
+
+@router.post("/package/templates")
+async def save_package_template(
+    body: PackageTemplateSaveRequest,
+    admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    templates: PackageTemplateService = Depends(get_template_service),
+):
+    """Create or update a saved composition."""
+    unknown = [k for k in body.section_keys if k not in SECTION_BY_KEY]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown section key(s): {', '.join(unknown)}",
+        )
+    try:
+        return templates.save(
+            name=body.name,
+            section_keys=body.section_keys,
+            description=body.description,
+            product_type=body.product_type,
+            created_by=getattr(admin, "email", None) or getattr(admin, "id", None),
+            template_id=body.template_id,
+        )
+    except TemplateNameConflict as exc:
+        # 409, not 400: the request is well formed, it collides with existing state.
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/package/templates/{template_id}")
+async def delete_package_template(
+    template_id: str,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    templates: PackageTemplateService = Depends(get_template_service),
+):
+    if not templates.delete(template_id):
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"deleted": True, "id": template_id}
+
+
+# ── Signal pool visibility and controls (SOW 4.5) ─────────────────────────────
+
+
+class SignalFlagUpdate(BaseModel):
+    # Both optional: a request may set either flag, or both.
+    is_internal: bool | None = None
+    b2b_consent: bool | None = None
+
+
+@router.get("/signal-pool/summary")
+async def signal_pool_summary(
+    period_start: _date | None = Query(default=None),
+    period_end: _date | None = Query(default=None),
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    pool: SignalPoolService = Depends(get_signal_pool_service),
+):
+    """How much of the pool is actually usable, and why the rest is not."""
+    return pool.summary(period_start, period_end)
+
+
+@router.get("/signal-pool")
+async def list_signal_pool(
+    period_start: _date | None = Query(default=None),
+    period_end: _date | None = Query(default=None),
+    consent: bool | None = Query(default=None),
+    internal: bool | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    pool: SignalPoolService = Depends(get_signal_pool_service),
+):
+    """Signal-level view of consent and internal flags."""
+    return pool.list_signals(
+        period_start=period_start,
+        period_end=period_end,
+        consent=consent,
+        internal=internal,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.patch("/signal-pool/{signal_id}")
+async def update_signal_flags(
+    signal_id: str,
+    body: SignalFlagUpdate,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    pool: SignalPoolService = Depends(get_signal_pool_service),
+):
+    """Update governance flags on one signal.
+
+    `is_internal` moves freely. `b2b_consent` may only be set to false: consent
+    is the producer's to give, so an admin can honour a revocation but can never
+    manufacture consent on someone's behalf. See composer_service docstring.
+    """
+    if body.is_internal is None and body.b2b_consent is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    updated: dict | None = None
+    if body.is_internal is not None:
+        updated = pool.set_internal(signal_id, body.is_internal)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Signal not found")
+    if body.b2b_consent is not None:
+        try:
+            updated = pool.set_consent(signal_id, body.b2b_consent)
+        except ConsentGrantRefused as exc:
+            # 422: semantically invalid, and deliberately not something a retry fixes.
+            raise HTTPException(status_code=422, detail=str(exc))
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Signal not found")
+
+    return {
+        "id": signal_id,
+        "b2b_consent": bool((updated or {}).get("b2b_consent")),
+        "is_internal": bool((updated or {}).get("is_internal")),
+    }
