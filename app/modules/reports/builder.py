@@ -686,14 +686,32 @@ class ReportBuilder:
                             ),
                         }
 
+        # PROD-FIX-007 — if the engine ruled this programme out at the
+        # production's budget and modelled a replacement, the estimate must be
+        # labelled with the programme that was actually modelled.
+        #
+        # Previously `program` and `rate` came from db_row while
+        # `estimatedRebate` came from the switched calculation, so a single
+        # recommendation could cite one programme's name and rate beside
+        # another's figure — the Lion King report named the Independent Film
+        # Tax Credit at 39.75% two paragraphs above a waterfall computed at the
+        # VFX credit's 29.25%.
+        tf_for_naming = self._territory_financials.get(territory) or {}
+        modelled_programme = tf_for_naming.get("programme")
+        switched = bool(modelled_programme) and modelled_programme != program_name
+
         est: dict = {
             "territory": territory,
-            "program": program_name,
+            "program": modelled_programme if switched else program_name,
         }
 
-        # Rate
-        canonical_rate = format_rate(rate_gross, rate_net)
-        est["rate"] = canonical_rate or "N/A"
+        # Rate — must describe the same programme as `program` above.
+        if switched:
+            est["rate"] = tf_for_naming.get("rate") or "N/A"
+            est["programmeNote"] = tf_for_naming.get("programme_note")
+        else:
+            canonical_rate = format_rate(rate_gross, rate_net)
+            est["rate"] = canonical_rate or "N/A"
 
         # Zero-rate guard
         if is_zero_rate(rate_gross, rate_net):
@@ -719,20 +737,38 @@ class ReportBuilder:
         # 1. rebate_cap_amount — hard per-project rebate ceiling (e.g. SA R25M)
         # 2. DB cap text label (e.g. "Budget cap £23.5M") — carries semantic meaning
         # 3. cap_amount — budget threshold formatted automatically
-        rebate_cap = db_row.get("rebate_cap_amount")
-        rebate_cap_cur = db_row.get("rebate_cap_currency") or db_row.get("cap_currency") or "GBP"
+        #
+        # PROD-FIX-007 — caps are programme-specific. When the engine switched
+        # programmes, the cap shown must be the modelled programme's own, not
+        # the ruled-out one's: the Lion King report showed the IFTC's fixed
+        # £6.36M project cap beside a figure computed under a different
+        # programme, where that cap does not apply at all.
+        cap_row = db_row
+        if switched:
+            cap_row = next(
+                (
+                    r for r in self._territory_incentives.get(territory, [])
+                    if (r.get("program") or r.get("program_name")) == modelled_programme
+                ),
+                # No row for the modelled programme means we cannot state a cap
+                # honestly; an empty dict yields no cap rather than a wrong one.
+                {},
+            )
+
+        rebate_cap = cap_row.get("rebate_cap_amount")
+        rebate_cap_cur = cap_row.get("rebate_cap_currency") or cap_row.get("cap_currency") or "GBP"
         if rebate_cap is not None and to_float(rebate_cap):
             formatted_rebate_cap = format_cap(rebate_cap, rebate_cap_cur)
             if formatted_rebate_cap:
                 est["cap"] = f"{formatted_rebate_cap} per project"
         if "cap" not in est:
-            db_cap_label = (db_row.get("cap") or "").strip()
+            db_cap_label = (cap_row.get("cap") or "").strip()
             # Skip vague/outdated labels like "No formal cap"
             if db_cap_label and "no formal cap" not in db_cap_label.lower():
                 est["cap"] = db_cap_label
         if "cap" not in est:
-            cap_amount = db_row.get("cap_amount")
-            cap_currency = db_row.get("cap_currency") or "GBP"
+            cap_amount = cap_row.get("cap_amount")
+            cap_currency = cap_row.get("cap_currency") or "GBP"
             canonical_cap = format_cap(cap_amount, cap_currency)
             if canonical_cap is not None:
                 est["cap"] = canonical_cap

@@ -28,6 +28,11 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     # v2 source-of-truth fields
     "productionStage": "production_stage",
     "emergingFilmmaker": "emerging_filmmaker",
+    # Regional eligibility bound (PROD-FIX-008). Distinct from
+    # nationalityRequired, which means "restricted to one country" — a fund can
+    # accept any nationality within a region while excluding everyone outside
+    # it (e.g. Busan's Asian Cinema Fund).
+    "eligibleRegions": "eligible_regions",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 

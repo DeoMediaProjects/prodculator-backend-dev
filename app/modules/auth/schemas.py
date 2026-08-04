@@ -10,6 +10,19 @@ class AuthUser(BaseModel):
     user_type: str = "free"
     credits_remaining: int = 0
     plan: str = "free"
+    # The S3 key only. This model is cached in Redis and a presigned URL
+    # expires, so the signed URL is built per response instead (see MeResponse).
+    logo_key: str | None = None
+
+
+class MeResponse(AuthUser):
+    """/me plus fields that must be recomputed on every request."""
+
+    logo_url: str | None = None
+
+
+class LogoResponse(BaseModel):
+    logo_url: str | None = None
 
 
 class SignUpRequest(BaseModel):

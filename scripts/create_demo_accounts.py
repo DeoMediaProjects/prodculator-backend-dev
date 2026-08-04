@@ -29,6 +29,12 @@ Usage (run where DB_URL resolves, i.e. on Railway, not a laptop):
     python scripts/create_demo_accounts.py --dry-run
     python scripts/create_demo_accounts.py
     python scripts/create_demo_accounts.py --count 10 --reports 3 --reset-usage
+
+To add a SECOND batch without disturbing the first, pass --start past the
+existing numbers. Re-running over an account that already exists rewrites its
+password, which silently invalidates credentials already handed to testers:
+
+    python scripts/create_demo_accounts.py --start 11 --count 10
 """
 import argparse
 import secrets
@@ -166,6 +172,12 @@ def main() -> None:
     )
     parser.add_argument("--count", type=int, default=DEFAULT_COUNT,
                         help=f"Number of demo accounts (default: {DEFAULT_COUNT})")
+    parser.add_argument("--start", type=int, default=1,
+                        help="First account number (default: 1). Use this to add a "
+                             "second batch without touching the first: --start 11 "
+                             "creates demo11 onwards and leaves demo1-10 alone. "
+                             "Re-running over an existing account issues it a NEW "
+                             "password, invalidating any credentials already sent out.")
     parser.add_argument("--reports", type=int, default=DEFAULT_REPORTS,
                         help=f"Reports allowed per account (default: {DEFAULT_REPORTS})")
     parser.add_argument("--period-years", type=int, default=DEFAULT_PERIOD_YEARS,
@@ -180,6 +192,9 @@ def main() -> None:
     if args.reports < 1:
         print("Error: --reports must be at least 1.")
         sys.exit(1)
+    if args.start < 1:
+        print("Error: --start must be at least 1.")
+        sys.exit(1)
 
     settings = get_settings()
     engine = create_engine(settings.DB_URL)
@@ -193,7 +208,7 @@ def main() -> None:
             "password": generate_password(),
             "name": f"Demo Account {i}",
         }
-        for i in range(1, args.count + 1)
+        for i in range(args.start, args.start + args.count)
     ]
 
     with Session(engine) as session:
@@ -229,6 +244,18 @@ def main() -> None:
         "\nPasswords are shown once and are not recoverable — save them now. "
         "Re-running this script issues new passwords."
     )
+
+    # An "updated" row means an account that already existed just had its
+    # password rewritten. Anyone already holding the old one is now locked out,
+    # and nothing else in the output makes that consequence obvious.
+    updated = [a["email"] for a, action in zip(accounts, results) if action == "updated"]
+    if updated:
+        print(
+            f"\nWARNING: {len(updated)} existing account(s) were given NEW passwords: "
+            f"{', '.join(updated)}.\n"
+            "Any credentials already distributed for those accounts no longer work. "
+            "To add accounts without touching existing ones, use --start."
+        )
 
 
 if __name__ == "__main__":

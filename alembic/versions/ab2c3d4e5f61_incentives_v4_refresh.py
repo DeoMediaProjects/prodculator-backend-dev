@@ -41,6 +41,8 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.audit_notes import split_audit_text
+
 revision = "ab2c3d4e5f61"
 down_revision = "aa1b2c3d4e5f"
 branch_labels = None
@@ -54,6 +56,22 @@ _RATE_TYPE_CANON = {
 }
 
 _NONE_STRINGS = {"none", "n/a", "none published", "none found", "not applicable"}
+
+# PROD-FIX-007 — programmes that supplement a primary credit rather than
+# replacing it. A supplementary programme applies only to a subset of spend and
+# must never be selected as a territory's primary incentive.
+#
+# This is an explicit list rather than a text match on the source warnings,
+# because several rows describe themselves as "supplementary to federal PSTC"
+# while still being their territory's only (and therefore primary) programme —
+# Ontario, Quebec and Alberta each have exactly one row, and flagging them would
+# drop those territories from reports entirely.
+#
+# Restoring this originally-lost flag is migration h8c9d0e1f2a3; it is set here
+# too so a fresh database build does not reintroduce the bug.
+_SUPPLEMENTARY_PROGRAMMES = {
+    ("United Kingdom", "UK VFX Expenditure Credit (Uplift)"),
+}
 
 _MONEY_RE = re.compile(r"^([A-Z]{3})\s+([\d,]+)$")
 _MONEY_PREFIX_RE = re.compile(r"^([A-Z]{3})\s+([\d,]+)")
@@ -153,7 +171,32 @@ def _build_row(src: dict, now: str) -> dict:
         qs_cap_pct = _first_number(src["qsCapPct"])
 
     last_verified = src.get("lastVerified")
-    notes = src.get("notes")
+
+    # PROD-FIX-006 — the v4 source rows carry internal data-audit annotations
+    # inline (e.g. "[FLAGGED 2026-07: ... needs direct confirmation from Film
+    # Center Serbia ...]"). Those are written for the admin/data team and must
+    # never reach client output, so they are separated here at the point of
+    # ingestion rather than filtered downstream.
+    #
+    # This originally wrote the raw string to BOTH `notes` and
+    # `eligibility_notes`; `eligibility_notes` is read by ReportBuilder and
+    # appended to the client-facing requirements list, which is how the
+    # annotations reached the PDF. The two fields are now separate, and neither
+    # carries audit text.
+    audit_fragments: list[str] = []
+    clean_fields: dict[str, str | None] = {}
+    for _src_key, _col in (
+        ("notes", "notes"),
+        ("qsBasis", "qs_basis"),
+        ("calcFormula", "calc_formula"),
+        ("annualProgrammeCap", "annual_programme_cap"),
+    ):
+        _clean, _extracted = split_audit_text(src.get(_src_key))
+        clean_fields[_col] = _clean
+        audit_fragments.extend(f"[{_col}] {frag}" for frag in _extracted)
+
+    notes = clean_fields["notes"]
+    internal_audit_notes = "\n\n".join(audit_fragments) or None
 
     return {
         "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"prodculator:incentive:{territory}:{program}")),
@@ -166,13 +209,18 @@ def _build_row(src: dict, now: str) -> dict:
         "rate_type": rate_type,
         "rate_gross": _first_number(src.get("rateGross")),
         "rate_net": _first_number(src.get("rateNet")),
+        # Atomic investor-facing net rate (migration k3l4m5n6o7p8). ReportBuilder
+        # reads this directly into the `netRatePct` skeleton key, bypassing
+        # string trimming, so it must not be left NULL by a dataset refresh —
+        # same v4 source field as rate_net above.
+        "net_rate_pct": _first_number(src.get("rateNet")),
         "rate_gross_display": src.get("rateGross"),
         "rate_net_display": src.get("rateNet"),
         "qualifying_spend_type": src.get("qsType"),
         "qualifying_spend_cap_pct": qs_cap_pct,
         "qualifying_spend_min": qs_min_amount,
         "qualifying_spend_currency": qs_min_ccy,
-        "qs_basis": src.get("qsBasis"),
+        "qs_basis": clean_fields["qs_basis"],
         "rebate_cap_display": src.get("rebateCap"),
         "rebate_cap_amount": rebate_cap_amount,
         "rebate_cap_currency": rebate_cap_ccy,
@@ -183,7 +231,7 @@ def _build_row(src: dict, now: str) -> dict:
         "cap_amount": cap_amount,
         "cap_currency": cap_ccy,
         "budget_eligibility_ceiling": src.get("budgetEligibilityCeiling"),
-        "annual_programme_cap": src.get("annualProgrammeCap"),
+        "annual_programme_cap": clean_fields["annual_programme_cap"],
         "currency": rebate_cap_ccy or qs_min_ccy or per_person_ccy,
         "atl_exempt": atl_exempt,
         "payment_reliability": pay_reliability,
@@ -192,14 +240,21 @@ def _build_row(src: dict, now: str) -> dict:
         "payment_timeline_days_max": days_max,
         "payment_timeline_notes": timeline_notes,
         "notes": notes,
+        # Client-facing. Carries the same prose as `notes` (the v4 source has a
+        # single free-text field), but only ever the audit-stripped form. The
+        # report-layer guard in ReportValidator is the backstop if a future
+        # record reintroduces annotation here.
         "eligibility_notes": notes,
+        # Admin/data team only — never read by app/modules/reports.
+        "internal_audit_notes": internal_audit_notes,
+        "is_supplementary": (territory, program) in _SUPPLEMENTARY_PROGRAMMES,
         "authority": src.get("authority"),
         "ai_rule": src.get("aiRule"),
         "confidence": src.get("confidence"),
         "bank_pts": src.get("bankPts") if isinstance(src.get("bankPts"), int) else None,
         "mechanism_pattern": src.get("mechanismPattern"),
         "verification_status": src.get("verificationStatus"),
-        "calc_formula": src.get("calcFormula"),
+        "calc_formula": clean_fields["calc_formula"],
         "regional_funds_note": src.get("regionalFundsNote"),
         "warnings_json": json.dumps(warnings) if warnings else None,
         "source_url": src.get("sourceUrl"),
@@ -213,6 +268,22 @@ def _build_row(src: dict, now: str) -> dict:
 
 def upgrade() -> None:
     conn = op.get_bind()
+
+    # PROD-FIX-006 — the separated audit column is formally added by migration
+    # g7b8c9d0e1f2, which runs after this one. On an existing database it is
+    # therefore already present when this migration is re-run; on a fresh build
+    # it is not, and the extracted audit fragments would have nowhere to go.
+    # Create it here if missing so the data team keeps the annotations either
+    # way. g7b8c9d0e1f2 tolerates the column already existing.
+    if not any(
+        c["name"] == "internal_audit_notes"
+        for c in sa.inspect(conn).get_columns("incentive_programs")
+    ):
+        op.add_column(
+            "incentive_programs",
+            sa.Column("internal_audit_notes", sa.Text(), nullable=True),
+        )
+
     table = sa.Table("incentive_programs", sa.MetaData(), autoload_with=conn)
 
     now = datetime.now(timezone.utc).isoformat()

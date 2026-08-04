@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+from app.core.audit_notes import contains_audit_text, split_audit_text
 from app.modules.reports.helpers import (  # noqa: F401 — re-exported for backward compat
     STALE_DAYS,
     DEFAULT_ATL_PCT,
@@ -126,6 +127,11 @@ class ReportValidator:
             report, datasets.get("_production_format"), warnings
         )
 
+        # PROD-FIX-006 — last line of defence before the report leaves the
+        # engine. Must run after every other mutation above, including the
+        # section explainers, so nothing is injected past it.
+        cls._strip_leaked_audit_text(report, warnings)
+
         if warnings:
             logger.info(
                 "assert_integrity found %d issues: %s",
@@ -133,6 +139,67 @@ class ReportValidator:
                 "; ".join(warnings[:10]),
             )
         return report, warnings
+
+    @classmethod
+    def _strip_leaked_audit_text(cls, report: dict, warnings: list[str]) -> None:
+        """Remove any internal data-audit annotation from client-bound output.
+
+        PROD-FIX-006. The primary fix is schema-level: audit annotations live in
+        ``incentive_programs.internal_audit_notes``, which nothing in this
+        package reads. This is the backstop for the case that fix cannot cover —
+        a new or edited record that reintroduces an annotation into a
+        narrative-facing column, or an AI narrative that echoes one back.
+
+        Fails closed on content rather than on the request: the offending text
+        is removed and the field dropped if nothing survives, so the producer
+        still gets their report, and an ERROR is logged because a hit here means
+        a record needs correcting upstream.
+        """
+        hits: list[str] = []
+
+        def scrub(node: object, path: str) -> object:
+            if isinstance(node, str):
+                if not contains_audit_text(node):
+                    return node
+                hits.append(path)
+                clean, _ = split_audit_text(node)
+                return clean
+            if isinstance(node, dict):
+                for key in list(node.keys()):
+                    scrubbed = scrub(node[key], f"{path}.{key}")
+                    if scrubbed is None and isinstance(node[key], str):
+                        del node[key]
+                    else:
+                        node[key] = scrubbed
+                return node
+            if isinstance(node, list):
+                cleaned = []
+                for i, item in enumerate(node):
+                    scrubbed = scrub(item, f"{path}[{i}]")
+                    # Drop list entries that were entirely audit text rather
+                    # than leaving a null hole in a rendered bullet list.
+                    if scrubbed is None and isinstance(item, str):
+                        continue
+                    cleaned.append(scrubbed)
+                node[:] = cleaned
+                return node
+            return node
+
+        scrub(report, "report")
+
+        if hits:
+            warnings.append(
+                f"[audit-leak] internal audit text removed from {len(hits)} "
+                f"field(s): {', '.join(hits[:5])}"
+            )
+            logger.error(
+                "PROD-FIX-006 guard fired: internal audit annotation reached "
+                "client-bound report output at %d location(s): %s. The "
+                "underlying incentive record needs correcting — move the note "
+                "to internal_audit_notes.",
+                len(hits),
+                "; ".join(hits[:10]),
+            )
 
     @classmethod
     def _assert_required_sections(
@@ -257,21 +324,56 @@ class ReportValidator:
         All logic is driven by dataset fields — no territory names are
         referenced.
         """
-        import json as _json
-
         rate_gross = _to_float(db_row.get("rate_gross"))
         rate_net = _to_float(db_row.get("rate_net"))
         if (rate_gross is None or rate_gross == 0) and (rate_net is None or rate_net == 0):
             return None
 
-        # Step 1 — qualifying spend: type-aware calculation
+        # Step 1 — qualifying spend: type-aware calculation, for db_row.
         #
-        # 'labour'      -> rate applies to qualifying labour only; use labour_pct
-        # 'pdv'         -> rate applies to PDV/VFX work only; use pdv_pct
-        # 'local_spend' -> rate applies to in-territory spend; apply cap_pct if set
-        # 'total'       -> rate applies to all qualifying spend; apply cap_pct if set
-        qs_type = (db_row.get("qualifying_spend_type") or "total").lower()
+        # If a programme switch happens in Step 2 this is recomputed against the
+        # replacement programme, because qualifying spend is a property of the
+        # programme actually being modelled — a PDV credit and a total-spend
+        # credit do not measure the same base.
+        qs_type, qualifying_spend, qualifying_spend_pct, qualifying_spend_note = (
+            cls._qualifying_spend_for(db_row, budget_gbp)
+        )
+        if qualifying_spend is None:
+            return None
+
+        return cls._finish_corrected_rebate(
+            db_row=db_row,
+            budget_gbp=budget_gbp,
+            territory_incentives=territory_incentives,
+            production_format=production_format,
+            fx_rate_to_gbp=fx_rate_to_gbp,
+            rate_gross=rate_gross,
+            rate_net=rate_net,
+            qs_type=qs_type,
+            qualifying_spend=qualifying_spend,
+            qualifying_spend_pct=qualifying_spend_pct,
+            qualifying_spend_note=qualifying_spend_note,
+        )
+
+    @classmethod
+    def _qualifying_spend_for(
+        cls, row: dict, budget_gbp: float
+    ) -> tuple[str, float | None, float, str | None]:
+        """Qualifying spend for one programme.
+
+        Returns (qs_type, qualifying_spend, qualifying_spend_pct, note).
+        ``qualifying_spend`` is None when the programme's basis requires a
+        sourced share the dataset does not carry — the caller must then decline
+        to produce a figure rather than fabricate one.
+
+        'labour'      -> rate applies to qualifying labour only; use labour_pct
+        'pdv'         -> rate applies to PDV/VFX work only; use pdv_pct
+        'local_spend' -> rate applies to in-territory spend; apply cap_pct if set
+        'total'       -> rate applies to all qualifying spend; apply cap_pct if set
+        """
+        qs_type = (row.get("qualifying_spend_type") or "total").lower()
         qualifying_spend_note: str | None = None
+        db_row = row
 
         if qs_type == "labour":
             # No fabricated ratios (handoff \u00a76): a labour-only credit needs a
@@ -280,7 +382,7 @@ class ReportValidator:
             # computed working rather than with a confident wrong number.
             labour_pct = _to_float(db_row.get("qualifying_spend_labour_pct"))
             if labour_pct is None:
-                return None
+                return qs_type, None, 0.0, None
             qualifying_spend = budget_gbp * (labour_pct / 100.0)
             qualifying_spend_pct = labour_pct
             qualifying_spend_note = (
@@ -293,7 +395,7 @@ class ReportValidator:
             # Same rule for PDV/VFX-only credits \u2014 no sourced share, no number.
             pdv_pct = _to_float(db_row.get("qualifying_spend_labour_pct"))
             if pdv_pct is None:
-                return None
+                return qs_type, None, 0.0, None
             qualifying_spend = budget_gbp * (pdv_pct / 100.0)
             qualifying_spend_pct = pdv_pct
             qualifying_spend_note = (
@@ -315,6 +417,32 @@ class ReportValidator:
                     "only, not the total production budget. The figure shown assumes the full "
                     "qualifying spend is incurred in this territory."
                 )
+
+        return qs_type, qualifying_spend, qualifying_spend_pct, qualifying_spend_note
+
+    @classmethod
+    def _finish_corrected_rebate(
+        cls,
+        *,
+        db_row: dict,
+        budget_gbp: float,
+        territory_incentives: dict[str, list[dict]],
+        production_format: str | None,
+        fx_rate_to_gbp: float | None,
+        rate_gross: float | None,
+        rate_net: float | None,
+        qs_type: str,
+        qualifying_spend: float,
+        qualifying_spend_pct: float,
+        qualifying_spend_note: str | None,
+    ) -> dict | None:
+        """Programme selection, rate tiers, ATL, caps — Steps 2 to 5.
+
+        Split out of _compute_corrected_rebate so that a programme switch can
+        re-enter the qualifying-spend calculation for the replacement
+        programme.
+        """
+        import json as _json
 
         # Step 2 — rate-tier logic and budget-cap programme selection
         rate_tier_raw = db_row.get("rate_tier_json")
@@ -370,11 +498,27 @@ class ReportValidator:
                 rate_gross = _to_float(alt.get("rate_gross")) or rate_gross
                 rate_net = _to_float(alt.get("rate_net")) or rate_net
                 rate_tier_raw = alt.get("rate_tier_json")
-                # Re-apply qualifying spend cap from alternative
-                alt_qs_pct = _to_float(alt.get("qualifying_spend_cap_pct"))
-                if alt_qs_pct is not None and 0 < alt_qs_pct <= 100:
-                    qualifying_spend = budget_gbp * (alt_qs_pct / 100.0)
-                    qualifying_spend_pct = alt_qs_pct
+
+                # PROD-FIX-007 — recompute qualifying spend against the
+                # replacement programme's own basis, not just its cap
+                # percentage. The two programmes may measure different things
+                # (a PDV credit covers VFX spend only; a total-spend credit
+                # covers the whole qualifying budget), so carrying the original
+                # programme's base across the switch models a rate against the
+                # wrong denominator.
+                alt_qs_type, alt_spend, alt_pct, alt_note = (
+                    cls._qualifying_spend_for(alt, budget_gbp)
+                )
+                if alt_spend is None:
+                    # The replacement needs a sourced share the dataset lacks.
+                    # Declining is correct here: a figure computed on the
+                    # capped-out programme's base would be wrong, and inventing
+                    # a share for the replacement would be worse.
+                    return None
+                qs_type = alt_qs_type
+                qualifying_spend = alt_spend
+                qualifying_spend_pct = alt_pct
+                qualifying_spend_note = alt_note
 
         # If rate tiers exist and the budget does NOT exceed the cap,
         # calculate a blended rate
@@ -454,10 +598,15 @@ class ReportValidator:
         #
         # Cash rebate programmes (Hungary NFI, Malta MFC) already skip ATL via
         # the rate_type check below.
+        # PROD-FIX-007 — every programme attribute from here on must come from
+        # the programme actually being modelled. Falling back to db_row after a
+        # switch mixes two programmes' rules in one calculation, which is how
+        # the Lion King report ended up applying the IFTC's cap to a rebate
+        # computed at a different programme's rate.
         active_row = alt if alt is not None else db_row
-        rate_type = (active_row.get("rate_type") or db_row.get("rate_type") or "").lower()
-        atl_exempt = bool(active_row.get("atl_exempt") or db_row.get("atl_exempt"))
-        cap_per_person = _to_float(db_row.get("cap_per_person"))
+        rate_type = (active_row.get("rate_type") or "").lower()
+        atl_exempt = bool(active_row.get("atl_exempt"))
+        cap_per_person = _to_float(active_row.get("cap_per_person"))
         atl_deduction_note: str | None = None
         atl_deduction_amount: float = 0.0
         qualifying_spend_before_atl = qualifying_spend
@@ -470,14 +619,14 @@ class ReportValidator:
             atl_est = budget_gbp * _DEFAULT_ATL_PCT
             atl_deduction_amount = atl_est
             qualifying_spend = max(0, qualifying_spend - atl_est)
-            currency_label = db_row.get("currency") or "GBP"
+            currency_label = active_row.get("currency") or "GBP"
             symbol = _currency_symbol(currency_label)
             atl_deduction_note = (
                 f"ATL deduction estimated at {_DEFAULT_ATL_PCT:.0%} of budget "
                 f"({symbol}{atl_est:,.0f})"
             )
             if cap_per_person is not None and cap_per_person > 0:
-                cap_currency = db_row.get("cap_per_person_currency") or currency_label
+                cap_currency = active_row.get("cap_per_person_currency") or currency_label
                 atl_deduction_note += (
                     f". Per-person ATL fee cap of "
                     f"{_currency_symbol(cap_currency)}{cap_per_person:,.0f} "
@@ -487,8 +636,8 @@ class ReportValidator:
             # Per-person wage cap set but programme is not a tax-credit type (e.g.
             # transferable_tax_credit such as Georgia EIIA) — no blanket ATL deduction
             # applies, but the per-person cap must still be surfaced as a risk note.
-            currency_label = db_row.get("currency") or "GBP"
-            cap_currency = db_row.get("cap_per_person_currency") or currency_label
+            currency_label = active_row.get("currency") or "GBP"
+            cap_currency = active_row.get("cap_per_person_currency") or currency_label
             atl_deduction_note = (
                 f"Per-person wage cap: {_currency_symbol(cap_currency)}{cap_per_person:,.0f}"
                 f" per individual \u2014 wages above this threshold are not qualifying spend."
@@ -510,10 +659,17 @@ class ReportValidator:
         # rebate is reduced to the cap.  fx_rate_to_gbp (GBP->cap_currency) is
         # passed in from the caller when live FX data is available; otherwise the
         # static fallback table is used (erring conservative — smaller GBP cap).
+        #
+        # PROD-FIX-007 — read from active_row, not db_row. When a switch has
+        # occurred, db_row is the programme that was ruled out; applying its
+        # rebate ceiling to the replacement's output is what produced the
+        # "capped at 6,360,000 GBP" figure in the Lion King report, where
+        # £6.36M is the IFTC's project cap and the rebate had been computed at
+        # a different programme's rate entirely.
         rebate_cap_note: str | None = None
-        rebate_cap_raw = _to_float(db_row.get("rebate_cap_amount"))
+        rebate_cap_raw = _to_float(active_row.get("rebate_cap_amount"))
         if rebate_cap_raw and rebate_cap_raw > 0:
-            cap_currency = (db_row.get("rebate_cap_currency") or "GBP").upper()
+            cap_currency = (active_row.get("rebate_cap_currency") or "GBP").upper()
             if cap_currency == "GBP":
                 cap_gbp: float | None = rebate_cap_raw
             elif fx_rate_to_gbp and fx_rate_to_gbp > 0:

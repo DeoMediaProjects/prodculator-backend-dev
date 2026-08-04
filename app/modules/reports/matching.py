@@ -33,11 +33,65 @@ Adaptations for this codebase (behaviour-preserving):
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from app.core.regions import (
+    AFRICA,
+    ASIA,
+    CENTRAL_ASIA,
+    EASTERN_EUROPE,
+    EUROPE,
+    LATIN_AMERICA,
+    MIDDLE_EAST,
+    NORTH_AMERICA,
+    OCEANIA,
+    SOUTHEAST_ASIA,
+    regions_for_territories,
+    satisfies,
+)
+
 logger = logging.getLogger(__name__)
+
+# Canonical regions → the coarse `continent` values used in the grants dataset,
+# so the continent-affinity signal can be driven from the same region data.
+_REGION_TO_CONTINENT: dict[str, str] = {
+    AFRICA: "Africa",
+    ASIA: "Asia-Pacific",
+    SOUTHEAST_ASIA: "Asia-Pacific",
+    CENTRAL_ASIA: "Asia-Pacific",
+    OCEANIA: "Asia-Pacific",
+    EUROPE: "Europe",
+    EASTERN_EUROPE: "Europe",
+    MIDDLE_EAST: "Middle East",
+    LATIN_AMERICA: "Americas",
+    NORTH_AMERICA: "Americas",
+}
+
+
+def _continents_for(regions) -> set[str]:
+    return {_REGION_TO_CONTINENT[r] for r in regions if r in _REGION_TO_CONTINENT}
+
+
+def _region_list(raw) -> list[str]:
+    """Normalise the `eligible_regions` column to a list of region names.
+
+    Stored as a JSON array; tolerates a already-decoded list, and treats
+    anything unparseable as "no restriction" so a malformed record cannot
+    silently exclude every production.
+    """
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+    if not isinstance(raw, (list, tuple, set)):
+        return []
+    return sorted({str(r).strip() for r in raw if str(r).strip()})
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +451,30 @@ def match_grants(grants: list[dict], production: dict, today: date | None = None
     origin = (production.get("script_origin") or "").lower() or None
     home = (production.get("home_country") or "").lower()
     budget = production.get("budget_usd")
-    loc_continents: set[str] = set()
+
+    # Regional eligibility (PROD-FIX-008) keys off WHO the filmmakers are —
+    # where the script is set and where the producer is based — not where the
+    # production intends to shoot. Funds in this dataset restrict by filmmaker
+    # origin ("African filmmakers", "Asian filmmakers"), so treating a shooting
+    # territory as evidence of eligibility would qualify a UK production for an
+    # African filmmakers' fund purely by choosing to shoot in Cape Town.
+    origin_regions = regions_for_territories(
+        [production.get("script_origin"), production.get("home_country")]
+    )
+
+    # Continent affinity is a soft score, not a gate, so shooting territories
+    # legitimately count towards it.
+    #
+    # loc_continents was previously initialised empty and never written, so the
+    # `cont in loc_continents` branch further down was unreachable — the only
+    # region-aware signal in grant matching had no effect at all.
+    loc_continents = {
+        c.lower()
+        for c in _continents_for(
+            origin_regions
+            | regions_for_territories(production.get("ranked_territories"))
+        )
+    }
 
     matches, flags = [], []
 
@@ -464,6 +541,41 @@ def match_grants(grants: list[dict], production: dict, today: date | None = None
                 )
             else:
                 continue  # no route to eligibility: excluded rather than misleadingly listed
+
+        # ---- G5 regional eligibility (PROD-FIX-008) ----
+        #
+        # `nationality_required` means "restricted to one country". A fund can
+        # also be bounded by REGION — the Busan Asian Cinema Fund accepts any
+        # Asian nationality but no non-Asian one, so its own record correctly
+        # reads "No nationality restriction within Asia" while still being
+        # closed to a West African production.
+        #
+        # Only assert ineligibility when the production's location is known.
+        # If it is not, surface the fund with the restriction shown rather than
+        # dropping an opportunity the producer may well qualify for.
+        required_regions = _region_list(g.get("eligible_regions"))
+        if required_regions:
+            region_label = ", ".join(required_regions)
+            if not origin_regions:
+                badges.append(f"REGIONAL RESTRICTION: {region_label}")
+                signals.append(
+                    f"open to filmmakers from {region_label} — confirm your "
+                    f"eligibility before submitting"
+                )
+            elif not satisfies(origin_regions, required_regions):
+                flags.append({
+                    "fund_name": name,
+                    "flag": "region_mismatch",
+                    "detail": (
+                        f"restricted to {region_label}; this production "
+                        f"originates in {', '.join(sorted(origin_regions))}"
+                    ),
+                })
+                continue  # outside the fund's stated region: not an opportunity
+            else:
+                badges.append(f"REGIONAL RESTRICTION: {region_label}")
+                score += 1
+                signals.append(f"within this fund's {region_label} remit")
 
         # ---- location signals ----
         if terr_matches_ranked:
