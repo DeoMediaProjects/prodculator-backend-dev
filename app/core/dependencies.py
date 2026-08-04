@@ -148,6 +148,7 @@ async def get_current_user(
         user_type=result.data.get("user_type", "free"),
         credits_remaining=result.data.get("credits_remaining", 0),
         plan=result.data.get("plan", "free"),
+        logo_key=result.data.get("logo_key"),
     )
 
     try:

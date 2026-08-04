@@ -64,6 +64,9 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "regionalFundsNote": "regional_funds_note",
     "capType": "cap_type",
     "bankPts": "bank_pts",
+    # Admin-only data-audit trail (PROD-FIX-006). Exposed to IncentiveDataManager
+    # so the data team keeps the QA notes; never read by the report generator.
+    "internalAuditNotes": "internal_audit_notes",
 }
 _SNAKE_TO_CAMEL: dict[str, str] = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
 

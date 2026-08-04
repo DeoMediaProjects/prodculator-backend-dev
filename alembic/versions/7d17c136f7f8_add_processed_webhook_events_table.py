@@ -6,6 +6,10 @@ Create Date: 2026-03-18 08:44:59.019746
 """
 from alembic import op
 import sqlalchemy as sa
+# downgrade() builds columns with postgresql.TIMESTAMP()/JSONB but this import
+# was missing, so rolling this revision back raised NameError. Caught by
+# tests/test_migration_names_resolve.py.
+from sqlalchemy.dialects import postgresql
 
 revision = '7d17c136f7f8'
 down_revision = 'z3d4e5f6g7h8'

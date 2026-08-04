@@ -76,6 +76,11 @@ class IncentiveProgram(BaseModel):
     bankPts: int | None = None
     region: str | None = None
 
+    # Internal data-audit trail (PROD-FIX-006). Admin/data team only — this is
+    # deliberately the ONLY field carrying QA annotations, and nothing under
+    # app/modules/reports reads it. Do not surface it in client output.
+    internalAuditNotes: str | None = None
+
     @field_validator("territory", mode="before")
     @classmethod
     def normalise_territory(cls, v: str | None) -> str | None:

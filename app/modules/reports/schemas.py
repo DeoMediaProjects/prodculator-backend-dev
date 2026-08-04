@@ -203,6 +203,10 @@ class IncentiveEstimate(BaseModel):
         "qualified", "requires_co_production", "requires_spv", "ineligible", "unknown"
     ] | None = None
     eligibilityNote: str | None = None
+    # Set when the engine ruled the territory's headline programme out at this
+    # budget and modelled a different one (PROD-FIX-007). Explains which
+    # programme the figures describe and why it changed.
+    programmeNote: str | None = None
     # Enriched data-integrity fields
     paymentSpeed: str | None = None           # payment_timeline_notes from dataset
     rateType: str | None = None               # e.g. "cash_rebate", "tax_credit"

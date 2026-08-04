@@ -30,6 +30,12 @@ class GrantOpportunity(BaseModel):
     productionStage: str | None = None       # 'development' | 'production' | 'short' | 'multi'
     emergingFilmmaker: bool | None = None    # sourced flag — never inferred
 
+    # JSON array of canonical region names (see app/core/regions.py). NULL means
+    # unrestricted. Distinct from nationalityRequired, which bounds a fund to a
+    # single country — this bounds it to a region, which is what the Busan
+    # Asian Cinema Fund mismatch (PROD-FIX-008) turned on.
+    eligibleRegions: str | None = None
+
     @field_validator("territory", mode="before")
     @classmethod
     def normalise_territory(cls, v: str | None) -> str | None:

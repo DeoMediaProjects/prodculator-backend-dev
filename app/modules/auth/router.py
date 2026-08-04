@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.auth_cookies import (
@@ -16,10 +16,14 @@ from app.core.dependencies import get_supabase, get_current_user
 from app.core.firebase import verify_firebase_token
 from app.core.limiter import limiter
 from app.core.schemas import SuccessResponse
+from app.core.storage import StorageClient
 
 logger = logging.getLogger(__name__)
+from app.modules.auth.logo import LogoRejected, logo_path, normalise_logo
 from app.modules.auth.schemas import (
     AuthUser,
+    LogoResponse,
+    MeResponse,
     SignUpRequest,
     SignInRequest,
     SignUpResponse,
@@ -39,6 +43,36 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 # auto_error=False — the token may arrive in an httpOnly cookie instead of the
 # Authorization header, so a missing header is not itself an error.
 _bearer = HTTPBearer(auto_error=False)
+
+# Logical storage bucket for account logos, kept apart from report PDFs so the
+# two have distinct key prefixes and can be lifecycled separately.
+_LOGO_BUCKET = "logos"
+
+
+def _logo_url(path: str | None) -> str | None:
+    """Presign the stored logo for reading.
+
+    Holds the storage-relative path rather than the fully-qualified S3 key,
+    because that is what get_public_url signs. Never raises: an unsignable logo
+    should drop the masthead back to its placeholder, not 500 /me.
+    """
+    if not path:
+        return None
+    try:
+        return StorageClient().from_(_LOGO_BUCKET).get_public_url(path)
+    except Exception:
+        logger.warning("Could not presign logo path=%s", path, exc_info=True)
+        return None
+
+
+async def _bust_profile_cache(user_id: str) -> None:
+    """Drop the cached AuthUser so the new logo_key is picked up immediately
+    rather than after the profile TTL expires."""
+    try:
+        redis = get_redis()
+        await redis.delete(f"user_profile:{user_id}")
+    except Exception:
+        pass  # Best-effort: the cache expires on its own.
 
 
 def _set_token_cookies(response: Response, token: TokenResponse, settings: Settings) -> None:
@@ -173,10 +207,59 @@ async def signout(
         raise HTTPException(status_code=500, detail="Sign out failed")
 
 
-@router.get("/me", response_model=AuthUser)
+@router.get("/me", response_model=MeResponse)
 async def get_me(user: AuthUser = Depends(get_current_user)):
     """Get the current authenticated user's profile."""
-    return user
+    return MeResponse(**user.model_dump(), logo_url=_logo_url(user.logo_key))
+
+
+# Multipart image upload from an unprivileged caller, so it is rate limited on
+# top of the validation in logo.py: re-encoding is CPU work, and a burst of
+# large uploads is the cheap way to tie up workers.
+@router.post("/me/logo", response_model=LogoResponse)
+@limiter.limit("10/minute")
+async def upload_logo(
+    request: Request,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(get_current_user),
+    supabase: DatabaseClient = Depends(get_supabase),
+):
+    """Upload the account's logo, replacing any existing one."""
+    raw = await file.read()
+    try:
+        payload = normalise_logo(raw)
+    except LogoRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    path = logo_path(user.id)
+    try:
+        StorageClient().from_(_LOGO_BUCKET).upload(
+            path, payload, {"content-type": "image/png"},
+        )
+    except Exception:
+        logger.exception("Logo upload to storage failed for user=%s", user.id)
+        raise HTTPException(status_code=500, detail="Could not store that logo")
+
+    supabase.table("users").update({"logo_key": path}).eq("id", user.id).execute()
+    await _bust_profile_cache(user.id)
+    return LogoResponse(logo_url=_logo_url(path))
+
+
+@router.delete("/me/logo", response_model=LogoResponse)
+async def delete_logo(
+    user: AuthUser = Depends(get_current_user),
+    supabase: DatabaseClient = Depends(get_supabase),
+):
+    """Remove the account's logo.
+
+    The stored object is left in place rather than deleted: it is overwritten
+    on the next upload, and a failed delete must not leave the row still
+    pointing at something the user has been told is gone. Clearing the column
+    is what makes it invisible.
+    """
+    supabase.table("users").update({"logo_key": None}).eq("id", user.id).execute()
+    await _bust_profile_cache(user.id)
+    return LogoResponse(logo_url=None)
 
 
 @router.post("/reset-password", response_model=SuccessResponse)
