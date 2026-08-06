@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.audit import AuditedAPIRoute, set_audit_actor
 from app.core.auth_cookies import (
     clear_auth_cookies,
     extract_access_token,
@@ -17,7 +18,7 @@ from app.modules.admin.schemas import AdminTokenResponse, AdminUser
 from app.modules.auth.schemas import RefreshTokenRequest, SignInRequest
 from app.modules.auth.service import AuthService
 
-router = APIRouter(prefix="/api/admin/auth", tags=["Admin Auth"])
+router = APIRouter(prefix="/api/admin/auth", tags=["Admin Auth"], route_class=AuditedAPIRoute)
 
 # auto_error=False — the token may arrive in an httpOnly cookie instead.
 _bearer = HTTPBearer(auto_error=False)
@@ -53,6 +54,11 @@ async def admin_signin(
     try:
         token = auth_service.admin_sign_in(email=body.email, password=body.password)
         _set_admin_cookies(response, token, settings)
+        # Sign-in has no get_current_admin dependency (that is the point), so
+        # the audit route class has no actor unless we name one here. Without
+        # this the successful login lands in the trail unattributed. The
+        # submitted password is redacted by the audit writer, not by this call.
+        set_audit_actor(request, email=body.email)
         return token
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))

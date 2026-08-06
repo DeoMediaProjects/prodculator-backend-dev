@@ -150,6 +150,25 @@ SAMPLE_REPORT_DATA: dict = {
         "currencyAdvantage": 88,
         "crewDepthTier": "Tier 3",
     },
+    # Financial readiness (§4.1). The sample always renders in
+    # descriptions_only mode, which shows what the section covers rather than
+    # its contents, so this only has to be present for the section to appear in
+    # the contents list. The lists are empty rather than absent so the section
+    # still renders safely if descriptions_only is ever turned off here.
+    "financialReadiness": {
+        "verdict": "CONDITIONAL",
+        "verdictReason": "Sample report — no production was assessed.",
+        "rule": "not applicable to the marketing sample",
+        "score": 0,
+        "territory": "United Kingdom",
+        "programme": "AVEC (Audio-Visual Expenditure Credit)",
+        "currencySymbol": "£",
+        "components": [],
+        "flags": [],
+        "flagCounts": {"critical": 0, "warning": 0, "info": 0},
+        "methodology": "",
+        "computedOn": "",
+    },
     "financialAnalysis": {
         "budgetScenarios": [
             {

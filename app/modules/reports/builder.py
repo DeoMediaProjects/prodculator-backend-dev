@@ -37,6 +37,10 @@ from app.modules.reports.helpers import (
     parse_money_string,
     clean_source,
 )
+from app.modules.reports.readiness import (
+    SECTION_EXPLAINER as _READINESS_EXPLAINER,
+    compute_financial_readiness,
+)
 from app.modules.reports.matching import (
     estimate_completion_date,
     match_distributors,
@@ -218,6 +222,20 @@ class ReportBuilder:
                 self._build_distributor_recommendations(festival_recs)
             )
             report["scriptOriginCallout"] = self._build_script_origin_callout(territories)
+
+            # Financial readiness (handoff §4.1). Deterministic — no AI. Computed
+            # last because it reads the sections above. Paid tiers only: the free
+            # preview is stripped of every monetary figure, so there is nothing
+            # to assess. Recomputed by ReportValidator.assert_integrity once the
+            # ranking has settled, in case the AI's costEfficiency refinement
+            # changed which territory the assessment should anchor on.
+            readiness = compute_financial_readiness(
+                report=report,
+                datasets=self.datasets,
+                request_metadata=self.request_metadata,
+            )
+            if readiness:
+                report["financialReadiness"] = readiness
 
         # Inject section explainers and scoring methodology
         self._inject_section_explainers(report)
@@ -2148,6 +2166,7 @@ class ReportBuilder:
                 "note explicitly when a comparable has a meaningful budget gap from "
                 "your production."
             ),
+            "financial_readiness": _READINESS_EXPLAINER,
         }
 
         sa = report.get("scriptAnalysis")

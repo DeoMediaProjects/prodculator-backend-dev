@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
 from app.core.permissions import RequirePermission
@@ -14,7 +15,7 @@ from app.modules.email_gating.service import EmailGatingService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/email-gating", tags=["Admin - Email Gating"])
+router = APIRouter(prefix="/api/admin/email-gating", tags=["Admin - Email Gating"], route_class=AuditedAPIRoute)
 
 
 def get_email_gating_service(

@@ -22,6 +22,7 @@ from app.modules.payments.plan_catalog import find_missing_price_ids
 from app.modules.scraper.service import ScraperService
 
 logger = logging.getLogger(__name__)
+from app.modules.admin.audit_router import router as admin_audit_router
 from app.modules.admin.router import router as admin_router
 from app.modules.admin.auth_router import router as admin_auth_router
 from app.modules.admin.admin_users_router import router as admin_users_router
@@ -315,6 +316,7 @@ app.include_router(b2b_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)
+app.include_router(admin_audit_router)
 app.include_router(festivals_admin_router)
 app.include_router(distributors_admin_router)
 app.include_router(territory_profiles_admin_router)

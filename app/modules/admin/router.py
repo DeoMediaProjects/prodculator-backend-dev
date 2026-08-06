@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 
@@ -68,7 +69,7 @@ def _comp_row_to_api(row: dict[str, Any]) -> dict[str, Any]:
         result[api_key] = v
     return result
 
-router = APIRouter(prefix="/api/admin", tags=["Admin"])
+router = APIRouter(prefix="/api/admin", tags=["Admin"], route_class=AuditedAPIRoute)
 
 def get_admin_service(supabase: DatabaseClient = Depends(get_supabase)) -> AdminService:
     return AdminService(supabase)

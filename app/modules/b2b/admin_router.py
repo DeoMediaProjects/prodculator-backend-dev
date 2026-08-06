@@ -6,12 +6,23 @@ import stripe as stripe_lib
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
 from app.core.permissions import RequirePermission
 from app.modules.admin.schemas import AdminUser
+from app.modules.b2b.invite_service import (
+    B2BInviteService,
+    InviteError,
+    InviteNotClaimable,
+    InviteNotFound,
+)
 from app.modules.b2b.schemas import (
+    AdminB2BInviteCreate,
+    AdminB2BInviteIssuedResponse,
+    AdminB2BInviteListResponse,
+    AdminB2BInviteResponse,
     AdminB2BManualSubscriptionCreate,
     AdminB2BRequestListResponse,
     AdminB2BResendResponse,
@@ -25,7 +36,7 @@ from app.modules.payments.service import StripeService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/b2b", tags=["Admin B2B"])
+router = APIRouter(prefix="/api/admin/b2b", tags=["Admin B2B"], route_class=AuditedAPIRoute)
 
 
 def get_b2b_service(
@@ -123,6 +134,119 @@ async def create_manual_subscription(
         return service.create_manual_subscription(body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ── Manual-contract invites (handoff §4.3/§4.4) ───────────────────────────────
+# Removes the hand-provisioning step: an admin issues an invite against an email
+# address, the client signs in and claims it, and the subscription is created and
+# linked on claim. Every endpoint here is audited by the router's route_class.
+
+
+def get_invite_service(
+    db: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
+) -> B2BInviteService:
+    return B2BInviteService(db, settings)
+
+
+@router.get("/invites", response_model=AdminB2BInviteListResponse)
+async def list_invites(
+    status: str | None = Query(
+        default=None, description="pending | accepted | revoked | expired",
+    ),
+    email: str | None = Query(default=None, description="Substring match"),
+    product_type: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    invites: B2BInviteService = Depends(get_invite_service),
+):
+    """Outstanding and historic invites, newest first.
+
+    ``expired`` is a derived status: an invite past its expiry reads as expired
+    even though it is stored pending, so no job has to run to age one.
+    """
+    if status is not None and status not in ("pending", "accepted", "revoked", "expired"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be one of: pending, accepted, revoked, expired",
+        )
+    items, total = invites.list_invites(
+        status=status, email=email, product_type=product_type,
+        limit=limit, offset=offset,
+    )
+    return {"items": items, "total": total}
+
+
+@router.post("/invites", response_model=AdminB2BInviteIssuedResponse)
+async def issue_invite(
+    body: AdminB2BInviteCreate,
+    admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    invites: B2BInviteService = Depends(get_invite_service),
+):
+    """Issue an invite. The invited party does not need an account yet.
+
+    The response carries the accept URL, which contains the only copy of the raw
+    token this system will produce — only its hash is stored, so the link cannot
+    be recovered later. Resending mints a new one.
+    """
+    if body.product_type not in B2B_PRODUCTS:
+        raise HTTPException(status_code=400, detail="Unknown B2B product")
+    try:
+        invite, accept_url = invites.issue(
+            email=str(body.email),
+            product_type=body.product_type,
+            delivery_frequency=body.delivery_frequency,
+            extra_recipient_email=(
+                str(body.extra_recipient_email) if body.extra_recipient_email else None
+            ),
+            company_name=body.company_name,
+            admin_notes=body.admin_notes,
+            expires_in_days=body.expires_in_days,
+            created_by=admin.id,
+            send_email=body.send_email,
+        )
+    except InviteError as exc:
+        # 409, not 400: the request is well formed, it collides with an
+        # outstanding invite for the same address and product.
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"invite": invite, "accept_url": accept_url}
+
+
+@router.post("/invites/{invite_id}/resend", response_model=AdminB2BInviteIssuedResponse)
+async def resend_invite(
+    invite_id: str,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    invites: B2BInviteService = Depends(get_invite_service),
+):
+    """Rotate the token and email the invite again.
+
+    Rotating invalidates the previous link, which is the point: an admin resends
+    because the first link went somewhere it should not have.
+    """
+    try:
+        invite, accept_url = invites.resend(invite_id)
+    except InviteNotFound:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    except InviteNotClaimable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"invite": invite, "accept_url": accept_url}
+
+
+@router.post("/invites/{invite_id}/revoke", response_model=AdminB2BInviteResponse)
+async def revoke_invite(
+    invite_id: str,
+    _admin: AdminUser = Depends(RequirePermission("canManageB2B")),
+    invites: B2BInviteService = Depends(get_invite_service),
+):
+    """Kill an outstanding invite. Refused once accepted, because revoking would
+    not undo the subscription it created."""
+    try:
+        return invites.revoke(invite_id)
+    except InviteNotFound:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    except InviteNotClaimable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.patch("/subscriptions/{subscription_id}", response_model=B2BSubscriptionResponse)

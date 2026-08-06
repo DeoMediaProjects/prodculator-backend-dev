@@ -868,6 +868,12 @@ class ReportService:
         datasets["_shoot_months"] = shoot_months
         datasets["_shoot_window"] = shoot_window
 
+        # Raw intake dates — the readiness assessment (handoff §4.1) is
+        # recomputed inside assert_integrity, which only receives datasets, so
+        # the dates it tests the schedule against have to be reachable here.
+        datasets["_completion_date"] = request_metadata.get("completion_date")
+        datasets["_filming_start_date"] = request_metadata.get("filming_start_date")
+
         # Scene exposure profile from script analysis
         ext_int_ratio: float | None = None
         if script_analysis is not None:
@@ -1008,7 +1014,7 @@ class ReportService:
                 'hemisphere,cert_weeks_min,cert_weeks_max,'
                 'payment_weeks_min,payment_weeks_max,'
                 'bankability_source_quality,bankability_suspended,'
-                'bankability_real_world_confirms'
+                'bankability_real_world_confirms,last_reviewed_at'
             )
         )
         datasets['_territory_profiles'] = {

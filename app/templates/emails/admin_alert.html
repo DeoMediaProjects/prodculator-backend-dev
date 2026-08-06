@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prodculator operations alert</title>
+</head>
+<!--
+  Generic operations alert for every failure path in handoff §4.5: Business
+  Intelligence generation, B2C report generation, Stripe webhook processing and
+  scheduled jobs. Sent only by app/core/alerts.py — never to a customer.
+  b2b_admin_alert.html remains for the BI-specific wording it already carries.
+-->
+<body style="margin:0;padding:0;background-color:#EFEBE3;font-family:Arial,Helvetica,sans-serif;color:#1C1A16;">
+  {% set app = app_url | default("https://prodculator.com") %}
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFEBE3;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border:1px solid #E5E0D6;border-radius:10px;">
+          <!-- Logo header -->
+          <tr>
+            <td align="center" style="padding:32px 40px 20px;border-bottom:1px solid #EFEBE3;">
+              <img src="{{ logo_url }}" alt="Prodculator" width="190" style="display:block;border:0;height:auto;max-width:190px;" />
+            </td>
+          </tr>
+
+          <!-- Title -->
+          <tr>
+            <td style="padding:32px 40px 8px;">
+              <p style="margin:0 0 10px;color:#C0392B;font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;">
+                {{ severity | default("Error") }} &middot; {{ category | default("operations") | replace("_", " ") }}
+              </p>
+              <h1 style="margin:0 0 10px;color:#1C1A16;font-size:22px;font-weight:700;line-height:1.35;">
+                {{ heading }}
+              </h1>
+              <p style="margin:0;color:#57534A;font-size:15px;line-height:1.65;">{{ message }}</p>
+            </td>
+          </tr>
+
+          <!-- Details -->
+          {% if details %}
+          <tr>
+            <td style="padding:20px 40px 4px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FBFAF7;border:1px solid #E5E0D6;border-radius:8px;">
+                <tr><td style="padding:18px 20px;">
+                  <p style="margin:0 0 12px;color:#B8941F;font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;">Details</p>
+                  {% for label, value in details.items() %}
+                  <p style="margin:0 0 6px;color:#1C1A16;font-size:14px;line-height:1.6;word-break:break-word;"><strong>{{ label }}:</strong> {{ value }}</p>
+                  {% endfor %}
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+          {% endif %}
+
+          <!-- CTA -->
+          <tr>
+            <td align="center" style="padding:24px 40px 8px;">
+              <a href="{{ admin_url | default(app ~ '/admin') }}"
+                 style="display:inline-block;background-color:#B8941F;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:15px;padding:13px 34px;border-radius:6px;">
+                Open admin console
+              </a>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding:24px 40px 28px;border-top:1px solid #EFEBE3;">
+              <p style="margin:0;color:#8A857C;font-size:11px;line-height:1.6;">
+                Automated operations alert. No customer has been contacted about this message. Repeat occurrences within the alert window are collapsed into a single email and counted above.
+              </p>
+              <p style="margin:10px 0 0;color:#8A857C;font-size:11px;line-height:1.6;">&copy; 2026 Prodculator, a Deo Media Limited product.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -39,6 +39,59 @@ class AdminUpsertRequest(BaseModel):
     payload: dict[str, Any]
 
 
+# ── Audit trail (handoff §4.4/§4.5) ───────────────────────────────────────────
+
+class AuditLogEntry(BaseModel):
+    """One recorded admin mutation. Read-only — nothing accepts this as input."""
+
+    id: str
+    actor_id: str | None = None
+    actor_email: str | None = None
+    actor_role: str | None = None
+    action: str
+    resource_type: str
+    resource_id: str | None = None
+    before_json: Any = None
+    after_json: Any = None
+    method: str | None = None
+    path: str | None = None
+    status_code: int | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
+    error_message: str | None = None
+    created_at: str | None = None
+    # None when the request never produced a status (recorded mid-flight).
+    succeeded: bool | None = None
+
+
+class AuditLogListResponse(BaseModel):
+    items: list[AuditLogEntry]
+    total: int
+    limit: int
+    offset: int
+
+
+class AuditLogActorFacet(BaseModel):
+    actor_id: str | None = None
+    actor_email: str | None = None
+    count: int
+
+
+class AuditLogFacets(BaseModel):
+    actors: list[AuditLogActorFacet] = []
+    actions: list[str] = []
+    resource_types: list[str] = []
+
+
+class AuditRetentionResponse(BaseModel):
+    retention_days: int
+    retains_indefinitely: bool
+    total_entries: int
+    failed_entries: int
+    oldest_entry_at: str | None = None
+    newest_entry_at: str | None = None
+
+
 class BusinessMetricsResponse(BaseModel):
     total_users: int
     active_subscriptions: int

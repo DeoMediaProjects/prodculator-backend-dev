@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
 from app.core.permissions import RequirePermission
@@ -15,7 +16,7 @@ from app.modules.admin.schemas import (
 )
 from app.modules.distributors.service import DistributorsService
 
-router = APIRouter(prefix="/api/admin/distributors", tags=["Admin - Distributors"])
+router = APIRouter(prefix="/api/admin/distributors", tags=["Admin - Distributors"], route_class=AuditedAPIRoute)
 
 
 def get_distributors_service(supabase: DatabaseClient = Depends(get_supabase)) -> DistributorsService:

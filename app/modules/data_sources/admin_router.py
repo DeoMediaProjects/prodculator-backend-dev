@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
@@ -21,7 +22,7 @@ from app.modules.data_sources.service import DataSourceService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/data-sources", tags=["Admin - Data Sources"])
+router = APIRouter(prefix="/api/admin/data-sources", tags=["Admin - Data Sources"], route_class=AuditedAPIRoute)
 
 
 def get_data_source_service(

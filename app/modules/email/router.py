@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
@@ -11,7 +12,7 @@ from app.modules.email.schemas import (
 )
 from app.modules.email.service import EmailService
 
-router = APIRouter(prefix="/api/admin/email", tags=["Admin Email"])
+router = APIRouter(prefix="/api/admin/email", tags=["Admin Email"], route_class=AuditedAPIRoute)
 
 
 def get_email_service(settings: Settings = Depends(get_settings)) -> EmailService:

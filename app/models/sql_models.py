@@ -20,6 +20,48 @@ class Admin(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class AdminAuditLog(SQLModel, table=True):
+    """Immutable record of every admin mutation (handoff §4.4/§4.5).
+
+    Written by ``AuditedAPIRoute`` at the admin router layer, not by individual
+    endpoints — an endpoint cannot forget to log, because it never logs. Rows
+    are append-only: nothing in the application updates or deletes one except
+    the retention purge (see ``app.core.audit.purge_expired_audit_logs``).
+
+    ``before_json`` / ``after_json`` hold the resource state either side of the
+    change where the route could resolve it, and the submitted payload where it
+    could not. Both are redacted for secrets before being written.
+    """
+
+    __tablename__: ClassVar[str] = "admin_audit_logs"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    # Actor. actor_id is NULL only when the request never resolved an admin
+    # (a rejected call); actor_email is kept as a snapshot so the row stays
+    # readable after an admin row is renamed or removed.
+    actor_id: str | None = Field(default=None, index=True)
+    actor_email: str | None = None
+    actor_role: str | None = None
+    # What happened: a stable verb.resource string, e.g. "update.incentive".
+    action: str = Field(index=True, nullable=False)
+    resource_type: str = Field(index=True, nullable=False)
+    resource_id: str | None = Field(default=None, index=True)
+    before_json: dict[str, Any] | list[Any] | None = Field(default=None, sa_column=Column(JSON))
+    after_json: dict[str, Any] | list[Any] | None = Field(default=None, sa_column=Column(JSON))
+    # Request context.
+    method: str | None = None
+    path: str | None = None
+    status_code: int | None = Field(default=None, index=True)
+    ip_address: str | None = None
+    user_agent: str | None = None
+    # Set when the mutation itself failed, so a rejected or errored attempt is
+    # still recorded rather than vanishing.
+    error_message: str | None = None
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 class User(SQLModel, table=True):
     __tablename__: ClassVar[str] = "users"  # type: ignore[assignment]
 
@@ -151,6 +193,52 @@ class B2BSubscription(SQLModel, table=True):
     cancelled_at: datetime | None = None
     company_name: str | None = None
     admin_notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class B2BContractInvite(SQLModel, table=True):
+    """A token-minted invitation to claim a manually-contracted BI subscription
+    (handoff §4.3/§4.4).
+
+    Without this, every contracted client had to be provisioned by hand *after*
+    they had signed up, which is the workflow the clause exists to remove: an
+    admin issues an invite against an email address, the client signs in and
+    claims it, and the subscription is created and linked on claim.
+
+    Only the SHA-256 of the token is stored. A leaked database therefore yields
+    no usable invite links, and the raw token exists exactly once — in the
+    response to the issuing admin and in the email to the client.
+    """
+
+    __tablename__: ClassVar[str] = "b2b_contract_invites"  # type: ignore[assignment]
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    email: str = Field(index=True, nullable=False)
+    product_type: str = Field(index=True, nullable=False)
+    # pending | accepted | revoked. Expiry is derived from expires_at rather
+    # than stored, so a status can never disagree with the clock.
+    status: str = Field(default="pending", index=True)
+    # SHA-256 of the raw token; unique so a token collision cannot resolve to
+    # two invites. token_prefix is the first few characters, kept only so an
+    # admin can tell two outstanding invites apart in the UI.
+    token_hash: str = Field(index=True, unique=True, nullable=False)
+    token_prefix: str | None = None
+    expires_at: datetime = Field(nullable=False)
+    # Terms the subscription is created with on claim.
+    delivery_frequency: str = Field(default="monthly")
+    extra_recipient_email: str | None = None
+    company_name: str | None = None
+    admin_notes: str | None = None
+    # Provenance and lifecycle.
+    created_by: str | None = None  # admin id
+    sent_count: int = Field(default=0)
+    last_sent_at: datetime | None = None
+    accepted_at: datetime | None = None
+    accepted_by_user_id: str | None = Field(default=None, index=True)
+    # The subscription this invite produced — the linkage the flow exists for.
+    b2b_subscription_id: str | None = Field(default=None, index=True)
+    revoked_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
