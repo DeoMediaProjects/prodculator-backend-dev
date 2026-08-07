@@ -43,6 +43,18 @@ logger = logging.getLogger(__name__)
 # the table would fill with dashboard polling and bury the mutations.
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
+# Paths that are POSTs but not admin *actions*. Kept deliberately tiny: every
+# entry here is a hole in the trail, so the bar is "records no intent and would
+# drown the entries that do".
+#
+# auth/refresh is the case that forced this. It fires automatically whenever an
+# access token expires — hourly, per open admin session — carries no decision by
+# anyone, and cannot be attributed because refreshing a token does not resolve an
+# admin through get_current_admin. Left in, it buries real mutations under
+# unattributed noise. Sign-in and sign-out stay audited: those are things a
+# person did.
+AUDIT_SKIP_PATHS = frozenset({"/api/admin/auth/refresh"})
+
 # Largest JSON blob stored per side. A payload beyond this is replaced with a
 # marker rather than truncated into invalid JSON, so the row stays readable.
 MAX_JSON_CHARS = 20_000
@@ -372,6 +384,8 @@ class AuditedAPIRoute(APIRoute):
 
         async def audited_handler(request: Request) -> Response:
             if request.method.upper() not in MUTATING_METHODS:
+                return await original(request)
+            if request.url.path.rstrip("/") in AUDIT_SKIP_PATHS:
                 return await original(request)
 
             resource_type, table = resolve_resource(request.url.path)

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -212,8 +212,20 @@ class ActivityResponse(BaseModel):
 
 class ServiceStatusItem(BaseModel):
     name: str
-    status: str  # "operational" | "degraded" | "down" | "unknown"
-    last_checked: str
+    # live check: operational | degraded | down
+    # configuration check: configured | not_configured
+    status: str
+    # What the row is based on. "live" means a probe ran during the request;
+    # "configuration" means only credential presence was inspected. Without this
+    # the UI cannot tell the reader which it is, and a config row reads as a
+    # health result.
+    check: Literal["live", "configuration"] = "live"
+    # One line on what was measured, e.g. "PING acknowledged".
+    detail: str | None = None
+    # Null on configuration rows: nothing was checked, so there is no time at
+    # which it was checked. Previously these carried `now`, which fabricated
+    # freshness for a probe that never ran.
+    last_checked: str | None = None
 
 
 class SystemStatusResponse(BaseModel):
@@ -271,6 +283,9 @@ class BusinessMetricsDashboardResponse(BaseModel):
     active_subscriptions: int
     mrr_usd: float
     arr_usd: float
+    # Active subscriptions valued at plan list price because the row carried
+    # no amount. Lets the dashboard label the figure as partly estimated.
+    mrr_estimated_subscriptions: int = 0
     mrr_by_currency: list[CurrencyAmount]
     monthly_churn_percent: float
     free_to_paid_percent: float

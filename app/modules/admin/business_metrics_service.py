@@ -125,10 +125,31 @@ class BusinessMetricsDashboardService:
         active_subs = [s for s in subs if s.get("status") == "active"]
 
         # ── MRR / ARR ────────────────────────────────────────────────────
+        # A subscription with no recorded amount_cents is valued at its plan's
+        # list price rather than at zero. Manual contracts never carry an amount,
+        # and neither do subscriptions created before the webhook began
+        # persisting one, so treating NULL as zero reported $0 MRR while real
+        # customers held real entitlements.
+        #
+        # How many rows needed that fallback is returned alongside the figure:
+        # an imputed number that does not say it was imputed is the thing that
+        # made this bug invisible in the first place.
+        from app.modules.payments.plan_catalog import list_price_usd_cents
+
         mrr_by_currency: dict[str, float] = defaultdict(float)
+        estimated_subs = 0
         for s in active_subs:
-            code = (s.get("currency") or "usd").upper()
-            mrr_by_currency[code] += (s.get("amount_cents") or 0) / 100
+            amount_cents = s.get("amount_cents")
+            if amount_cents:
+                code = (s.get("currency") or "usd").upper()
+                mrr_by_currency[code] += amount_cents / 100
+                continue
+            fallback = list_price_usd_cents(s.get("plan_type"))
+            if fallback:
+                # List prices are held in USD, so they are booked as USD
+                # regardless of the currency the customer would be billed in.
+                mrr_by_currency["USD"] += fallback / 100
+                estimated_subs += 1
         mrr_usd = sum(self._to_usd(amt, code) for code, amt in mrr_by_currency.items())
         arr_usd = mrr_usd * 12
 
@@ -243,6 +264,10 @@ class BusinessMetricsDashboardService:
             "active_subscriptions": len(active_subs),
             "mrr_usd": round(mrr_usd, 2),
             "arr_usd": round(arr_usd, 2),
+            # How many active subscriptions were valued at list price because no
+            # amount was recorded on the row. Surfaced so the dashboard can say
+            # the figure is partly estimated instead of presenting it as billed.
+            "mrr_estimated_subscriptions": estimated_subs,
             "mrr_by_currency": [
                 {"currency": code, "amount": round(amt, 2)}
                 for code, amt in sorted(mrr_by_currency.items(), key=lambda x: x[1], reverse=True)

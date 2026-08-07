@@ -183,6 +183,26 @@ def test_delete_is_recorded(audit_client):
     assert row.resource_id == "cp1"
 
 
+def test_token_refresh_is_not_recorded(audit_client):
+    """Refresh fires automatically once an access token expires — hourly per open
+    session, with no admin decision behind it and no actor to attribute it to.
+    Recording it buries the entries that do matter."""
+    response = audit_client.post("/api/admin/auth/refresh", json={"refresh_token": "x"})
+    # Whatever the outcome (the token is junk here), nothing may be recorded.
+    assert response.status_code in (200, 401, 422, 500)
+    assert _logs() == []
+
+
+def test_the_skip_list_stays_minimal(audit_client):
+    """Every entry in AUDIT_SKIP_PATHS is a hole in the trail. This fails if one
+    is added without a deliberate decision, and pins that sign-in and sign-out
+    are never in it."""
+    from app.core.audit import AUDIT_SKIP_PATHS
+
+    assert AUDIT_SKIP_PATHS == frozenset({"/api/admin/auth/refresh"})
+    assert not any("signin" in path or "signout" in path for path in AUDIT_SKIP_PATHS)
+
+
 def test_reads_are_not_recorded(audit_client):
     assert audit_client.get("/api/admin/comparables", headers=_headers()).status_code == 200
     assert audit_client.get("/api/admin/metrics", headers=_headers()).status_code == 200

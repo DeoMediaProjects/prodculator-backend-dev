@@ -28,6 +28,29 @@ PLAN_REPORT_LIMITS: dict[str, int] = {
 }
 
 
+# List price per plan, in USD minor units, billed monthly. Mirrors PLAN_PRICING
+# in the frontend's stripe.service.ts.
+#
+# This is NOT what anyone is charged: the charged amount always comes from the
+# Stripe price and is recorded on the subscription row. It exists so revenue
+# reporting can value a subscription whose `amount_cents` was never recorded,
+# which is the normal case for a manual contract and for any subscription
+# created before the webhook started persisting the amount. Without it those
+# subscriptions counted as zero, and the admin dashboard reported $0 MRR while
+# real customers held real entitlements.
+PLAN_LIST_PRICE_USD_CENTS: dict[str, int] = {
+    "free": 0,
+    "professional": 6100,
+    "producer": 14900,
+    "studio": 29900,
+}
+
+
+def list_price_usd_cents(plan_type: str | None) -> int:
+    """Monthly USD list price for *plan_type*, or 0 if it has no recurring price."""
+    return PLAN_LIST_PRICE_USD_CENTS.get(normalize_plan(plan_type or "free"), 0)
+
+
 def build_price_to_plan_map(settings: Settings) -> dict[str, str]:
     """Return {price_id: plan_type} from configured Stripe price IDs.
 

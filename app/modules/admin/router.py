@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
@@ -159,7 +160,33 @@ async def get_recent_activity(
 async def get_system_status(
     _: AdminUser = Depends(get_current_admin),
     service: AdminService = Depends(get_admin_service),
+    supabase: DatabaseClient = Depends(get_supabase),
+    settings: Settings = Depends(get_settings),
 ):
+    """Report what was actually measured, and say which basis each row used.
+
+    Previously three of the five rows were hardcoded "unknown" and stamped with
+    ``last_checked = now``, which claimed a check had just run against Stripe,
+    Brevo and "OpenAI API" when none ever had — and named the wrong AI provider
+    at that (this platform is Anthropic-first). A status panel that invents its
+    own freshness is worse than no panel: it is consulted precisely when
+    something is wrong.
+
+    Each row now carries ``check``:
+
+    ``live``
+        A probe ran against the dependency during this request. ``last_checked``
+        is meaningful and ``status`` reflects reality.
+    ``configuration``
+        Only the presence of credentials was inspected — no network call was
+        made. ``last_checked`` is null, because nothing was checked.
+
+    Deliberately excluded: a live probe of the Anthropic/OpenAI, Stripe or Brevo
+    APIs. Each would bill a request and add seconds of latency to a dashboard
+    that loads on every admin page view. ``ScriptAnalysisService.assert_available``
+    exists for the AI path and runs where it matters — before a paid report is
+    charged, not on a dashboard.
+    """
     from app.core.cache import get_redis
 
     now = datetime.now(timezone.utc).isoformat()
@@ -169,18 +196,87 @@ async def get_system_status(
     services.append({
         "name": "Primary Database",
         "status": "operational" if db_ok else "down",
+        "check": "live",
+        "detail": "SELECT against users" if db_ok else "Database is unreachable",
         "last_checked": now,
     })
 
     try:
-        redis_client = get_redis()
-        await redis_client.ping()
-        services.append({"name": "Redis Cache", "status": "operational", "last_checked": now})
-    except Exception:
-        services.append({"name": "Redis Cache", "status": "degraded", "last_checked": now})
+        await get_redis().ping()
+        services.append({
+            "name": "Redis Cache",
+            "status": "operational",
+            "check": "live",
+            "detail": "PING acknowledged",
+            "last_checked": now,
+        })
+    except Exception as exc:
+        # Degraded, not down: the app runs without Redis (caching and token
+        # revocation degrade), so this must not read as an outage.
+        services.append({
+            "name": "Redis Cache",
+            "status": "degraded",
+            "check": "live",
+            "detail": f"PING failed — caching and token revocation are disabled ({type(exc).__name__})",
+            "last_checked": now,
+        })
 
-    for name in ["OpenAI API", "Stripe Payment Processing", "Brevo Email Delivery"]:
-        services.append({"name": name, "status": "unknown", "last_checked": now})
+    # Report storage. Worth a real probe here because a misconfiguration only
+    # otherwise surfaces at the end of a multi-minute paid analysis.
+    try:
+        storage_ok, storage_detail = await run_in_threadpool(supabase.storage.preflight)
+        services.append({
+            "name": "Report Storage",
+            "status": "operational" if storage_ok else "down",
+            "check": "live",
+            "detail": storage_detail,
+            "last_checked": now,
+        })
+    except Exception as exc:
+        services.append({
+            "name": "Report Storage",
+            "status": "down",
+            "check": "live",
+            "detail": f"Preflight raised {type(exc).__name__}",
+            "last_checked": now,
+        })
+
+    # Configuration-only rows. "configured" means credentials are present, which
+    # is not the same as reachable — the label says so rather than implying a
+    # health check.
+    ai_configured = bool(settings.ANTHROPIC_API_KEY)
+    fallback_configured = bool(getattr(settings, "OPENAI_API_KEY", ""))
+    services.append({
+        "name": "Script Analysis (Claude)",
+        "status": "configured" if ai_configured else "not_configured",
+        "check": "configuration",
+        "detail": (
+            f"Anthropic key present; OpenAI fallback {'configured' if fallback_configured else 'not configured'}"
+            if ai_configured
+            else "ANTHROPIC_API_KEY is not set — report generation will refuse rather than charge"
+        ),
+        "last_checked": None,
+    })
+
+    for name, configured, missing_note in (
+        (
+            "Stripe Payments",
+            bool(settings.STRIPE_SECRET_KEY),
+            "STRIPE_SECRET_KEY is not set — checkout and webhooks are inert",
+        ),
+        (
+            "Brevo Email Delivery",
+            bool(settings.BREVO_API_KEY),
+            "BREVO_API_KEY is not set — transactional email is skipped",
+        ),
+    ):
+        services.append({
+            "name": name,
+            "status": "configured" if configured else "not_configured",
+            "check": "configuration",
+            "detail": "Credentials present" if configured else missing_note,
+            "last_checked": None,
+        })
 
     return SystemStatusResponse(
         services=[ServiceStatusItem(**s) for s in services],
