@@ -1,22 +1,33 @@
-"""One-shot schema reconciliation: add model columns missing from the DB.
+"""Schema reconciliation: create tables and add columns the models declare but
+the database is missing.
 
 Background: this codebase historically built its schema via SQLModel
 create_all (AUTO_CREATE_DB_SCHEMA), and only *some* changes were captured in
-Alembic migrations. A pure migration build therefore produces a schema that is
-missing columns the current models declare (e.g. subscriptions.past_due_since).
-create_all cannot fix this — it only creates missing *tables*, never adds
-columns to existing ones.
+Alembic migrations. A database provisioned either way can therefore drift from
+the models in two ways, and this script closes both:
 
-This script inspects every SQLModel table, compares its declared columns to
-the live database, and issues `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for any
-that are missing. It is:
-  - additive only (never drops or retypes a column),
-  - nullable-only (safe on tables that already hold rows),
+  - Missing tables. Created with create_all, restricted to the absent tables.
+    This previously printed "run alembic upgrade head" and stopped, which is not
+    a usable instruction against a create_all-provisioned database: the chain is
+    120-plus revisions replaying ALTERs for columns create_all already added, so
+    it fails partway and leaves the schema half-migrated. Emitting CREATE TABLE
+    for exactly the missing tables reaches the same end state without touching
+    anything that already exists. This is how admin_audit_logs came to be absent
+    in production while the audit reader expected it.
+  - Missing columns. Added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+
+Both passes are:
+  - additive only (never drops, retypes or reorders anything),
+  - nullable-only for columns (safe on tables that already hold rows),
   - idempotent (safe to run repeatedly).
 
+It does not stamp the Alembic version table. A database reconciled here is in
+the right *shape* but its migration history is still whatever it was, so decide
+that separately rather than assuming this script settled it.
+
 Usage (venv active; DB_URL points at the target database):
-    python scripts/reconcile_schema.py            # dry run — lists what it would add
-    python scripts/reconcile_schema.py --apply     # execute the ALTERs
+    python scripts/reconcile_schema.py            # dry run — lists what it would do
+    python scripts/reconcile_schema.py --apply     # execute
 """
 from __future__ import annotations
 
@@ -35,7 +46,7 @@ import app.models.sql_models  # noqa: F401  (registers every table on SQLModel.m
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="execute the ALTERs (default: dry run)")
+    parser.add_argument("--apply", action="store_true", help="execute the changes (default: dry run)")
     args = parser.parse_args()
 
     load_dotenv()
@@ -43,7 +54,7 @@ def main() -> int:
     engine = create_engine(db_url)
     insp = inspect(engine)
     mode = "APPLY" if args.apply else "DRY RUN"
-    print(f"=== schema reconcile — {mode} — target: {db_url.split('@')[-1]} ===\n")
+    print(f"=== schema reconcile [{mode}] target: {db_url.split('@')[-1]} ===\n")
 
     db_tables = set(insp.get_table_names())
     missing_tables: list[str] = []
@@ -59,14 +70,28 @@ def main() -> int:
                 coltype = col.type.compile(engine.dialect)
                 to_add.append((table_name, col.name, coltype))
 
-    if missing_tables:
-        print("MISSING TABLES (run `alembic upgrade head` — not handled here):")
+    if not missing_tables:
+        print("No missing tables.")
+    else:
+        print(f"{len(missing_tables)} missing table(s):")
         for t in sorted(missing_tables):
             print(f"  - {t}")
-        print()
+        if args.apply:
+            # checkfirst leaves any table that appeared between the inspection
+            # and now alone, so a concurrent deploy cannot turn this into an
+            # error. Restricted to the missing tables so nothing existing is
+            # considered at all.
+            SQLModel.metadata.create_all(
+                engine,
+                tables=[SQLModel.metadata.tables[t] for t in missing_tables],
+                checkfirst=True,
+            )
+            print("  created.\n")
+        else:
+            print("  (dry run)\n")
 
     if not to_add:
-        print("No missing columns — schema matches the models.")
+        print("No missing columns. Schema matches the models.")
     else:
         print(f"{len(to_add)} missing column(s):")
         for table_name, col_name, coltype in to_add:
@@ -77,9 +102,12 @@ def main() -> int:
                     conn.execute(text(
                         f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS "{col_name}" {coltype}'
                     ))
-            print("\nApplied.")
+            print("  added.")
         else:
-            print("\nDry run — re-run with --apply to add these columns.")
+            print("  (dry run)")
+
+    if not args.apply and (missing_tables or to_add):
+        print("\nDry run — re-run with --apply to make these changes.")
 
     return 0
 
