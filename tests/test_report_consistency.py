@@ -272,3 +272,72 @@ class TestTemplateDoesNotTruncateRankedSections:
         # disagree with the cards and to print a degenerate range.
         assert "totalWeeksMax / 4.345" not in tpl
         assert "MO<" not in tpl
+
+
+# ── Plan entitlement cap ─────────────────────────────────────────────────────
+
+class TestTerritoryCapAppliesToEverySection:
+    """The cap trimmed locationRankings alone.
+
+    That was masked while the PDF sliced every ranked section to three. With the
+    slices gone, a capped plan would have declared five ranked territories and
+    still rendered a sixth territory-analysis card, weather row and funding block
+    for a territory it no longer ranked.
+    """
+
+    @staticmethod
+    def _analysis(names):
+        return {
+            "locationRankings": [{"name": n} for n in names],
+            "territoryDeepDives": [{"name": n} for n in names],
+            "weatherLogistics": [{"territory": n} for n in names],
+            "taxIncentiveAnalysis": [{"territory": n} for n in names],
+            "financialAnalysis": {
+                "paymentTiming": [{"territory": n} for n in names],
+                "budgetScenarios": [{"territory": n} for n in names],
+            },
+        }
+
+    def test_all_sections_trim_to_the_same_set(self):
+        from app.modules.reports.router import _apply_territory_cap
+
+        names = ["UK", "Japan", "Italy", "Singapore", "Canada", "Spain"]
+        analysis = self._analysis(names)
+        _apply_territory_cap(analysis, 5)
+
+        kept = [loc["name"] for loc in analysis["locationRankings"]]
+        assert kept == names[:5]
+        assert "Spain" not in kept
+        assert [d["name"] for d in analysis["territoryDeepDives"]] == kept
+        assert [w["territory"] for w in analysis["weatherLogistics"]] == kept
+        assert [t["territory"] for t in analysis["taxIncentiveAnalysis"]] == kept
+        financial = analysis["financialAnalysis"]
+        assert [p["territory"] for p in financial["paymentTiming"]] == kept
+        assert [b["territory"] for b in financial["budgetScenarios"]] == kept
+
+    def test_the_capped_report_still_satisfies_the_ranked_invariant(self):
+        from app.modules.reports.router import _apply_territory_cap
+
+        analysis = self._analysis(["UK", "Japan", "Italy", "Singapore", "Canada", "Spain"])
+        _apply_territory_cap(analysis, 3)
+        warnings: list[str] = []
+        ReportValidator._assert_ranked_territory_consistency(analysis, warnings)
+        assert warnings == []
+
+    def test_an_uncapped_plan_is_untouched(self):
+        from app.modules.reports.router import _apply_territory_cap
+
+        names = ["UK", "Japan", "Italy", "Singapore"]
+        analysis = self._analysis(names)
+        _apply_territory_cap(analysis, None)
+        assert [loc["name"] for loc in analysis["locationRankings"]] == names
+        assert len(analysis["territoryDeepDives"]) == len(names)
+
+    def test_a_report_under_the_cap_is_untouched(self):
+        from app.modules.reports.router import _apply_territory_cap
+
+        names = ["UK", "Japan"]
+        analysis = self._analysis(names)
+        _apply_territory_cap(analysis, 5)
+        assert [loc["name"] for loc in analysis["locationRankings"]] == names
+        assert len(analysis["weatherLogistics"]) == 2
