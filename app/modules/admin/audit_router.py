@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import ProgrammingError
 
 from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
@@ -30,6 +31,23 @@ from app.modules.admin.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Raised by Postgres as UndefinedTable when admin_audit_logs is absent, i.e. the
+# environment has not had the audit-log migration applied.
+_MISSING_TABLE_DETAIL = (
+    "The audit trail table does not exist in this environment. "
+    "Apply the database migrations to create it."
+)
+
+
+def _reraise_read_failure(exc: Exception, what: str) -> None:
+    """Turn a read failure into a response that says which problem it is."""
+    logger.exception("Failed to read %s", what)
+    if isinstance(exc, ProgrammingError) and "does not exist" in str(exc.orig or exc):
+        # 503, not 500: the reader is fine and will work once the environment is
+        # migrated, so this is unavailable rather than broken.
+        raise HTTPException(status_code=503, detail=_MISSING_TABLE_DETAIL)
+    raise HTTPException(status_code=500, detail=f"Failed to read {what}")
 
 # route_class is set for consistency with every other admin router, so that a
 # mutating endpoint added here later is audited by default. Today every endpoint
@@ -115,9 +133,8 @@ async def list_audit_logs(
             end=end,
             search=search,
         )
-    except Exception:
-        logger.exception("Failed to read admin audit logs")
-        raise HTTPException(status_code=500, detail="Failed to read audit logs")
+    except Exception as exc:
+        _reraise_read_failure(exc, "audit logs")
 
     return AuditLogListResponse(
         items=[AuditLogEntry(**row) for row in rows],
@@ -136,9 +153,8 @@ async def get_audit_facets(
     the UI can offer real filter values instead of a free-text box."""
     try:
         return AuditLogFacets(**service.get_facets())
-    except Exception:
-        logger.exception("Failed to read audit log facets")
-        raise HTTPException(status_code=500, detail="Failed to read audit log facets")
+    except Exception as exc:
+        _reraise_read_failure(exc, "audit log facets")
 
 
 @router.get("/retention", response_model=AuditRetentionResponse)
@@ -153,9 +169,8 @@ async def get_audit_retention(
     settings = get_settings()
     try:
         stats = service.get_retention_stats()
-    except Exception:
-        logger.exception("Failed to read audit retention stats")
-        raise HTTPException(status_code=500, detail="Failed to read audit retention stats")
+    except Exception as exc:
+        _reraise_read_failure(exc, "audit retention stats")
 
     return AuditRetentionResponse(
         retention_days=settings.ADMIN_AUDIT_RETENTION_DAYS,
