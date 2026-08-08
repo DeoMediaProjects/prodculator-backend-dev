@@ -11,6 +11,9 @@ class SubscriberMetricsResponse(BaseModel):
     total_paid_users: int
     mrr_usd: float
     mrr_gbp: float
+    #: How many active subscriptions were valued at plan list price because no
+    #: amount was recorded on the row.
+    mrr_estimated_subscriptions: int = 0
     reports_this_month_total: int
     reports_this_month_free: int
     reports_this_month_paid: int

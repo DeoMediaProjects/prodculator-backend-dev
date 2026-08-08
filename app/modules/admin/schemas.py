@@ -98,6 +98,10 @@ class BusinessMetricsResponse(BaseModel):
     total_reports: int
     reports_this_month: int
     mrr_usd: float
+    #: How many active subscriptions were valued at plan list price because no
+    #: amount was recorded on the row. Non-zero means the figure is partly
+    #: imputed and must not be presented as billed.
+    mrr_estimated_subscriptions: int = 0
     conversion_rate_percent: float
 
 

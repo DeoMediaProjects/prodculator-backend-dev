@@ -37,16 +37,26 @@ class SubscriberAdminService:
         plan_counts: dict[str, int] = defaultdict(int)
         plan_revenue: dict[str, float] = defaultdict(float)
 
+        estimated_subscriptions = 0
         for sub in active_subs:
-            amount_cents = sub.get("amount_cents") or 0
+            amount_cents = sub.get("amount_cents")
             currency = (sub.get("currency") or "usd").lower()
             plan_type = sub.get("plan_type") or "single"
-            amount = amount_cents / 100
 
-            if currency == "gbp":
-                mrr_gbp += amount
+            if amount_cents:
+                amount = amount_cents / 100
+                if currency == "gbp":
+                    mrr_gbp += amount
+                else:
+                    mrr_usd += amount
             else:
-                mrr_usd += amount
+                # No amount recorded. The plan's list price stands in rather than
+                # counting a paying customer as zero revenue, and it is booked as
+                # USD because list prices are held in USD.
+                amount = list_price_usd_cents(plan_type) / 100
+                if amount:
+                    mrr_usd += amount
+                    estimated_subscriptions += 1
 
             display_plan = PLAN_DISPLAY_NAMES.get(plan_type, plan_type)
             plan_counts[display_plan] += 1
@@ -91,6 +101,7 @@ class SubscriberAdminService:
         return {
             "total_paid_users": paid_users_count,
             "mrr_usd": round(mrr_usd, 2),
+            "mrr_estimated_subscriptions": estimated_subscriptions,
             "mrr_gbp": round(mrr_gbp, 2),
             "reports_this_month_total": reports_total,
             "reports_this_month_free": reports_free,
