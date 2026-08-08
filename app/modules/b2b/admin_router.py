@@ -121,6 +121,24 @@ async def list_subscriptions(
         .data
         or []
     )
+
+    # Attach the account email. The rows only carry user_id, which left the
+    # console showing a bare UUID in its "User" column: unusable for an admin
+    # deciding whose delivery schedule to change.
+    user_ids = {row["user_id"] for row in rows if row.get("user_id")}
+    if user_ids:
+        users = (
+            service.db.table("users")
+            .select("id,email")
+            .in_("id", list(user_ids))
+            .execute()
+            .data
+            or []
+        )
+        email_by_id = {u["id"]: u.get("email") for u in users}
+        for row in rows:
+            row["user_email"] = email_by_id.get(row.get("user_id"))
+
     return {"items": rows}
 
 

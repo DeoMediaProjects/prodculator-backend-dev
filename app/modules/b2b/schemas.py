@@ -105,6 +105,10 @@ class B2BSubscriptionResponse(BaseModel):
     cancel_at_period_end: bool = False
     company_name: str | None = None
     admin_notes: str | None = None
+    #: Resolved from the users table on the admin listing so the console can name
+    #: the account instead of printing a bare UUID. Absent on single-row
+    #: responses, where the caller already knows who it asked about.
+    user_email: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -34,6 +34,10 @@ class SubscriberItem(BaseModel):
     reports_this_month: int
     report_limit: int | None = None
     monthly_spend: float
+    #: True when no amount was recorded on the subscription and the plan's list
+    #: price stood in, so the UI can mark the figure as estimated rather than
+    #: presenting an imputed number as billed.
+    monthly_spend_estimated: bool = False
     payment_currency: str
     join_date: str
     last_active: str | None = None
