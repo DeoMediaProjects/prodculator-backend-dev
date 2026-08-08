@@ -219,3 +219,50 @@ def test_subscribers_require_admin(client):
     client.app.dependency_overrides[get_current_admin] = deny
     response = client.get("/api/admin/subscribers/metrics", headers=HEADERS)
     assert response.status_code == 403
+
+
+def test_list_subscribers_survives_a_user_with_no_email(client):
+    """A NULL email must not take the whole listing down.
+
+    users.email is nullable, and ``dict.get("email", "")`` returns None when the
+    key is present holding NULL, so the default never applied. The row then failed
+    response validation and the endpoint's blanket except turned that into a 500,
+    which is how production showed "Failed to fetch subscribers" while holding
+    twenty-two subscribers.
+    """
+    fake = _setup(client)
+    fake.store["users"].append(
+        {
+            "id": "u4",
+            "name": None,
+            "email": None,
+            "company": None,
+            "user_type": "paid",
+            "credits_remaining": 0,
+            "created_at": None,
+        }
+    )
+    fake.store["subscriptions"].append(
+        {
+            "id": "s4",
+            "user_id": "u4",
+            "status": "active",
+            "plan_type": "studio",
+            "amount_cents": None,
+            "currency": None,
+            "report_limit": None,
+            "created_at": "2026-04-01T00:00:00Z",
+        }
+    )
+
+    response = client.get("/api/admin/subscribers", headers=HEADERS)
+    assert response.status_code == 200
+
+    by_id = {item["id"]: item for item in response.json()["items"]}
+    assert by_id["u4"]["email"] == ""
+    assert by_id["u4"]["join_date"] == ""
+    # No billed amount, so the plan's list price stands in and says it did.
+    assert by_id["u4"]["monthly_spend"] == 299.0
+    assert by_id["u4"]["monthly_spend_estimated"] is True
+    # The healthy rows are unaffected.
+    assert by_id["u1"]["email"] == "alice@example.com"

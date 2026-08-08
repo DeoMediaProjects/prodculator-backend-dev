@@ -270,11 +270,15 @@ class SubscriberAdminService:
             items.append({
                 "id": uid,
                 "name": user.get("name"),
-                "email": user.get("email", ""),
+                # Coerced rather than defaulted: these columns are nullable, and
+                # .get(key, default) does not apply the default when the key
+                # exists holding NULL. A single such row used to fail response
+                # validation and take the entire listing down with it.
+                "email": user.get("email") or "",
                 "company": user.get("company"),
-                "plan": PLAN_DISPLAY_NAMES.get(plan_type, plan_type),
+                "plan": PLAN_DISPLAY_NAMES.get(plan_type, plan_type) or "Free",
                 "status": (sub.get("status") or "active").replace("_", " ").title(),
-                "reports_this_month": month_reports_by_user.get(uid, 0),
+                "reports_this_month": month_reports_by_user.get(uid, 0) or 0,
                 "report_limit": sub.get("report_limit"),
                 "monthly_spend": spend,
                 # True when no amount was recorded on the subscription row and
@@ -283,7 +287,7 @@ class SubscriberAdminService:
                 # NULL-amount bug that made platform MRR read as zero.
                 "monthly_spend_estimated": spend_estimated,
                 "payment_currency": spend_currency,
-                "join_date": str(user.get("created_at", ""))[:10],
+                "join_date": str(user.get("created_at") or "")[:10],
                 "last_active": str(user.get("last_active", ""))[:10] if user.get("last_active") else None,
                 "total_reports_generated": total_reports_by_user.get(uid, 0),
             })
