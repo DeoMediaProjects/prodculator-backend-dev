@@ -9,6 +9,7 @@ from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import AdminUser
 from app.modules.subscribers.schemas import (
     CreditAdjustRequest,
+    SubscriberItem,
     SubscriberListResponse,
     SubscriberMetricsResponse,
 )
@@ -50,9 +51,44 @@ async def list_subscribers(
         result = service.list_subscribers(
             status=status, search=search, limit=limit, offset=offset
         )
-        return SubscriberListResponse(**result)
     except Exception:
         logger.exception("Failed to fetch subscribers")
+        raise HTTPException(status_code=500, detail="Failed to fetch subscribers")
+
+    # Rows are validated one at a time. Validating the whole list at once meant a
+    # single row with an unexpected NULL failed the response model, the blanket
+    # except turned that into a 500, and an admin saw no subscribers at all while
+    # the database held twenty-two. A bad row is now skipped and named in the log
+    # instead of hiding every good row behind it.
+    items: list[SubscriberItem] = []
+    unreadable = 0
+    for row in result.get("items") or []:
+        try:
+            items.append(SubscriberItem(**row))
+        except Exception as exc:
+            unreadable += 1
+            logger.error(
+                "Subscriber row could not be rendered: user_id=%s error=%s row_keys=%s",
+                (row or {}).get("id"), exc, sorted((row or {}).keys()),
+            )
+
+    if unreadable:
+        logger.warning(
+            "Subscriber listing dropped %s unreadable row(s) of %s",
+            unreadable, len(result.get("items") or []),
+        )
+
+    try:
+        return SubscriberListResponse(
+            items=items,
+            total=result.get("total", len(items)),
+            limit=result.get("limit", limit),
+            offset=result.get("offset", offset),
+            counts=result["counts"],
+            unreadable=unreadable,
+        )
+    except Exception:
+        logger.exception("Failed to assemble the subscriber listing")
         raise HTTPException(status_code=500, detail="Failed to fetch subscribers")
 
 
