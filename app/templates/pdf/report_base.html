@@ -206,6 +206,33 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 .upgrade-cta .t{font-size:18px;font-weight:800;margin-bottom:8px}
 .upgrade-cta .s{font-size:12px;color:#3A382F}
 .disclaimer{font-size:9.5px;color:var(--grey);line-height:1.65}
+/* ── financial readiness (§4.1) ── */
+.verdictbox{border:2px solid var(--ink);display:table;width:100%;margin-bottom:22px}
+.verdictbox>div{display:table-cell;vertical-align:middle;padding:18px 20px}
+.verdictbox .vlabel{font-size:9px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--grey);margin-bottom:6px}
+.verdictbox .vword{font-size:24px;font-weight:800;letter-spacing:.02em;line-height:1}
+.verdictbox .vscore{width:118px;border-left:1px solid var(--hairline);text-align:center}
+.verdictbox .vscore .n{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.verdictbox .vscore .d{font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--grey);margin-top:4px}
+.verdictbox .vreason{font-size:10.5px;line-height:1.6;color:#3A382F;font-weight:500;margin-top:7px}
+.vready{color:var(--green)}.vcond{color:var(--amber)}.vfail{color:var(--red)}.vnodata{color:var(--grey)}
+.rdcomp{border:1px solid var(--hairline);padding:14px 16px;margin-bottom:14px}
+.rdcomp .rdhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:7px}
+.rdcomp .rdname{font-size:12.5px;font-weight:800}
+.rdcomp .rdwt{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
+.rdcomp .rdhl{font-size:11px;line-height:1.6;color:#3A382F;font-weight:500;margin-bottom:10px}
+.rdfig{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--hairline);font-size:10.5px}
+.rdfig:last-of-type{border-bottom:none}
+.rdfig .fl{color:var(--grey);font-weight:600;flex:1}
+.rdfig .fv{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rdbasis{font-size:8.5px;color:var(--grey);font-weight:500;line-height:1.5;padding:0 0 6px}
+.rdcheck{font-size:10px;line-height:1.55;color:#3A382F;font-weight:500;padding:4px 0 4px 14px;position:relative}
+.rdcheck .cm{position:absolute;left:0;top:4px;font-weight:800;font-size:10px}
+.cm-pass{color:var(--green)}.cm-fail{color:var(--red)}.cm-warn{color:var(--amber)}.cm-skipped{color:var(--grey)}
+.sev{display:inline-block;font-size:8px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:2px;white-space:nowrap}
+.sev-critical{background:#F6E7E4;color:var(--red)}
+.sev-warning{background:#F7EEDD;color:var(--amber)}
+.sev-info{background:#F1EEE6;color:var(--grey)}
 </style>
 </head>
 <body>
@@ -301,12 +328,17 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% set rankings = report.locationRankings or [] %}
 {% set scenarios = (report.financialAnalysis or {}).get('budgetScenarios') or [] %}
 {% set grants_only = (report.fundingOpportunities or []) | selectattr('type', 'equalto', 'Fund') | list %}
+{# Financial readiness (§4.1) — deterministic, paid tiers only. The builder
+   omits it for previews and the free-tier filter strips it, so its presence
+   here is the tier gate. #}
+{% set readiness = report.financialReadiness %}
 {% set secs = [] %}
 {% set _ = secs.append({'id': 'exec', 'title': 'Executive Summary', 'locked': false}) %}
 {% if report.scriptStats or report.genre %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': false}) %}{% endif %}
 {% set _ = secs.append({'id': 'strategy', 'title': 'Production Location Strategy', 'locked': is_preview}) %}
 {% if report.territoryDeepDives %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': true}) %}{% endif %}
 {% if scenarios and not is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': true}) %}{% endif %}
+{% if readiness and not is_preview %}{% set _ = secs.append({'id': 'readiness', 'title': 'Financial Readiness', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'readiness', 'title': 'Financial Readiness', 'locked': true}) %}{% endif %}
 {% if report.weatherLogistics and not is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': true}) %}{% endif %}
 {% if report.incentiveEstimates and not is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': true}) %}{% endif %}
 {% if grants_only and not is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': true}) %}{% endif %}
@@ -328,6 +360,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   'strategy': {'what': "Every candidate territory scored across six weighted dimensions (incentive strength, incentive reliability, cost efficiency, currency advantage, crew depth, infrastructure), with the top-ranked territory profiled in full and runners-up summarised.", 'why': "This is the core recommendation engine of the report: it turns dozens of variables into a ranked, defensible shortlist instead of a gut call."},
   'deepdives': {'what': "A closer look at each ranked territory's rebate mechanics, infrastructure, payment speed, cultural test likelihood, administrative complexity, and the specific advantages and risks of shooting there.", 'why': "The headline score shows what to shoot for; this section shows what a production is actually signing up for on the ground."},
   'financial': {'what': "A rebate waterfall chart for each ranked territory, showing exactly how total budget becomes net budget through qualifying spend, gross rebate and, where applicable, tax treatment, plus payment-timing data for when the cash actually lands.", 'why': "Incentive headlines are frequently quoted on gross rates that overstate the real cash benefit; this section shows the true, traceable net position instead of a marketing number."},
+  'readiness': {'what': "A computed verdict on whether the production can be financed as planned: budget against the recommended territory's cost base and its programme's minimum spend, how much of the modelled incentive is confirmed rather than estimated, matched soft money as a share of budget, and whether the completion date survives the shoot schedule, the incentive payment window and the festival calendar. Every figure names the input it came from, and every input that is missing, stale or unverified is listed rather than estimated around.", 'why': "It is the difference between a report that models a financing plan and one that says whether the plan holds. Financiers discount an incentive that is merely estimated; this section states which of yours are confirmed and which are not, and what has to be fixed before financial close."},
   'incentives': {'what': "Programme-by-programme detail on rates, caps, qualifying requirements, warnings and stacking rules for every relevant tax incentive.", 'why': "Incentive eligibility is won or lost on the fine print, caps and exclusions, not the headline percentage."},
   'grants': {'what': "Grants and funds whose territory and format criteria this production actually meets, with amounts, deadlines and match reasoning.", 'why': "Grant funding stacks on top of tax incentives and is easy to miss when only looking at rebate programmes."},
   'comparables': {'what': "Real productions matched on genre, budget tier and territory, used as reference points for scale and precedent.", 'why': "Comparables give financiers and department heads a concrete frame of reference instead of an abstract projection."},
@@ -795,6 +828,114 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endif %}
   </div>
 
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ═══════════════ FINANCIAL READINESS ═══════════════ -->
+{# Every figure on this page is computed by reports/readiness.py and carries the
+   input it came from. Nothing here is AI-generated, so nothing here is hedged. #}
+{% if not is_preview and readiness %}
+{% set vclass = {'READY': 'vready', 'CONDITIONAL': 'vcond', 'NOT READY': 'vfail', 'INSUFFICIENT DATA': 'vnodata'} %}
+{% set schip = {'ready': 'chip bank', 'conditional': 'chip verify', 'not_ready': 'chip notbank', 'insufficient_data': 'sev sev-info'} %}
+{% set sword = {'ready': 'Ready', 'conditional': 'Conditional', 'not_ready': 'Not ready', 'insufficient_data': 'No data'} %}
+{% set cmark = {'pass': '✓', 'fail': '✕', 'warn': '!', 'skipped': '·'} %}
+<div class="page" id="sec-readiness">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['readiness'] }} — Financial Readiness</div>
+  <div class="sectitle">Can this be financed as planned?</div>
+  <p class="secsub">Computed from the figures elsewhere in this report, against a fixed rule. Not a score, not an opinion.</p>
+
+  {% if descriptions_only %}
+  {{ section_desc('readiness') }}
+  {% else %}
+  <div class="verdictbox">
+    <div>
+      <div class="vlabel">Verdict{% if readiness.territory %} · {{ readiness.territory }}{% if readiness.programme %} · {{ readiness.programme }}{% endif %}{% endif %}</div>
+      <div class="vword {{ vclass.get(readiness.verdict, 'vnodata') }}">{{ readiness.verdict }}</div>
+      <div class="vreason">{{ readiness.verdictReason }}</div>
+    </div>
+    <div class="vscore">
+      <div class="n">{{ readiness.score }}</div>
+      <div class="d">/ 100</div>
+    </div>
+  </div>
+
+  {% set rd_explainer = (report.sectionExplainers or {}).get('financial_readiness') %}
+  {% if rd_explainer %}
+  <div class="notebox">
+    <span class="nk">How this is assessed&nbsp;&nbsp;</span>{{ rd_explainer }}
+  </div>
+  {% endif %}
+
+  <div class="h5label">Components · rule applied: {{ readiness.rule }}</div>
+  {% for comp in readiness.components %}
+  <div class="rdcomp" style="break-inside:avoid">
+    <div class="rdhead">
+      <span class="rdname">{{ comp.label }}</span>
+      <span class="rdwt">
+        <span class="{{ schip.get(comp.status, 'sev sev-info') }}">{{ sword.get(comp.status, comp.status) }}</span>
+        &nbsp;{{ comp.weight }}% weight
+      </span>
+    </div>
+    <div class="rdhl">{{ comp.headline }}</div>
+
+    {% for fig in comp.figures %}
+    <div class="rdfig">
+      <span class="fl">{{ fig.label }}</span>
+      <span class="fv">{{ fig.value }}</span>
+    </div>
+    <div class="rdbasis">{{ fig.basis }}</div>
+    {% endfor %}
+
+    {% if comp.checks %}
+    <div class="h5label" style="margin:11px 0 3px">Checks</div>
+    {% for chk in comp.checks %}
+    <div class="rdcheck">
+      <span class="cm cm-{{ chk.result }}">{{ cmark.get(chk.result, '·') }}</span>{{ chk.detail }}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if comp.note %}
+    <p class="rdbasis" style="margin-top:9px">{{ comp.note }}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="h5label" style="margin-top:22px">
+    Unverified or stale inputs
+    {% if readiness.flags %}
+    · {{ readiness.flagCounts.get('critical', 0) }} critical,
+    {{ readiness.flagCounts.get('warning', 0) }} warning,
+    {{ readiness.flagCounts.get('info', 0) }} informational
+    {% endif %}
+  </div>
+  {% if readiness.flags %}
+  <table class="rowtable">
+    <tr>
+      <th style="width:74px">Severity</th>
+      <th style="width:150px">Input</th>
+      <th>What is wrong with it</th>
+      <th style="width:170px">What to do</th>
+    </tr>
+    {% for flag in readiness.flags %}
+    <tr>
+      <td><span class="sev sev-{{ flag.severity }}">{{ flag.severity }}</span></td>
+      <td style="font-weight:700;font-size:10px">{{ flag.input }}</td>
+      <td>{{ flag.detail }}</td>
+      <td style="color:var(--grey);font-weight:500">{{ flag.action }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="disclaimer" style="margin-bottom:20px">Every input this assessment relied on is present, sourced and inside its freshness window.</p>
+  {% endif %}
+
+  <div class="notebox" style="margin-bottom:0">
+    <span class="nk">Methodology&nbsp;&nbsp;</span>{{ readiness.methodology }}
+    {% if readiness.computedOn %}<br><span style="color:var(--grey);font-size:9.5px;font-weight:600">Assessed on {{ readiness.computedOn }}. Re-run the report to reassess against current data.</span>{% endif %}
+  </div>
   {% endif %}
 </div>
 {% endif %}

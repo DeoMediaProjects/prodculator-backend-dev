@@ -202,6 +202,26 @@ class Settings(BaseSettings):
     # Falls back to CONTACT_EMAIL when blank.
     B2B_ADMIN_ALERT_EMAIL: str = ""
 
+    # ── Operational alerts (handoff §4.5) ────────────────────────────────────
+    # Ops recipient for every failure alert: BI generation, B2C report
+    # generation, Stripe webhook processing, and scheduled jobs. Falls back to
+    # B2B_ADMIN_ALERT_EMAIL then CONTACT_EMAIL, so an existing deployment keeps
+    # routing BI alerts where it already did.
+    ADMIN_ALERT_EMAIL: str = ""
+    # Per-alert-key quiet window. The first failure in a window emails
+    # immediately; further occurrences are counted and reported in the next
+    # send, so a systemic outage cannot emit thousands of emails. Payment
+    # webhook alerts bypass this (see alerts.NEVER_THROTTLED) because each one
+    # names a different charged customer.
+    ADMIN_ALERT_THROTTLE_SECONDS: int = 900
+
+    # ── Admin audit trail (handoff §4.4/§4.5) ────────────────────────────────
+    # How long admin_audit_logs rows are kept before the daily retention job
+    # deletes them. 730 days (two years) covers an annual review cycle plus the
+    # year it audits, which is the horizon that matters for a service handling
+    # payment and personal data. 0 or less means retain indefinitely.
+    ADMIN_AUDIT_RETENTION_DAYS: int = 730
+
     # Firebase / Google Auth
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_SERVICE_ACCOUNT_JSON: str = ""  # path to JSON file or inline JSON string

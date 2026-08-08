@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -39,12 +39,69 @@ class AdminUpsertRequest(BaseModel):
     payload: dict[str, Any]
 
 
+# ── Audit trail (handoff §4.4/§4.5) ───────────────────────────────────────────
+
+class AuditLogEntry(BaseModel):
+    """One recorded admin mutation. Read-only — nothing accepts this as input."""
+
+    id: str
+    actor_id: str | None = None
+    actor_email: str | None = None
+    actor_role: str | None = None
+    action: str
+    resource_type: str
+    resource_id: str | None = None
+    before_json: Any = None
+    after_json: Any = None
+    method: str | None = None
+    path: str | None = None
+    status_code: int | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
+    error_message: str | None = None
+    created_at: str | None = None
+    # None when the request never produced a status (recorded mid-flight).
+    succeeded: bool | None = None
+
+
+class AuditLogListResponse(BaseModel):
+    items: list[AuditLogEntry]
+    total: int
+    limit: int
+    offset: int
+
+
+class AuditLogActorFacet(BaseModel):
+    actor_id: str | None = None
+    actor_email: str | None = None
+    count: int
+
+
+class AuditLogFacets(BaseModel):
+    actors: list[AuditLogActorFacet] = []
+    actions: list[str] = []
+    resource_types: list[str] = []
+
+
+class AuditRetentionResponse(BaseModel):
+    retention_days: int
+    retains_indefinitely: bool
+    total_entries: int
+    failed_entries: int
+    oldest_entry_at: str | None = None
+    newest_entry_at: str | None = None
+
+
 class BusinessMetricsResponse(BaseModel):
     total_users: int
     active_subscriptions: int
     total_reports: int
     reports_this_month: int
     mrr_usd: float
+    #: How many active subscriptions were valued at plan list price because no
+    #: amount was recorded on the row. Non-zero means the figure is partly
+    #: imputed and must not be presented as billed.
+    mrr_estimated_subscriptions: int = 0
     conversion_rate_percent: float
 
 
@@ -159,8 +216,20 @@ class ActivityResponse(BaseModel):
 
 class ServiceStatusItem(BaseModel):
     name: str
-    status: str  # "operational" | "degraded" | "down" | "unknown"
-    last_checked: str
+    # live check: operational | degraded | down
+    # configuration check: configured | not_configured
+    status: str
+    # What the row is based on. "live" means a probe ran during the request;
+    # "configuration" means only credential presence was inspected. Without this
+    # the UI cannot tell the reader which it is, and a config row reads as a
+    # health result.
+    check: Literal["live", "configuration"] = "live"
+    # One line on what was measured, e.g. "PING acknowledged".
+    detail: str | None = None
+    # Null on configuration rows: nothing was checked, so there is no time at
+    # which it was checked. Previously these carried `now`, which fabricated
+    # freshness for a probe that never ran.
+    last_checked: str | None = None
 
 
 class SystemStatusResponse(BaseModel):
@@ -218,6 +287,9 @@ class BusinessMetricsDashboardResponse(BaseModel):
     active_subscriptions: int
     mrr_usd: float
     arr_usd: float
+    # Active subscriptions valued at plan list price because the row carried
+    # no amount. Lets the dashboard label the figure as partly estimated.
+    mrr_estimated_subscriptions: int = 0
     mrr_by_currency: list[CurrencyAmount]
     monthly_churn_percent: float
     free_to_paid_percent: float

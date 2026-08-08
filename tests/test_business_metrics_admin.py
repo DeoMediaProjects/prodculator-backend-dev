@@ -157,3 +157,76 @@ def test_business_metrics_requires_permission(client):
     )
     response = client.get("/api/admin/business-metrics", headers=HEADERS)
     assert response.status_code == 403
+
+
+# ── MRR when a subscription carries no recorded amount ────────────────────────
+# The live dashboard reported $0 MRR against two active Studio subscriptions,
+# because both rows had amount_cents = NULL (the normal case for a manual
+# contract, and for anything created before the webhook persisted an amount) and
+# the sum treated NULL as zero.
+
+
+def _seed_unpriced() -> FakeSupabase:
+    return FakeSupabase(
+        {
+            "users": [
+                {"id": "u1", "user_type": "paid", "role": "Producer", "plan": "studio",
+                 "country": None, "state": None, "created_at": "2026-01-01T00:00:00Z"},
+                {"id": "u2", "user_type": "paid", "role": "Producer", "plan": "studio",
+                 "country": None, "state": None, "created_at": "2026-01-02T00:00:00Z"},
+            ],
+            "subscriptions": [
+                {"user_id": "u1", "status": "active", "amount_cents": None, "currency": None,
+                 "plan_type": "studio", "created_at": "2026-01-01T00:00:00Z", "cancelled_at": None},
+                {"user_id": "u2", "status": "active", "amount_cents": None, "currency": None,
+                 "plan_type": "studio", "created_at": "2026-01-02T00:00:00Z", "cancelled_at": None},
+            ],
+            "reports": [],
+        }
+    )
+
+
+def test_unpriced_subscriptions_are_valued_at_list_price(client):
+    """Two active Studio subscriptions must not report $0 MRR."""
+    _setup(client, _seed_unpriced())
+    data = client.get("/api/admin/business-metrics", headers=HEADERS).json()
+    # Studio list price is $299/month, so 2 × 29900 cents.
+    assert data["mrr_usd"] == 598.0
+    assert data["arr_usd"] == 598.0 * 12
+    assert data["active_subscriptions"] == 2
+
+
+def test_estimated_subscription_count_is_reported(client):
+    """An imputed figure that does not say it was imputed is what made the $0
+    bug invisible, so the count of list-priced rows is part of the response."""
+    _setup(client, _seed_unpriced())
+    data = client.get("/api/admin/business-metrics", headers=HEADERS).json()
+    assert data["mrr_estimated_subscriptions"] == 2
+
+
+def test_recorded_amounts_are_never_overridden_by_list_price(client):
+    """A row that carries an amount is billed reality and wins outright."""
+    _setup(client)
+    data = client.get("/api/admin/business-metrics", headers=HEADERS).json()
+    # The default seed prices every active row explicitly, so nothing is imputed.
+    assert data["mrr_estimated_subscriptions"] == 0
+
+
+def test_free_plan_subscriptions_add_nothing(client):
+    fake = FakeSupabase(
+        {
+            "users": [
+                {"id": "u1", "user_type": "free", "role": None, "plan": "free",
+                 "country": None, "state": None, "created_at": "2026-01-01T00:00:00Z"},
+            ],
+            "subscriptions": [
+                {"user_id": "u1", "status": "active", "amount_cents": None, "currency": None,
+                 "plan_type": "free", "created_at": "2026-01-01T00:00:00Z", "cancelled_at": None},
+            ],
+            "reports": [],
+        }
+    )
+    _setup(client, fake)
+    data = client.get("/api/admin/business-metrics", headers=HEADERS).json()
+    assert data["mrr_usd"] == 0.0
+    assert data["mrr_estimated_subscriptions"] == 0

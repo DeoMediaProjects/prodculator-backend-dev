@@ -4,6 +4,11 @@ from uuid import uuid4
 
 import redis as sync_redis
 
+from app.core.alerts import (
+    ALERT_STRIPE_WEBHOOK,
+    WEBHOOK_THROTTLE_SECONDS,
+    send_admin_alert,
+)
 from app.core.database_client import DatabaseClient
 
 from app.core.config import Settings
@@ -92,7 +97,15 @@ class WebhookHandler:
             # reprocesses the event. The handlers' DB writes are idempotent
             # (upsert on stripe_subscription_id, plan set to a fixed value), so
             # reprocessing converges rather than double-applying.
-            handler(data_object)
+            #
+            # Alert on the way past (handoff §4.5). Retries mean this raises
+            # repeatedly for the same event, so the alert is keyed on the event
+            # id: one email per stuck event per day, not one per delivery.
+            try:
+                handler(data_object)
+            except Exception as exc:
+                self._alert_webhook_failure(event_id, event_type, data_object, exc)
+                raise
         else:
             logger.info("Unhandled webhook event: %s", event_type)
 
@@ -112,6 +125,39 @@ class WebhookHandler:
                 logger.debug("Session rollback after webhook write failure also failed", exc_info=True)
             logger.info("Event %s already recorded by a concurrent delivery: %s", event_id, exc)
 
+    def _alert_webhook_failure(
+        self, event_id: str, event_type: str, data_object: dict, exc: Exception,
+    ) -> None:
+        """Tell ops a webhook could not be processed (handoff §4.5).
+
+        Stripe retrying is not the same as the problem being handled: a webhook
+        that fails every delivery ends up abandoned, and the money has already
+        moved. Never raises — this runs inside an except block whose exception
+        must reach the route so Stripe does retry.
+        """
+        send_admin_alert(
+            category=ALERT_STRIPE_WEBHOOK,
+            severity="critical",
+            heading=f"Stripe webhook '{event_type}' failed to process",
+            message=(
+                "The webhook raised, so Stripe will retry it. If the same event "
+                "keeps failing, the customer's payment has been taken without "
+                "the corresponding entitlement being applied, and it needs "
+                "resolving by hand."
+            ),
+            details={
+                "Event ID": event_id,
+                "Event type": event_type,
+                "Stripe object": data_object.get("id"),
+                "Customer": data_object.get("customer"),
+                "Error": f"{type(exc).__name__}: {exc}"[:300],
+            },
+            settings=self.settings,
+            email_service=self.email_service,
+            throttle_key=f"{ALERT_STRIPE_WEBHOOK}:event:{event_id}",
+            throttle_seconds=WEBHOOK_THROTTLE_SECONDS,
+        )
+
     def _handle_checkout_completed(self, session: dict) -> None:
         metadata = session.get("metadata", {}) or {}
         user_id = metadata.get("userId")
@@ -121,6 +167,34 @@ class WebhookHandler:
                 "Session ID: %s, Customer: %s. User was charged but cannot be upgraded!",
                 session.get("id"),
                 session.get("customer")
+            )
+            # This branch returns rather than raising, so Stripe never retries and
+            # the route-level alert never fires: without this call the only trace
+            # of a charged-but-not-upgraded customer is a log line (handoff §4.5).
+            # Keyed on the session so one charge produces one alert.
+            send_admin_alert(
+                category=ALERT_STRIPE_WEBHOOK,
+                severity="critical",
+                heading="A customer was charged but cannot be upgraded",
+                message=(
+                    "A Stripe checkout completed without metadata.userId, so the "
+                    "plan could not be applied to any account. The payment has "
+                    "been taken. Identify the customer in Stripe and upgrade or "
+                    "refund them by hand — this will not resolve itself, and "
+                    "Stripe will not retry."
+                ),
+                details={
+                    "Stripe session": session.get("id"),
+                    "Stripe customer": session.get("customer"),
+                    "Customer email": (session.get("customer_details") or {}).get("email"),
+                    "Amount": session.get("amount_total"),
+                    "Currency": session.get("currency"),
+                    "Mode": session.get("mode"),
+                },
+                settings=self.settings,
+                email_service=self.email_service,
+                throttle_key=f"{ALERT_STRIPE_WEBHOOK}:session:{session.get('id')}",
+                throttle_seconds=WEBHOOK_THROTTLE_SECONDS,
             )
             return
 

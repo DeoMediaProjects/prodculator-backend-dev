@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.database_client import DatabaseClient
+from app.modules.payments.plan_catalog import list_price_usd_cents
 
 logger = logging.getLogger(__name__)
 
@@ -69,18 +70,31 @@ class AdminService:
 
         subscriptions = (
             self.supabase.table("subscriptions")
-            .select("amount_cents, currency")
+            .select("amount_cents, currency, plan_type")
             .eq("status", "active")
             .execute()
             .data
             or []
         )
+        # An active subscription with no recorded amount is not free. Treating a
+        # NULL as zero made the dashboard read $0 while two Studio customers were
+        # paying; the plan's list price stands in, and how many rows needed that
+        # fallback is returned alongside the figure so the console can say the
+        # total is partly estimated instead of presenting it as billed.
         mrr_usd = 0.0
+        estimated_subscriptions = 0
         for sub in subscriptions:
-            amount_cents = sub.get("amount_cents") or 0
-            currency = (sub.get("currency") or "usd").lower()
-            amount_usd = (amount_cents * 1.27) if currency == "gbp" else amount_cents
-            mrr_usd += amount_usd / 100
+            amount_cents = sub.get("amount_cents")
+            if amount_cents:
+                currency = (sub.get("currency") or "usd").lower()
+                amount_usd = (amount_cents * 1.27) if currency == "gbp" else amount_cents
+                mrr_usd += amount_usd / 100
+                continue
+            fallback = list_price_usd_cents(sub.get("plan_type"))
+            if fallback:
+                # List prices are held in USD, so no conversion applies.
+                mrr_usd += fallback / 100
+                estimated_subscriptions += 1
 
         conversion_rate = (active_subs / total_users * 100.0) if total_users else 0.0
         return {
@@ -89,6 +103,7 @@ class AdminService:
             "total_reports": total_reports,
             "reports_this_month": reports_this_month,
             "mrr_usd": round(mrr_usd, 2),
+            "mrr_estimated_subscriptions": estimated_subscriptions,
             "conversion_rate_percent": round(conversion_rate, 2),
         }
 

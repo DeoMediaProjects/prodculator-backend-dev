@@ -40,6 +40,10 @@ EMAIL_SUBJECTS: dict[str, str] = {
     "b2b_intelligence_ready": "Your Business Intelligence report is ready",
     "b2b_intelligence_held": "Your Business Intelligence report is on hold",
     "b2b_admin_alert": "Business Intelligence: action needed",
+    "b2b_contract_invite": "Claim your Prodculator Business Intelligence subscription",
+    # Generic operations alert (handoff §4.5) — sent by app/core/alerts.py for
+    # report-generation, Stripe webhook and scheduler failures.
+    "admin_alert": "Prodculator: operational failure needs attention",
 }
 
 

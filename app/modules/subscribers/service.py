@@ -3,19 +3,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.database_client import DatabaseClient
+from app.modules.payments.plan_catalog import list_price_usd_cents
 
 PLAN_DISPLAY_NAMES: dict[str, str] = {
     "free": "Free",
     "single": "Pro Monthly",
     "studio": "Studio",
 }
-
-PLAN_PRICES: dict[str, float] = {
-    "free": 0,
-    "single": 1,
-    "studio": 1,
-}
-
 
 class SubscriberAdminService:
     def __init__(self, supabase: DatabaseClient):
@@ -43,16 +37,26 @@ class SubscriberAdminService:
         plan_counts: dict[str, int] = defaultdict(int)
         plan_revenue: dict[str, float] = defaultdict(float)
 
+        estimated_subscriptions = 0
         for sub in active_subs:
-            amount_cents = sub.get("amount_cents") or 0
+            amount_cents = sub.get("amount_cents")
             currency = (sub.get("currency") or "usd").lower()
             plan_type = sub.get("plan_type") or "single"
-            amount = amount_cents / 100
 
-            if currency == "gbp":
-                mrr_gbp += amount
+            if amount_cents:
+                amount = amount_cents / 100
+                if currency == "gbp":
+                    mrr_gbp += amount
+                else:
+                    mrr_usd += amount
             else:
-                mrr_usd += amount
+                # No amount recorded. The plan's list price stands in rather than
+                # counting a paying customer as zero revenue, and it is booked as
+                # USD because list prices are held in USD.
+                amount = list_price_usd_cents(plan_type) / 100
+                if amount:
+                    mrr_usd += amount
+                    estimated_subscriptions += 1
 
             display_plan = PLAN_DISPLAY_NAMES.get(plan_type, plan_type)
             plan_counts[display_plan] += 1
@@ -97,6 +101,7 @@ class SubscriberAdminService:
         return {
             "total_paid_users": paid_users_count,
             "mrr_usd": round(mrr_usd, 2),
+            "mrr_estimated_subscriptions": estimated_subscriptions,
             "mrr_gbp": round(mrr_gbp, 2),
             "reports_this_month_total": reports_total,
             "reports_this_month_free": reports_free,
@@ -250,6 +255,18 @@ class SubscriberAdminService:
             sub = subs_by_user.get(uid, {})
             plan_type = sub.get("plan_type") or user.get("plan") or "free"
 
+            amount_cents = sub.get("amount_cents")
+            if amount_cents:
+                spend = amount_cents / 100
+                spend_estimated = False
+                spend_currency = (sub.get("currency") or "USD").upper()
+            else:
+                # List prices are held in USD, so an imputed figure is reported
+                # in USD regardless of the currency the customer is billed in.
+                spend = list_price_usd_cents(plan_type) / 100
+                spend_estimated = spend > 0
+                spend_currency = "USD" if spend_estimated else (sub.get("currency") or "USD").upper()
+
             items.append({
                 "id": uid,
                 "name": user.get("name"),
@@ -259,8 +276,13 @@ class SubscriberAdminService:
                 "status": (sub.get("status") or "active").replace("_", " ").title(),
                 "reports_this_month": month_reports_by_user.get(uid, 0),
                 "report_limit": sub.get("report_limit"),
-                "monthly_spend": (sub.get("amount_cents") or 0) / 100,
-                "payment_currency": (sub.get("currency") or "USD").upper(),
+                "monthly_spend": spend,
+                # True when no amount was recorded on the subscription row and
+                # the plan's list price stood in. Without this the dashboard
+                # showed a paying Studio customer at $0/mo, which is the same
+                # NULL-amount bug that made platform MRR read as zero.
+                "monthly_spend_estimated": spend_estimated,
+                "payment_currency": spend_currency,
                 "join_date": str(user.get("created_at", ""))[:10],
                 "last_active": str(user.get("last_active", ""))[:10] if user.get("last_active") else None,
                 "total_reports_generated": total_reports_by_user.get(uid, 0),

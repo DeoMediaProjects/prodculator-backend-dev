@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Business Intelligence subscription is ready to claim</title>
+</head>
+<!--
+  Sent when an admin issues a manual-contract invite (handoff §4.3/§4.4). The
+  accept_url carries the only copy of the raw token, so this email is the client's
+  route in; a resend rotates the token and invalidates this link.
+-->
+<body style="margin:0;padding:0;background-color:#EFEBE3;font-family:Arial,Helvetica,sans-serif;color:#1C1A16;">
+  {% set app = app_url | default("https://prodculator.com") %}
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFEBE3;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#FFFFFF;border:1px solid #E5E0D6;border-radius:10px;">
+          <!-- Logo header -->
+          <tr>
+            <td align="center" style="padding:32px 40px 20px;border-bottom:1px solid #EFEBE3;">
+              <img src="{{ logo_url }}" alt="Prodculator" width="190" style="display:block;border:0;height:auto;max-width:190px;" />
+            </td>
+          </tr>
+
+          <!-- Title -->
+          <tr>
+            <td style="padding:32px 40px 8px;">
+              <p style="margin:0 0 10px;color:#B8941F;font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;">Business Intelligence</p>
+              <h1 style="margin:0 0 12px;color:#1C1A16;font-size:22px;font-weight:700;line-height:1.35;">
+                {% if company_name %}{{ company_name }}, your{% else %}Your{% endif %} subscription is ready to claim
+              </h1>
+              <p style="margin:0;color:#57534A;font-size:15px;line-height:1.65;">
+                Your Prodculator Business Intelligence subscription has been set up under your contract. Claim it below to activate delivery.
+                {% if product_description %} {{ product_description }}{% endif %}
+              </p>
+            </td>
+          </tr>
+
+          <!-- What's included -->
+          <tr>
+            <td style="padding:20px 40px 4px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FBFAF7;border:1px solid #E5E0D6;border-radius:8px;">
+                <tr><td style="padding:18px 20px;">
+                  <p style="margin:0 0 6px;color:#1C1A16;font-size:14px;line-height:1.6;"><strong>Product:</strong> {{ product_title }}</p>
+                  {% if delivery_frequency %}
+                  <p style="margin:0 0 6px;color:#1C1A16;font-size:14px;line-height:1.6;"><strong>Delivery:</strong> {{ delivery_frequency | capitalize }}</p>
+                  {% endif %}
+                  {% if expires_at %}
+                  <p style="margin:0;color:#1C1A16;font-size:14px;line-height:1.6;"><strong>Claim by:</strong> {{ expires_at }}</p>
+                  {% endif %}
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CTA -->
+          <tr>
+            <td align="center" style="padding:26px 40px 8px;">
+              <a href="{{ accept_url }}"
+                 style="display:inline-block;background-color:#B8941F;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:15px;padding:13px 34px;border-radius:6px;">
+                Claim your subscription
+              </a>
+            </td>
+          </tr>
+
+          <!-- Instructions -->
+          <tr>
+            <td style="padding:14px 40px 8px;">
+              <p style="margin:0;color:#57534A;font-size:13px;line-height:1.7;">
+                You will be asked to sign in, or to create an account if you do not have one yet. Please use this email address: the invitation is tied to it, so signing in with a different address will not claim it. If you need it moved to another address, reply to your account manager.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding:24px 40px 28px;border-top:1px solid #EFEBE3;">
+              <p style="margin:0;color:#8A857C;font-size:11px;line-height:1.6;">
+                This link is personal to you and can only be used once. If it has expired, ask your account manager to send a new one.
+              </p>
+              <p style="margin:10px 0 0;color:#8A857C;font-size:11px;line-height:1.6;">&copy; 2026 Prodculator, a Deo Media Limited product.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

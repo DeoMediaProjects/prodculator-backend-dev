@@ -11,6 +11,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 
+from app.core.alerts import ALERT_REPORT_GENERATION, send_admin_alert
 from app.core.database_client import DatabaseClient
 from app.core.config import Settings, get_settings
 from app.core.db import get_db_context
@@ -703,7 +704,11 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
     data.pop("dimensionVerdicts", None)
     data["nextSteps"] = []
 
-    # Remove completely — no useful structural preview for free users
+    # Remove completely — no useful structural preview for free users.
+    # financialReadiness is a paid section (handoff §4.1): every figure in it is
+    # a monetary value or a ratio of two, so there is nothing left to show once
+    # the free tier's financial stripping has run.
+    data.pop("financialReadiness", None)
     data.pop("investorSummary", None)
     data.pop("territoryDeepDives", None)
     data.pop("comparables", None)
@@ -1630,6 +1635,32 @@ def process_report_task(
                 logger.debug("Sent failure email: report_id=%s to=%s", report_id, user_email)
             except Exception:
                 logger.warning("Unable to send failure email for report_id=%s", report_id)
+
+            # Tell ops (handoff §4.5). The customer has been emailed and their
+            # quota released, but nobody has been told the generator broke — and
+            # a broken step (a dead model provider, an S3 misconfiguration) will
+            # keep failing every subsequent report until someone looks. Throttled
+            # per failing step, so a provider outage produces one email naming
+            # the step rather than one per affected report.
+            send_admin_alert(
+                category=ALERT_REPORT_GENERATION,
+                heading="A report failed to generate",
+                message=(
+                    f"Report generation failed at the '{current_step}' step. The "
+                    f"customer was emailed a generic failure notice and their "
+                    f"quota slot was released, so no action is needed on their "
+                    f"account — but the failing step will keep failing until it "
+                    f"is fixed."
+                ),
+                details={
+                    "Report ID": report_id,
+                    "Script title": (report_row or {}).get("script_title", "Unknown"),
+                    "Failed step": current_step,
+                    "User ID": user_id,
+                    "Error": ReportService.redact_sensitive_text(str(exc))[:300],
+                },
+                throttle_key=f"{ALERT_REPORT_GENERATION}:{current_step}",
+            )
 
             # Let the job itself fail. RQ previously logged "Job OK" for a run
             # that threw, because this handler swallowed the exception once the

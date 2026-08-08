@@ -59,6 +59,23 @@ def client() -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_alert_throttle() -> Iterator[None]:
+    """Clear the admin-alert throttle between tests.
+
+    The throttle in app/core/alerts.py is process-global on purpose — that is
+    what stops a systemic outage emailing thousands of times. Under pytest that
+    same state leaks across tests: one test's alert silences the next test's
+    identical alert, so a test asserting "an alert was sent" passes alone and
+    fails in the suite.
+    """
+    from app.core.alerts import reset_throttle
+
+    reset_throttle()
+    yield
+    reset_throttle()
+
+
 @pytest.fixture
 def auth_user() -> AuthUser:
     return AuthUser(

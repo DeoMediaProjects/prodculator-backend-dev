@@ -407,6 +407,70 @@ class FinancialAnalysis(BaseModel):
     paymentTiming: list[PaymentTimingEntry] | None = None
 
 
+class ReadinessFigure(BaseModel):
+    """One figure in a readiness component, with the input it came from."""
+
+    label: str
+    value: str
+    basis: str
+
+
+class ReadinessCheck(BaseModel):
+    """One test a readiness component ran. result is pass / fail / warn / skipped."""
+
+    name: str
+    result: Literal["pass", "fail", "warn", "skipped"]
+    detail: str
+
+
+class ReadinessComponent(BaseModel):
+    key: Literal[
+        "budget_vs_cost_base",
+        "incentive_confidence",
+        "soft_money_coverage",
+        "timeline_feasibility",
+    ]
+    label: str
+    status: Literal["ready", "conditional", "insufficient_data", "not_ready"]
+    weight: int
+    headline: str
+    figures: list[ReadinessFigure] = []
+    checks: list[ReadinessCheck] = []
+    note: str | None = None
+    # incentive_confidence only: confirmed / contingent / failed
+    grade: str | None = None
+
+
+class ReadinessFlag(BaseModel):
+    """An unverified or stale input the verdict had to work around."""
+
+    severity: Literal["critical", "warning", "info"]
+    input: str
+    detail: str
+    action: str
+
+
+class FinancialReadiness(BaseModel):
+    """Deterministic readiness assessment (handoff §4.1).
+
+    Computed by ``reports.readiness.compute_financial_readiness`` — no AI is
+    involved in any field here, and every figure cites its input.
+    """
+
+    verdict: Literal["READY", "CONDITIONAL", "NOT READY", "INSUFFICIENT DATA"]
+    verdictReason: str
+    rule: str
+    score: int  # 0-100, weighted from component statuses
+    territory: str
+    programme: str | None = None
+    currencySymbol: str = "£"
+    components: list[ReadinessComponent] = []
+    flags: list[ReadinessFlag] = []
+    flagCounts: dict[str, int] = {}
+    methodology: str
+    computedOn: str
+
+
 class TerritoryDeepDive(BaseModel):
     name: str
     country: str
@@ -433,6 +497,7 @@ class ScriptAnalysis(BaseModel):
     fundingOpportunities: list[FundingOpportunity]
     executiveSummary: ExecutiveSummary | None = None
     financialAnalysis: FinancialAnalysis | None = None
+    financialReadiness: FinancialReadiness | None = None
     territoryDeepDives: list[TerritoryDeepDive] | None = None
     alternativeStrategy: str | None = None
     scoringMethodology: ScoringMethodology | None = None

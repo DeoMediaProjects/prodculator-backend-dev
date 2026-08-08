@@ -199,7 +199,7 @@ async def get_current_admin(
     if not result.data:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    return AdminUser(
+    admin = AdminUser(
         id=result.data["id"],
         email=result.data["email"],
         name=result.data.get("name"),
@@ -209,6 +209,13 @@ async def get_current_admin(
         # seed_admin.py, which sets 'master_admin').
         role=result.data.get("role") or "",
     )
+
+    # Hand the actor to the audit route class (app/core/audit.py), which runs
+    # after the endpoint and has no other way to know who made the call. Set
+    # here rather than in each endpoint so no admin route can be audited
+    # anonymously — every one of them resolves an admin through this dependency.
+    request.state.audit_actor = admin
+    return admin
 
 
 class RequirePlan:

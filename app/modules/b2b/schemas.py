@@ -32,6 +32,33 @@ class B2BProductResponse(BaseModel):
     stripe_price_configured: dict[str, bool]
 
 
+class B2BWithheldSection(BaseModel):
+    """A section this client cannot receive because another holds it exclusively."""
+
+    section_key: str
+    section_title: str
+    module_label: str | None = None
+    # None means the exclusivity is perpetual, not that it is unknown.
+    available_from: str | None = None
+
+
+class B2BRequestEntitlementResponse(BaseModel):
+    """What a client may request for a product (SOW 4.4).
+
+    The dashboard uses this to disable withheld sections before the client asks,
+    so exclusivity is a stated constraint rather than a refusal after the fact.
+    """
+
+    product_type: str
+    # Everything the product's template covers.
+    section_keys: list[str]
+    # The subset this client may actually receive.
+    allowed_section_keys: list[str]
+    withheld_sections: list[B2BWithheldSection] = []
+    # False only when exclusivity leaves nothing renderable at all.
+    can_request: bool
+
+
 class B2BCheckoutRequest(BaseModel):
     product_type: B2BProductType
     currency: B2BCurrency = "gbp"
@@ -78,6 +105,10 @@ class B2BSubscriptionResponse(BaseModel):
     cancel_at_period_end: bool = False
     company_name: str | None = None
     admin_notes: str | None = None
+    #: Resolved from the users table on the admin listing so the console can name
+    #: the account instead of printing a bare UUID. Absent on single-row
+    #: responses, where the caller already knows who it asked about.
+    user_email: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -149,6 +180,95 @@ class AdminB2BSubscriptionUpdate(BaseModel):
         if value not in allowed:
             raise ValueError(f"status must be one of: {', '.join(sorted(allowed))}")
         return value
+
+
+# ── Manual-contract invites (handoff §4.3/§4.4) ───────────────────────────────
+
+B2BInviteStatus = Literal["pending", "accepted", "revoked", "expired"]
+
+
+class AdminB2BInviteCreate(BaseModel):
+    """Issue an invite to claim a manually-contracted subscription.
+
+    The invited party does not need an account yet — that is the point of the
+    flow. Terms recorded here are what the subscription is created with on claim.
+    """
+
+    email: EmailStr
+    product_type: B2BProductType
+    delivery_frequency: B2BDeliveryFrequency = "monthly"
+    extra_recipient_email: EmailStr | None = None
+    company_name: str | None = None
+    admin_notes: str | None = None
+    expires_in_days: int = 30
+    # Off only when an admin intends to pass the link on by another channel;
+    # the accept URL is returned either way.
+    send_email: bool = True
+
+    @field_validator("expires_in_days")
+    @classmethod
+    def validate_expiry(cls, value: int) -> int:
+        if not 1 <= value <= 365:
+            raise ValueError("expires_in_days must be between 1 and 365")
+        return value
+
+
+class AdminB2BInviteResponse(BaseModel):
+    """Admin view of an invite. Never carries the token or its hash."""
+
+    id: str
+    email: str
+    product_type: str
+    status: B2BInviteStatus
+    # First few characters of the token, so two outstanding invites are
+    # distinguishable in the UI. Not enough to reconstruct a link.
+    token_prefix: str | None = None
+    expires_at: datetime | None = None
+    delivery_frequency: str | None = None
+    extra_recipient_email: str | None = None
+    company_name: str | None = None
+    admin_notes: str | None = None
+    created_by: str | None = None
+    sent_count: int = 0
+    last_sent_at: datetime | None = None
+    accepted_at: datetime | None = None
+    accepted_by_user_id: str | None = None
+    b2b_subscription_id: str | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AdminB2BInviteIssuedResponse(BaseModel):
+    """The issue/resend response — the only place the accept URL is ever returned.
+
+    The raw token is not stored, so this URL cannot be recovered afterwards.
+    Resending mints a new one and invalidates this.
+    """
+
+    invite: AdminB2BInviteResponse
+    accept_url: str
+
+
+class AdminB2BInviteListResponse(BaseModel):
+    items: list[AdminB2BInviteResponse]
+    total: int
+
+
+class B2BInvitePreviewResponse(BaseModel):
+    """Unauthenticated view of an invite, for the accept page.
+
+    Deliberately thin: it is reachable by anyone holding the link, so it carries
+    nothing beyond what the email that delivered it already contained.
+    """
+
+    email: str
+    product_type: str
+    company_name: str | None = None
+    delivery_frequency: str | None = None
+    expires_at: datetime | None = None
+    status: B2BInviteStatus
+    claimable: bool
 
 
 class AdminB2BRequestListResponse(BaseModel):

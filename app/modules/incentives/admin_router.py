@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
 from app.core.permissions import RequirePermission
@@ -19,7 +20,7 @@ from app.modules.admin.schemas import (
 )
 from app.modules.incentives.service import IncentivesService
 
-router = APIRouter(prefix="/api/admin/incentives", tags=["Admin - Incentives"])
+router = APIRouter(prefix="/api/admin/incentives", tags=["Admin - Incentives"], route_class=AuditedAPIRoute)
 
 
 def get_incentives_service(supabase: DatabaseClient = Depends(get_supabase)) -> IncentivesService:

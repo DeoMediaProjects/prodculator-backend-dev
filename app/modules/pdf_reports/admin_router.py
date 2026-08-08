@@ -3,6 +3,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
@@ -20,7 +21,7 @@ from app.modules.pdf_reports.service import PdfReportsService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/pdf-reports", tags=["Admin - PDF Reports"])
+router = APIRouter(prefix="/api/admin/pdf-reports", tags=["Admin - PDF Reports"], route_class=AuditedAPIRoute)
 
 
 def get_pdf_reports_service(

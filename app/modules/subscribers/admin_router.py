@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_current_admin, get_supabase
 from app.core.schemas import SuccessResponse
@@ -15,7 +16,7 @@ from app.modules.subscribers.service import SubscriberAdminService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/subscribers", tags=["Admin - Subscribers"])
+router = APIRouter(prefix="/api/admin/subscribers", tags=["Admin - Subscribers"], route_class=AuditedAPIRoute)
 
 
 def get_subscriber_service(

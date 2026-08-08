@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from jinja2 import TemplateNotFound
 
+from app.core.alerts import ALERT_BI_GENERATION, ALERT_BI_HELD, send_admin_alert
 from app.core.config import Settings, get_settings
 from app.core.database_client import DatabaseClient, create_client
 from app.modules.b2b.report_model import build_report_view
@@ -269,6 +270,21 @@ def _as_iso(value: datetime | date | str | None) -> str | None:
     return str(value)
 
 
+class EntitlementScopeError(PermissionError):
+    """A client asked for a product they are not entitled to receive (SOW 4.4).
+
+    Subclasses PermissionError so the existing ``except PermissionError`` in the
+    client router keeps mapping it to a 403 even before that handler is widened,
+    but carries the withheld sections so the response can say which sections are
+    unavailable and when they become available — rather than the opaque refusal
+    a client used to get at composition time.
+    """
+
+    def __init__(self, message: str, *, withheld: list[dict[str, Any]] | None = None):
+        super().__init__(message)
+        self.withheld = withheld or []
+
+
 class B2BService:
     def __init__(self, db: DatabaseClient, settings: Settings | None = None):
         self.db = db
@@ -343,25 +359,55 @@ class B2BService:
             or []
         )
         if not user_rows:
+            # Kept: this path provisions against an existing account. The invite
+            # flow (b2b/invite_service.py) is what covers a client who has not
+            # signed up yet — it defers subscription creation to their claim.
             raise ValueError("User must sign up before a manual B2B subscription can be created")
 
-        product_type = payload["product_type"]
+        return self.create_manual_subscription_for_user(
+            user_id=user_rows[0]["id"],
+            product_type=payload["product_type"],
+            status=payload.get("status") or "active",
+            delivery_frequency=payload.get("delivery_frequency") or "monthly",
+            extra_recipient_email=payload.get("extra_recipient_email"),
+            company_name=payload.get("company_name") or user_rows[0].get("company"),
+            admin_notes=payload.get("admin_notes"),
+        )
+
+    def create_manual_subscription_for_user(
+        self,
+        *,
+        user_id: str,
+        product_type: str,
+        status: str = "active",
+        delivery_frequency: str = "monthly",
+        extra_recipient_email: str | None = None,
+        company_name: str | None = None,
+        admin_notes: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a manual-contract subscription for an already-resolved user.
+
+        Shared by the admin path (which resolves the user by email) and the
+        invite claim path (where the user is the one signing in), so a
+        contracted subscription is written the same way however it was
+        provisioned.
+        """
         product = self._product(product_type)
         now = _utcnow()
         row = {
             "id": str(uuid4()),
-            "user_id": user_rows[0]["id"],
+            "user_id": user_id,
             "product_type": product_type,
-            "status": payload.get("status") or "active",
+            "status": status,
             "source": "manual_contract",
             "amount_cents": product.get("price_gbp_cents"),
             "currency": "gbp" if product.get("price_gbp_cents") else None,
-            "delivery_frequency": payload.get("delivery_frequency") or "monthly",
-            "extra_recipient_email": self._clean_email(payload.get("extra_recipient_email")),
-            "company_name": payload.get("company_name") or user_rows[0].get("company"),
-            "admin_notes": payload.get("admin_notes"),
+            "delivery_frequency": delivery_frequency,
+            "extra_recipient_email": self._clean_email(extra_recipient_email),
+            "company_name": company_name,
+            "admin_notes": admin_notes,
             "current_period_start": now,
-            "next_delivery_at": add_months(now, interval_months(payload.get("delivery_frequency") or "monthly")),
+            "next_delivery_at": add_months(now, interval_months(delivery_frequency)),
             "created_at": now,
             "updated_at": now,
         }
@@ -544,6 +590,87 @@ class B2BService:
         )
         return bool(result.data)
 
+    # ── Entitlement scoping for client requests (SOW 4.4) ────────────────────
+
+    def _entitlement_service(self) -> "EntitlementService":
+        from app.modules.b2b.entitlement_service import EntitlementService
+
+        return EntitlementService(self.db)
+
+    def request_entitlement(
+        self, *, product_type: str, subscription_id: str | None,
+    ) -> dict[str, Any]:
+        """What this subscription may and may not receive for *product_type*.
+
+        Used by two callers that must agree: the pre-persist guard below, and the
+        client dashboard, which disables the sections a client cannot have
+        instead of letting them ask and be refused.
+        """
+        from app.modules.b2b.package_service import SECTION_BY_KEY, PackageService
+
+        template = PackageService.product_template(product_type)
+        entitlements = self._entitlement_service()
+        withheld = entitlements.conflicts_for(
+            subscription_id=subscription_id, section_keys=template,
+        )
+        allowed = entitlements.allowed_section_keys(
+            subscription_id=subscription_id, section_keys=template,
+        )
+        return {
+            "product_type": product_type,
+            "section_keys": template,
+            "allowed_section_keys": allowed,
+            "withheld_sections": [
+                {
+                    "section_key": c["section_key"],
+                    "section_title": (
+                        SECTION_BY_KEY[c["section_key"]].title
+                        if c["section_key"] in SECTION_BY_KEY else c["section_key"]
+                    ),
+                    "module_label": c.get("module_label") or c.get("module_key"),
+                    "available_from": c.get("reverts_at"),
+                }
+                for c in withheld
+            ],
+            # False only when exclusivity leaves nothing to render at all.
+            "can_request": bool(allowed),
+        }
+
+    def assert_request_within_entitlement(
+        self, *, product_type: str, subscription_id: str | None,
+    ) -> None:
+        """Refuse a request whose product is entirely withheld by exclusivity.
+
+        A partial withholding is allowed through: the client still receives the
+        sections they hold, and the report states what was withheld. Refusing
+        the whole request because one section is licensed elsewhere would
+        withhold intelligence the client is contractually owed.
+        """
+        entitlement = self.request_entitlement(
+            product_type=product_type, subscription_id=subscription_id,
+        )
+        if entitlement["can_request"]:
+            if entitlement["withheld_sections"]:
+                logger.info(
+                    "B2B request for %s scoped by exclusivity: withheld=%s",
+                    product_type,
+                    [s["section_key"] for s in entitlement["withheld_sections"]],
+                )
+            return
+
+        withheld = entitlement["withheld_sections"]
+        detail = "; ".join(
+            f"{s['section_title']}"
+            + (f" (available from {s['available_from']})" if s.get("available_from") else " (exclusive indefinitely)")
+            for s in withheld
+        )
+        raise EntitlementScopeError(
+            "Every section of this product is currently licensed exclusively to "
+            f"another client, so it cannot be generated for you: {detail}. "
+            "Contact your account manager to discuss alternatives.",
+            withheld=withheld,
+        )
+
     def create_intelligence_request(
         self,
         *,
@@ -559,6 +686,15 @@ class B2BService:
         subscription = subscription or self.active_subscription(user_id, product_type)
         if not subscription:
             raise PermissionError("An active B2B subscription is required for this intelligence product")
+
+        # Entitlement scoping (SOW 4.4 — ad-hoc requests are allowed "within
+        # entitlement"). Checked here, before the row is written, so a client
+        # asking for something another client holds exclusively is told so up
+        # front. Previously the request was persisted and only collided at
+        # composition time, which surfaced as an opaque failure after the fact.
+        self.assert_request_within_entitlement(
+            product_type=product_type, subscription_id=subscription["id"],
+        )
 
         recipient_email = user_email.strip().lower()
         extra_email = self._clean_email(extra_recipient_email)
@@ -684,6 +820,10 @@ class B2BService:
                 "Period": f"{_as_iso(request_row.get('period_start'))} to {_as_iso(request_row.get('period_end'))}",
                 "Signals": f"{count} (need {floor})",
             },
+            # A hold is a distinct condition from a generation failure, so it
+            # gets its own throttle bucket — an outage of one must not silence
+            # the other.
+            category=ALERT_BI_HELD,
         )
 
     def _notify_request_held(self, request_row: dict[str, Any], metrics: dict[str, Any]) -> None:
@@ -715,23 +855,45 @@ class B2BService:
                 logger.warning("Failed to send B2B hold notice to %s", email, exc_info=True)
 
     def _notify_admin_alert(
-        self, *, heading: str, message: str, details: dict[str, Any] | None = None
+        self,
+        *,
+        heading: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+        category: str = ALERT_BI_GENERATION,
+        throttle_key: str | None = None,
     ) -> None:
         """Best-effort ops alert. Never raises — an alert failure must not affect
-        the request's own outcome."""
+        the request's own outcome.
+
+        Delegates to the shared alert service (handoff §4.5) so BI alerts are
+        throttled and mirrored to Sentry on the same terms as the report,
+        webhook and scheduler paths. The BI-specific email template is kept:
+        its wording tells the reader no client was contacted, which the generic
+        template states more broadly.
+        """
         recipient = (
-            getattr(self.settings, "B2B_ADMIN_ALERT_EMAIL", "") or self.settings.CONTACT_EMAIL or ""
+            getattr(self.settings, "ADMIN_ALERT_EMAIL", "")
+            or getattr(self.settings, "B2B_ADMIN_ALERT_EMAIL", "")
+            or self.settings.CONTACT_EMAIL
+            or ""
         ).strip()
         if not recipient:
-            return
-        try:
-            self.email_service.send(
-                recipient,
-                "b2b_admin_alert",
-                {"heading": heading, "message": message, "details": details or {}},
+            logger.warning(
+                "B2B admin alert has no recipient configured — not sent: %s", heading,
             )
-        except Exception:
-            logger.warning("Failed to send B2B admin alert", exc_info=True)
+            return
+        send_admin_alert(
+            category=category,
+            heading=heading,
+            message=message,
+            details=details,
+            settings=self.settings,
+            email_service=self.email_service,
+            recipient=recipient,
+            template="b2b_admin_alert",
+            throttle_key=throttle_key,
+        )
 
     def build_metrics(self, *, product_type: str, period_start: date, period_end: date) -> dict[str, Any]:
         rows = self._load_signals(period_start, period_end)

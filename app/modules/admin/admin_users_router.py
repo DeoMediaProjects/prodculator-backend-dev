@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Query
 
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase
 from app.core.database_client import DatabaseClient
@@ -19,7 +20,7 @@ from app.modules.email.service import EmailService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin/admin-users", tags=["Admin - Admin Users"])
+router = APIRouter(prefix="/api/admin/admin-users", tags=["Admin - Admin Users"], route_class=AuditedAPIRoute)
 
 
 def get_admin_users_service(

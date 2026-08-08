@@ -34,6 +34,10 @@ from app.modules.reports.helpers import (  # noqa: F401 — re-exported for back
     budget_to_display as _budget_to_display,
     parse_money_string as _parse_money_string,
 )
+from app.modules.reports.readiness import (
+    SECTION_EXPLAINER as _READINESS_EXPLAINER,
+    compute_financial_readiness,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +123,28 @@ class ReportValidator:
                         if timeline:
                             summary["recommendedTerritoryPaymentSpeed"] = timeline
 
+        # Financial readiness (handoff §4.1) — recomputed here, after the
+        # ranking and every dependent section have settled, so the assessment
+        # always anchors on the territory the report actually recommends. Only
+        # for reports that already carry the section: the builder decides tier
+        # eligibility, and a free preview must not gain a financial section here.
+        if "financialReadiness" in report:
+            readiness = compute_financial_readiness(
+                report=report,
+                datasets=datasets,
+                request_metadata=cls._readiness_request_metadata(datasets),
+            )
+            if readiness:
+                report["financialReadiness"] = readiness
+            else:
+                # The section can only vanish if its financial basis did; drop
+                # it rather than leave a stale verdict beside changed figures.
+                report.pop("financialReadiness", None)
+                warnings.append(
+                    "[readiness] financialReadiness dropped — no assessable "
+                    "financial basis after validation"
+                )
+
         # Static text — always inject
         cls._inject_section_explainers(report, datasets)
 
@@ -139,6 +165,23 @@ class ReportValidator:
                 "; ".join(warnings[:10]),
             )
         return report, warnings
+
+    @staticmethod
+    def _readiness_request_metadata(datasets: dict) -> dict:
+        """Rebuild the intake fields the readiness module reads.
+
+        ``assert_integrity`` is given ``datasets`` but not the original request,
+        so the intake values readiness needs are taken from the derived keys
+        ``ReportService._inject_derived_data`` writes. Keeping this in one place
+        means the readiness module never has to know that its two call sites
+        source the same fields differently.
+        """
+        return {
+            "completion_date": datasets.get("_completion_date"),
+            "filming_start_date": datasets.get("_filming_start_date"),
+            "filming_duration": datasets.get("_shoot_weeks"),
+            "format": datasets.get("_production_format"),
+        }
 
     @classmethod
     def _strip_leaked_audit_text(cls, report: dict, warnings: list[str]) -> None:
@@ -852,6 +895,7 @@ class ReportValidator:
                 "note explicitly when a comparable has a meaningful budget gap from "
                 "your production."
             ),
+            "financial_readiness": _READINESS_EXPLAINER,
         }
 
         # Nest under scriptAnalysis so the template can access via

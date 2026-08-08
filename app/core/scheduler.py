@@ -1,8 +1,11 @@
 import logging
 from datetime import datetime, timezone
 
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+from app.core.alerts import ALERT_SCHEDULER_JOB, send_admin_alert
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +150,6 @@ def _check_and_run_syncs() -> None:
                 "Scheduler: next sync for %s scheduled at %s",
                 resource_type, new_next.isoformat(),
             )
-    except Exception:
-        logger.exception("Scheduler: sync check failed")
     finally:
         db.close()
 
@@ -166,8 +167,6 @@ def _run_subscription_dunning() -> None:
     db = create_client()
     try:
         run_dunning_grace_check(db, settings)
-    except Exception:
-        logger.exception("Scheduler: dunning grace check failed")
     finally:
         db.close()
 
@@ -185,8 +184,6 @@ def _run_subscription_reconciler() -> None:
     db = create_client()
     try:
         _run(db, settings)
-    except Exception:
-        logger.exception("Scheduler: subscription reconciler failed")
     finally:
         db.close()
 
@@ -201,12 +198,9 @@ def _run_b2b_monthly_aggregate_close() -> None:
     from app.modules.b2b.service import run_b2b_monthly_aggregate_close
 
     settings = get_settings()
-    try:
-        stored = run_b2b_monthly_aggregate_close(settings)
-        if stored:
-            logger.info("Scheduler: stored %d B2B monthly aggregate(s)", stored)
-    except Exception:
-        logger.exception("Scheduler: B2B monthly aggregate close failed")
+    stored = run_b2b_monthly_aggregate_close(settings)
+    if stored:
+        logger.info("Scheduler: stored %d B2B monthly aggregate(s)", stored)
 
 
 def _run_b2b_auto_delivery() -> None:
@@ -215,12 +209,78 @@ def _run_b2b_auto_delivery() -> None:
     from app.modules.b2b.service import run_due_b2b_auto_deliveries
 
     settings = get_settings()
-    try:
-        generated = run_due_b2b_auto_deliveries(settings)
-        if generated:
-            logger.info("Scheduler: generated %d due B2B intelligence report(s)", generated)
-    except Exception:
-        logger.exception("Scheduler: B2B auto delivery failed")
+    generated = run_due_b2b_auto_deliveries(settings)
+    if generated:
+        logger.info("Scheduler: generated %d due B2B intelligence report(s)", generated)
+
+
+def _run_admin_audit_retention() -> None:
+    """Daily: drop admin audit rows past the configured retention window.
+
+    The only path that removes an audit row. Deliberately not reachable over
+    HTTP: an admin must not be able to shorten the record of their own actions.
+    """
+    from app.core.audit import purge_expired_audit_logs
+    from app.core.config import get_settings
+
+    retention_days = get_settings().ADMIN_AUDIT_RETENTION_DAYS
+    if retention_days <= 0:
+        logger.debug("Scheduler: audit retention disabled — retaining indefinitely")
+        return
+    purge_expired_audit_logs(retention_days)
+
+
+def _on_job_event(event) -> None:
+    """Alert on any scheduled job that fails or is missed (handoff §4.5).
+
+    Registered once against APScheduler's own event bus rather than added to
+    each job's body. That is what makes it unforgettable: a job added later is
+    covered without anyone remembering to wrap it, and the individual jobs are
+    free to let their exceptions propagate instead of swallowing them (which is
+    what previously left every scheduled failure invisible outside the logs).
+
+    Throttled per job id, so a job failing hourly all weekend sends one email
+    per window per job rather than one per run.
+    """
+    job_id = getattr(event, "job_id", "unknown")
+    exception = getattr(event, "exception", None)
+
+    if exception is None and event.code == EVENT_JOB_MISSED:
+        logger.warning("Scheduler: job %s missed its run window", job_id)
+        send_admin_alert(
+            category=ALERT_SCHEDULER_JOB,
+            severity="warning",
+            heading=f"Scheduled job '{job_id}' missed its run window",
+            message=(
+                "The job did not start within its misfire grace time, so the "
+                "work it does for that period was skipped. A single miss after "
+                "a restart is usually benign; a repeating one is not."
+            ),
+            details={"Job": job_id, "Scheduled for": str(getattr(event, "scheduled_run_time", ""))},
+            throttle_key=f"{ALERT_SCHEDULER_JOB}:missed:{job_id}",
+        )
+        return
+
+    logger.exception(
+        "Scheduler: job %s raised", job_id,
+        exc_info=exception if isinstance(exception, BaseException) else None,
+    )
+    send_admin_alert(
+        category=ALERT_SCHEDULER_JOB,
+        heading=f"Scheduled job '{job_id}' failed",
+        message=(
+            "The job raised and its work for this run did not complete. "
+            "APScheduler will try again at the next trigger time, so a "
+            "transient failure resolves itself — a repeating one means the work "
+            "is not being done at all."
+        ),
+        details={
+            "Job": job_id,
+            "Error": f"{type(exception).__name__}: {exception}"[:300] if exception else "unknown",
+            "Scheduled for": str(getattr(event, "scheduled_run_time", "")),
+        },
+        throttle_key=f"{ALERT_SCHEDULER_JOB}:error:{job_id}",
+    )
 
 
 def start_scheduler() -> None:
@@ -229,6 +289,8 @@ def start_scheduler() -> None:
 
     settings = get_settings()
     _scheduler = BackgroundScheduler(timezone="UTC")
+    # Attach before any job is added, so nothing can run unwatched.
+    _scheduler.add_listener(_on_job_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
     if settings.SCRAPER_ENABLED:
         # Daily check at 03:00 UTC — reads sync_settings to decide what to run
@@ -272,6 +334,15 @@ def start_scheduler() -> None:
         _run_b2b_auto_delivery,
         trigger=CronTrigger(hour=4, minute=30),
         id="b2b_auto_delivery",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    # Audit retention — always registered, since the audit trail is written
+    # regardless of whether Stripe or the scraper are configured.
+    _scheduler.add_job(
+        _run_admin_audit_retention,
+        trigger=CronTrigger(hour=5, minute=0),
+        id="admin_audit_retention",
         replace_existing=True,
         misfire_grace_time=3600,
     )
