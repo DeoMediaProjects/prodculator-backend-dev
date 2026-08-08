@@ -36,6 +36,8 @@ from app.modules.reports.helpers import (
     currency_symbol,
     parse_money_string,
     clean_source,
+    resolve_payment_timing,
+    resolve_schedule,
 )
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -416,12 +418,13 @@ class ReportBuilder:
                 ),
             }
 
-            # Payment speed from DB
-            timeline_notes = best.get("payment_timeline_notes")
-            if timeline_notes:
-                loc["paymentSpeed"] = timeline_notes
-            else:
-                loc["paymentSpeed"] = "Data not available"
+            # Canonical payment timing. Reading payment_timeline_notes alone
+            # reported "Data not available" for every programme that recorded its
+            # window numerically and left the note blank.
+            loc["paymentTiming"] = resolve_payment_timing(
+                best, self._get_territory_profile(territory),
+            )
+            loc["paymentSpeed"] = loc["paymentTiming"]["label"]
 
             # Zero-rate guard
             if is_zero_rate(best.get("rate_gross"), best.get("rate_net")):
@@ -791,9 +794,11 @@ class ReportBuilder:
             if canonical_cap is not None:
                 est["cap"] = canonical_cap
 
-        # Payment timeline
-        timeline_notes = db_row.get("payment_timeline_notes")
-        est["paymentSpeed"] = timeline_notes or "Data not available"
+        # Payment timeline, from the one canonical resolver.
+        est["paymentTiming"] = resolve_payment_timing(
+            db_row, self._get_territory_profile(territory),
+        )
+        est["paymentSpeed"] = est["paymentTiming"]["label"]
 
         # Qualifying spend
         qs_min = db_row.get("qualifying_spend_min")
@@ -1207,23 +1212,36 @@ class ReportBuilder:
     def _build_payment_timing(self, territories: list[str]) -> list[dict]:
         """Certification / payment receipt windows per ranked territory.
 
-        Sourced from territory_profiles bankability columns (weeks). Entries
-        with no timing data are omitted — an empty window is not rendered as
-        a confident bar.
+        The window itself comes from ``resolve_payment_timing``, the same
+        canonical value the territory card, incentive table and executive summary
+        render, so this chart can no longer contradict them. The certification
+        and payment weeks are still carried for the bar breakdown, which is the
+        only thing they are used for. Entries with no verified window are
+        omitted: an empty range is not rendered as a confident bar.
         """
         timing: list[dict] = []
         for territory in territories:
             profile = self._get_territory_profile(territory)
-            if not profile:
+            rows = self._territory_incentives.get(territory, [])
+            best = best_incentive(rows, self._production_format) if rows else {}
+            canonical = resolve_payment_timing(best, profile)
+            if canonical["minMonths"] is None:
+                # No verified window. An empty range is not rendered as a
+                # confident bar, and a bar is the only thing this chart says.
                 continue
+            profile = profile or {}
             cert_min = to_float(profile.get("cert_weeks_min"))
             cert_max = to_float(profile.get("cert_weeks_max"))
             pay_min = to_float(profile.get("payment_weeks_min"))
             pay_max = to_float(profile.get("payment_weeks_max"))
-            if cert_max is None and pay_max is None:
-                continue
             timing.append({
                 "territory": territory,
+                # The canonical window and its rendered label, so the chart and
+                # the territory card cannot disagree.
+                "paymentTiming": canonical,
+                "label": canonical["label"],
+                "minMonths": canonical["minMonths"],
+                "maxMonths": canonical["maxMonths"],
                 "certWeeksMin": cert_min,
                 "certWeeksMax": cert_max,
                 "paymentWeeksMin": pay_min,
@@ -1256,10 +1274,9 @@ class ReportBuilder:
             rows = self._territory_incentives.get(top, [])
             if rows:
                 best = best_incentive(rows, self._production_format)
-                timeline_notes = best.get("payment_timeline_notes")
-                summary["recommendedTerritoryPaymentSpeed"] = (
-                    timeline_notes or "Data not available"
-                )
+                summary["recommendedTerritoryPaymentSpeed"] = resolve_payment_timing(
+                    best, self._get_territory_profile(top),
+                )["label"]
 
             # Pre-computed financial headline
             tf = self._territory_financials.get(top)
@@ -1270,10 +1287,19 @@ class ReportBuilder:
                 )
                 summary["headlineNetBudget"] = tf.get("headline_net_budget")
 
-        # Shoot days (authoritative from user input)
-        shoot_weeks = self.datasets.get("_shoot_weeks")
-        if shoot_weeks and shoot_weeks > 0:
-            summary["shootDays"] = shoot_weeks
+        # Canonical schedule. This field was named shootDays but held weeks, and
+        # the template printed it as "N wk shoot", so the two schedule figures in
+        # the report had no stated relationship to each other.
+        script_days = None
+        stats = self._build_script_intelligence() or {}
+        if isinstance(stats, dict):
+            script_days = stats.get("estShootingDays")
+        schedule = resolve_schedule(self.datasets.get("_shoot_weeks"), script_days)
+        summary["schedule"] = schedule
+        summary["shootWeeks"] = schedule["shootWeeks"]
+        # Retained under its historical name for the Excel export and any stored
+        # report still being read by an older client. Same value, correct type.
+        summary["shootDays"] = schedule["shootWeeks"]
 
         # Production format
         if self._production_format:
@@ -2060,9 +2086,11 @@ class ReportBuilder:
                 "adminComplexity": best.get("admin_complexity") or "Medium",
             }
 
-            # Payment speed
-            timeline_notes = best.get("payment_timeline_notes")
-            dive["paymentSpeed"] = timeline_notes or "Data not available"
+            # Payment timing, same canonical value as the card and the table.
+            dive["paymentTiming"] = resolve_payment_timing(
+                best, self._get_territory_profile(territory),
+            )
+            dive["paymentSpeed"] = dive["paymentTiming"]["label"]
 
             dives.append(dive)
 

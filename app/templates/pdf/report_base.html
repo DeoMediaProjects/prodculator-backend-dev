@@ -447,7 +447,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% if es.format or report.genre %}<div class="idc"><div class="k">Format</div><div class="v">{{ es.format or '' }}{% if es.format and report.genre %} · {% endif %}{{ report.genre or '' }}</div></div>{% endif %}
     {% if report.tone %}<div class="idc"><div class="k">Tone</div><div class="v">{{ report.tone }}</div></div>{% endif %}
     {% if report.scale or es.budget %}<div class="idc"><div class="k">Scale</div><div class="v">{{ report.scale or '' }}{% if report.scale and es.budget %} · {% endif %}{{ es.budget or '' }}</div></div>{% endif %}
-    {% if report.complexity %}<div class="idc"><div class="k">Complexity</div><div class="v">{{ report.complexity }}{% if es.shootDays %} · {{ es.shootDays }} wk shoot{% endif %}</div></div>{% endif %}
+    {% if report.complexity %}<div class="idc"><div class="k">Complexity</div><div class="v">{{ report.complexity }}{% if es.schedule and es.schedule.shootWeeks %} · {{ es.schedule.shootWeeks }} wk shoot{% if es.schedule.weeksSource == 'declared' %} (planned){% endif %}{% elif es.shootWeeks %} · {{ es.shootWeeks }} wk shoot{% endif %}</div></div>{% endif %}
   </div>
 
   {% if es.keyInsights %}
@@ -531,7 +531,11 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         {% if si and si.sceneCount %}<tr><td>Scene count</td><td>{{ si.sceneCount }}</td></tr>{% endif %}
         {% if si and si.interiorPct is not none %}<tr><td>Interior / Exterior</td><td>{{ si.interiorPct }}% / {{ si.exteriorPct }}%</td></tr>{% endif %}
         {% if si and si.dayScenes is not none %}<tr><td>Day / Night</td><td>{{ si.dayScenes }} day · {{ si.nightScenes or 0 }} night{% if si.otherScenes %} · {{ si.otherScenes }} other{% endif %}</td></tr>{% endif %}
-        {% if si and si.estShootingDays %}<tr><td>Est. shooting days</td><td>{{ si.estShootingDays }}</td></tr>{% endif %}
+        {# Labelled as the script's own estimate, and reconciled against the
+           producer's planned duration when the two differ. Presented bare, "14"
+           beside an "8 wk shoot" elsewhere reads as a contradiction rather than
+           as two different facts. #}
+        {% if si and si.estShootingDays %}<tr><td>Est. shooting days, from the script</td><td>{{ si.estShootingDays }}{% if es.schedule and es.schedule.divergent %} <span style="font-weight:500;color:var(--grey)">(about {{ es.schedule.impliedWeeks }} wk; you planned {{ es.schedule.shootWeeks }})</span>{% endif %}</td></tr>{% endif %}
         {% if si and si.principalCast %}<tr><td>Principal cast</td><td>{{ si.principalCast }}</td></tr>{% endif %}
         {% if si and si.crowdScenes %}<tr><td>Crowd scenes</td><td>{{ si.crowdScenes }} scenes</td></tr>{% endif %}
         {% if si and si.languages %}<tr><td>Languages</td><td>{{ si.languages | join(', ') }}</td></tr>{% endif %}
@@ -605,7 +609,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {% endif %}
   {% endif %}
 
-  {% for loc in rankings[:3] %}
+  {% for loc in rankings[:1] %}
   {% if loop.first %}
   <div class="tcard">
     <div class="tcard-head">
@@ -647,7 +651,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 
   {% if rankings | length > 1 %}
   <div class="minicards">
-    {% for loc in rankings[1:3] %}
+    {% for loc in rankings[1:] %}
     <div class="minicard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><div class="rank">Nº {{ loop.index + 1 }}</div><h4>{{ loc.name }}</h4></div>
@@ -693,7 +697,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {% if descriptions_only %}
   {{ section_desc('deepdives') }}
   {% else %}
-  {% for dd in report.territoryDeepDives[:3] %}
+  {% for dd in report.territoryDeepDives %}
   <div class="tcard">
     <div class="tcard-head">
       <div><div class="rank">{{ dd.country }}</div><h3>{{ dd.name }}</h3></div>
@@ -798,29 +802,32 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% if timing %}
     <div>
       <div class="h5label">When the money arrives — payment timing</div>
-      {% set entries = timing[:4] %}
-      {% set max_weeks = entries | map(attribute='totalWeeksMax') | select() | list %}
-      {% set scale_max = (max_weeks | max) if max_weeks else 52 %}
-      {% set scale_max = [scale_max, 26] | max %}
+      {# Months come from the canonical paymentTiming resolver, not recomputed
+         from weeks here: the old arithmetic was a second, divergent source and
+         it rendered equal bounds as "12-12 MO". The label is resolved once and
+         is the same string the territory card and incentive table print. #}
+      {% set entries = timing %}
+      {% set month_maxes = entries | map(attribute='maxMonths') | select() | list %}
+      {% set scale_max = [((month_maxes | max) if month_maxes else 12), 6] | max %}
       <svg viewBox="0 0 300 {{ 24 + entries | length * 28 }}" style="width:100%" xmlns="http://www.w3.org/2000/svg">
         {% set chart_x = 78 %}{% set chart_w = 214 %}
         {% for entry in entries %}
         {% set y0 = 10 + loop.index0 * 28 %}
         <text x="2" y="{{ y0 + 10 }}" font-family="Montserrat" font-size="9" font-weight="700" fill="#141414">{{ entry.territory | truncate(11, true, '…') }}</text>
-        {% if entry.totalWeeksMax %}
-        {% set bx = chart_x + chart_w * (entry.totalWeeksMin or 0) / scale_max %}
-        {% set bw2 = chart_w * ((entry.totalWeeksMax - (entry.totalWeeksMin or 0)) or 2) / scale_max %}
+        {% if entry.maxMonths %}
+        {% set bx = chart_x + chart_w * (entry.minMonths or 0) / scale_max %}
+        {% set bw2 = chart_w * ((entry.maxMonths - (entry.minMonths or 0)) or 0.5) / scale_max %}
         <rect x="{{ '%.0f' | format(bx) }}" y="{{ y0 }}" width="{{ '%.0f' | format([bw2, 4] | max) }}" height="13" rx="1"
-              fill="{{ '#B3402E' if entry.suspended else ('#2E7D4F' if entry.totalWeeksMax <= 26 else '#B87A1F') }}"/>
-        <text x="{{ '%.0f' | format(bx + 4) }}" y="{{ y0 + 10 }}" font-family="Montserrat" font-size="7" font-weight="700" fill="#FDFCFA">{{ '%.0f' | format((entry.totalWeeksMin or 0) / 4.345) }}–{{ '%.0f' | format(entry.totalWeeksMax / 4.345) }} MO</text>
+              fill="{{ '#B3402E' if entry.suspended else ('#2E7D4F' if entry.maxMonths <= 6 else '#B87A1F') }}"/>
+        <text x="{{ '%.0f' | format(bx + 4) }}" y="{{ y0 + 10 }}" font-family="Montserrat" font-size="7" font-weight="700" fill="#FDFCFA">{{ entry.label | upper }}</text>
         {% endif %}
         {% endfor %}
         {% set axis_y = 16 + entries | length * 28 %}
         <line x1="{{ chart_x }}" y1="{{ axis_y - 6 }}" x2="{{ chart_x + chart_w }}" y2="{{ axis_y - 6 }}" stroke="#E7E3DA"/>
         <g font-family="Montserrat" font-size="7.5" fill="#6E6A61" font-weight="600">
           <text x="{{ chart_x }}" y="{{ axis_y + 4 }}">0</text>
-          <text x="{{ chart_x + chart_w * 0.5 }}" y="{{ axis_y + 4 }}" text-anchor="middle">{{ '%.0f' | format(scale_max / 2 / 4.345) }}mo</text>
-          <text x="{{ chart_x + chart_w }}" y="{{ axis_y + 4 }}" text-anchor="end">{{ '%.0f' | format(scale_max / 4.345) }}mo</text>
+          <text x="{{ chart_x + chart_w * 0.5 }}" y="{{ axis_y + 4 }}" text-anchor="middle">{{ '%.0f' | format(scale_max / 2) }}mo</text>
+          <text x="{{ chart_x + chart_w }}" y="{{ axis_y + 4 }}" text-anchor="end">{{ scale_max }}mo</text>
         </g>
       </svg>
       <p style="font-size:9.5px;color:var(--grey);font-weight:500;margin-top:6px;line-height:1.5">Indicative certification-to-cash windows after completion, per programme terms and verified payment-timing data.</p>
@@ -951,7 +958,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {% if descriptions_only %}
   {{ section_desc('weather') }}
   {% else %}
-  {% for w in report.weatherLogistics[:4] %}
+  {% for w in report.weatherLogistics %}
   <div class="fcard">
     <div class="fcard-top">
       <div>

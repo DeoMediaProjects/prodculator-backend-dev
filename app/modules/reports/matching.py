@@ -38,7 +38,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from app.core.regions import (
+from app.core.regions import (
     AFRICA,
     ASIA,
     CENTRAL_ASIA,
@@ -52,6 +52,7 @@ from app.core.regions import (
     regions_for_territories,
     satisfies,
 )
+from app.modules.reports.helpers import DEFAULT_SHOOT_DAYS_PER_WEEK
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,9 @@ def estimate_completion_date(
         shoot_weeks = filming_duration_weeks
         source = "user-declared duration"
     elif estimated_shoot_days is not None:
-        shoot_weeks = estimated_shoot_days / 5.5
+        # Shared divisor: this used 5.5 while the report service used 5, so the
+        # same script produced two different shoot lengths by code path.
+        shoot_weeks = estimated_shoot_days / DEFAULT_SHOOT_DAYS_PER_WEEK
         source = "AI-estimated shoot days (fallback — no user duration supplied)"
     else:
         raise ValueError(
