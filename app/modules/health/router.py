@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.concurrency import run_in_threadpool
@@ -105,18 +106,44 @@ async def list_territories(
         .execute()
         .data or []
     )
+    return _territory_rows_to_options(rows, include_all=include_all)
 
+
+def _territory_rows_to_options(
+    rows: list[dict[str, Any]],
+    *,
+    include_all: bool = False,
+) -> list[dict[str, Any]]:
+    """Classify ``incentive_programs`` *rows* into territory picker options.
+
+    Pure, so the classification can be tested without a database.
+    """
     # Collect distinct territories with at least one active non-supplementary row.
     # Mirrors the service's active-row logic: status = 'active', '' (empty), or NULL.
+    #
+    # A second set is collected from the same rows: territories that DO hold a
+    # programme record, but not one whose bankability can be confirmed today
+    # (suspended, or awaiting admin verification). "No incentive at all" and "an
+    # incentive we cannot vouch for" are different facts, and one boolean told a
+    # producer the same thing about a suspended programme as about a territory
+    # that has never had one.
     covered: set[str] = set()
+    unconfirmed: set[str] = set()
     for r in rows:
         label = r.get("territory")
         if not label:
             continue
         status = (r.get("status") or "").lower()
-        if status not in ("active", ""):
-            continue
         if r.get("is_supplementary"):
+            # Supplementary uplifts stack onto a primary programme and are never
+            # a standalone selection, so they say nothing about this question.
+            continue
+        if status not in ("active", ""):
+            if status != "no_programme":
+                unconfirmed.add(label)
+                parent = resolve_territory(label)
+                if parent and parent.parent:
+                    unconfirmed.add(parent.parent.label)
             continue
         covered.add(label)
         # Also surface the parent country so users can select e.g. "United States"
@@ -153,6 +180,18 @@ async def list_territories(
             # Additive, so existing consumers are unaffected. False means the
             # territory is selectable but carries no bankable incentive today.
             "hasActiveIncentive": label in covered,
+            # Three-state, because the boolean above cannot tell a suspended or
+            # unverified programme apart from no programme at all:
+            #   active       a bankable incentive can be modelled
+            #   unconfirmed  a programme exists, its bankability is not confirmed
+            #   none         no programme on record
+            # Coverage wins: a country with one active programme and one suspended
+            # one has something bankable to model, whatever else is on its record.
+            "incentiveStatus": (
+                "active" if label in covered
+                else "unconfirmed" if label in unconfirmed
+                else "none"
+            ),
         })
 
     return result
