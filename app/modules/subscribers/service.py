@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.database_client import DatabaseClient
+from app.core.timestamps import is_on_or_after
 from app.modules.payments.plan_catalog import list_price_usd_cents
 
 PLAN_DISPLAY_NAMES: dict[str, str] = {
@@ -243,8 +244,11 @@ class SubscriberAdminService:
             uid = r.get("user_id")
             if uid:
                 total_reports_by_user[uid] += 1
-                created = r.get("created_at", "")
-                if created >= start_of_month.isoformat():
+                # Compared as datetimes, not against an ISO string. Postgres
+                # returns created_at as a datetime and SQLite as a string, so the
+                # string comparison worked in tests and raised TypeError in
+                # production, taking the whole listing down with it.
+                if is_on_or_after(r.get("created_at"), start_of_month):
                     month_reports_by_user[uid] += 1
 
         items = []

@@ -209,9 +209,17 @@ class AdminService:
         tasks: list[dict[str, Any]] = []
         stale_threshold = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
 
+        # Table names come from the owning services rather than being retyped
+        # here. They were "incentives" and "grants"; the real tables are
+        # incentive_programs and grant_opportunities, so both checks raised
+        # NoSuchTableError on every call, were swallowed by the except below, and
+        # the dashboard reported "Every dataset is current" having checked nothing.
+        from app.modules.grants.service import _TABLE as GRANTS_TABLE
+        from app.modules.incentives.service import _TABLE as INCENTIVES_TABLE
+
         checks: list[tuple[str, str, str, str]] = [
-            ("incentives", "Review and update incentive data", "high", "This week"),
-            ("grants", "Sync grants database", "low", "Next week"),
+            (INCENTIVES_TABLE, "Review and update incentive data", "high", "This week"),
+            (GRANTS_TABLE, "Sync grants database", "low", "Next week"),
         ]
 
         for table, task_label, priority, due in checks:
@@ -229,8 +237,17 @@ class AdminService:
                     tasks.append({"task": task_label, "priority": priority, "due": due})
             except Exception:
                 logger.warning(
-                    "Derived-task staleness check failed for %s; skipping", table, exc_info=True
+                    "Derived-task staleness check failed for %s", table, exc_info=True
                 )
+                # Surfaced as a task rather than skipped. Silently dropping the
+                # check made the dashboard say every dataset was current when it
+                # had established nothing, which is the failure mode this panel
+                # exists to prevent.
+                tasks.append({
+                    "task": f"Could not check freshness of {table}",
+                    "priority": "high",
+                    "due": "Needs attention",
+                })
 
         return tasks
 

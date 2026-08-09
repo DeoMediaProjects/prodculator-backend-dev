@@ -307,3 +307,37 @@ def test_a_clean_listing_reports_nothing_unreadable(client):
     response = client.get("/api/admin/subscribers", headers=HEADERS)
     assert response.status_code == 200
     assert response.json()["unreadable"] == 0
+
+
+def test_listing_survives_datetime_timestamps_from_the_driver(client):
+    """The production 500, reproduced through the endpoint.
+
+    Postgres returns reports.created_at as a datetime; SQLite returns a string.
+    The month-bucketing comparison was written against the string form, so this
+    exact request raised TypeError in production and returned no subscribers at
+    all while the database held twenty-two.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    fake = _setup(client)
+    now = datetime.now(timezone.utc)
+    this_month = now.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
+    last_month = this_month - timedelta(days=40)
+
+    # Native datetime objects, exactly as the Postgres driver hands them back.
+    fake.store["reports"].append(
+        {"id": "r-dt-1", "user_id": "u1", "created_at": this_month, "report_type": "paid"}
+    )
+    fake.store["reports"].append(
+        {"id": "r-dt-2", "user_id": "u1", "created_at": last_month, "report_type": "paid"}
+    )
+
+    response = client.get("/api/admin/subscribers", headers=HEADERS)
+    assert response.status_code == 200
+
+    by_id = {item["id"]: item for item in response.json()["items"]}
+    assert "u1" in by_id
+    # Both datetime rows count toward the all-time total; only the in-month one
+    # counts toward this month, so the comparison is doing real work.
+    assert by_id["u1"]["total_reports_generated"] >= 2
+    assert by_id["u1"]["reports_this_month"] >= 1
