@@ -44,6 +44,10 @@ from app.modules.reports.format_eligibility import (
     any_unverified_for_format,
     evaluate_format_eligibility,
 )
+from app.modules.reports.programme_eligibility import (
+    any_unavailable,
+    evaluate_programme_eligibility,
+)
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
     compute_financial_readiness,
@@ -169,14 +173,6 @@ class ReportBuilder:
         )
         self._territory_financials: dict = datasets.get("_territory_financials") or {}
         self._production_format: str | None = datasets.get("_production_format")
-        # Facts a `conditional` programme's rule may test. Only what the platform
-        # actually collects goes in here: a condition it cannot answer must report
-        # as needing confirmation rather than be settled against a guess.
-        self._format_project_facts: dict = {
-            "format": datasets.get("_production_format"),
-            "runtime_minutes": datasets.get("_runtime_minutes"),
-            "budget_gbp": datasets.get("_budget_gbp"),
-        }
         self._production_priority: str = datasets.get("_production_priority", "full")
         self._currency_scores: dict | None = datasets.get("_currency_advantage_scores")
         self._territory_profiles: dict = datasets.get("_territory_profiles") or {}
@@ -187,6 +183,30 @@ class ReportBuilder:
             budget_gbp_data.get("converted")
             if isinstance(budget_gbp_data, dict) else None
         )
+        # Facts the eligibility gates test a programme against. Only what the
+        # platform actually collects goes in here: a gate it cannot answer must
+        # report as untested rather than be settled against a guess.
+        #
+        # Built after the budget is parsed, because `_budget_gbp` arrives as a dict
+        # and the gates need the scalar. Passing the dict made every budget-based
+        # gate silently untestable, which is exactly the failure mode this whole
+        # module is meant to remove.
+        self._project_facts: dict = {
+            "format": datasets.get("_production_format"),
+            "runtime_minutes": datasets.get("_runtime_minutes"),
+            "budget_gbp": self._budget_gbp,
+            # The service copies these across from request_metadata; reading the
+            # metadata as a fallback means the expiry gate does not quietly become
+            # untestable if that copy is ever dropped.
+            "completion_date": (
+                datasets.get("_completion_date")
+                or request_metadata.get("completion_date")
+            ),
+            "filming_start_date": (
+                datasets.get("_filming_start_date")
+                or request_metadata.get("filming_start_date")
+            ),
+        }
         self._budget_currency: str = datasets.get("_budget_currency", "GBP")
         self._budget_original_amount: float | None = datasets.get("_budget_amount")
         self._fx_rates_from_budget: dict = datasets.get("_fx_rates_from_budget") or {}
@@ -218,6 +238,7 @@ class ReportBuilder:
             # vouch for, so the PDF carries the same caveat the wizard showed
             # rather than the warning living only at intake.
             "formatEligibilityCaveat": self._format_eligibility_caveat(),
+            "programmeAvailabilityCaveat": self._programme_availability_caveat(),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -386,7 +407,7 @@ class ReportBuilder:
             if not rows:
                 continue
 
-            best = best_incentive(rows, self._production_format, self._format_project_facts)
+            best = best_incentive(rows, self._production_format, self._project_facts)
             effective_rate = format_rate(best.get("rate_gross"), best.get("rate_net"))
 
             # Cost efficiency: curated territory_profiles score (crew day-rate
@@ -648,6 +669,30 @@ class ReportBuilder:
 
     # ── Incentive Estimates ────────────────────────────────────────────────
 
+    def _programme_availability_caveat(self) -> str | None:
+        """Blanket caveat, raised only while some programme fails its own thresholds.
+
+        Driven by the data like the format caveat, so it retires itself rather than
+        becoming permanent furniture. Deliberately separate from the format caveat:
+        "this programme does not take shorts" and "your budget is below this
+        programme's floor" are different problems with different remedies, and
+        merging them into one warning would make both vaguer.
+        """
+        rows = [r for rows in self._territory_incentives.values() for r in rows]
+        if not any_unavailable(rows, self._project_facts):
+            return None
+        return (
+            "Some programmes in this report are not available to this production at "
+            "its current budget, or their availability could not be established. "
+            "Where a programme is marked not available, its stated minimum "
+            "qualifying spend, budget ceiling or programme status rules this "
+            "production out, and no rebate figure is shown for it because there is "
+            "no figure it could claim. The territory is still listed, because its "
+            "locations, crew and currency may remain relevant. Confirm any "
+            "threshold with the programme administrator before ruling a territory "
+            "in or out on the strength of this report."
+        )
+
     def _format_eligibility_caveat(self) -> str | None:
         """Blanket caveat, raised only while some programme in this report is unverified.
 
@@ -659,7 +704,7 @@ class ReportBuilder:
             return None
         rows = [r for rows in self._territory_incentives.values() for r in rows]
         if not any_unverified_for_format(
-            rows, self._production_format, self._format_project_facts
+            rows, self._production_format, self._project_facts
         ):
             return None
         label = (self._production_format or "").strip().lower()
@@ -682,7 +727,7 @@ class ReportBuilder:
             if not rows:
                 continue
 
-            best = best_incentive(rows, self._production_format, self._format_project_facts)
+            best = best_incentive(rows, self._production_format, self._project_facts)
             program_name = prog_name(best)
             if not program_name:
                 continue
@@ -845,12 +890,31 @@ class ReportBuilder:
         # web report and the PDF cannot disagree about whether this programme
         # accepts the production's format.
         eligibility = evaluate_format_eligibility(
-            db_row, self._production_format, self._format_project_facts,
+            db_row, self._production_format, self._project_facts,
         )
         est["formatEligibility"] = eligibility
         # An unconfirmed programme must not present its rebate as an amount the
         # production can count on. The figure stays visible, labelled.
         est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+
+        # Whether the production clears this programme's own stated thresholds:
+        # minimum qualifying spend, budget ceiling, expiry, status. A blunter
+        # question than format, and until now an unasked one, which is how a
+        # programme with a $1,000,000 floor came to be ranked second and quoted a
+        # rebate on a $61,780 qualifying spend.
+        availability = evaluate_programme_eligibility(db_row, self._project_facts)
+        est["programmeEligibility"] = availability
+        if not availability["available"]:
+            # Ranking and the executive summary read this to keep an unusable
+            # programme below every usable one.
+            est["incentiveStrength"] = 0
+            # The figure is withdrawn rather than footnoted. A number a producer
+            # cannot claim is worse than no number: it anchors the financing plan
+            # and survives being copied out of the report into a budget document,
+            # where the caveat does not travel with it. The rate stays, because the
+            # rate is a true fact about the programme.
+            est["estimatedRebateWithheld"] = est.get("estimatedRebate")
+            est["estimatedRebate"] = availability["label"]
 
         # Qualifying spend
         qs_min = db_row.get("qualifying_spend_min")
@@ -1275,7 +1339,7 @@ class ReportBuilder:
         for territory in territories:
             profile = self._get_territory_profile(territory)
             rows = self._territory_incentives.get(territory, [])
-            best = best_incentive(rows, self._production_format, self._format_project_facts) if rows else {}
+            best = best_incentive(rows, self._production_format, self._project_facts) if rows else {}
             canonical = resolve_payment_timing(best, profile)
             if canonical["minMonths"] is None:
                 # No verified window. An empty range is not rendered as a
@@ -1325,7 +1389,7 @@ class ReportBuilder:
             top = territories[0]
             rows = self._territory_incentives.get(top, [])
             if rows:
-                best = best_incentive(rows, self._production_format, self._format_project_facts)
+                best = best_incentive(rows, self._production_format, self._project_facts)
                 summary["recommendedTerritoryPaymentSpeed"] = resolve_payment_timing(
                     best, self._get_territory_profile(top),
                 )["label"]
@@ -2072,7 +2136,7 @@ class ReportBuilder:
 
         # Incentive reality for the origin
         rows = self._territory_incentives.get(origin_label, [])
-        best = best_incentive(rows, self._production_format, self._format_project_facts) if rows else {}
+        best = best_incentive(rows, self._production_format, self._project_facts) if rows else {}
         has_programme = bool(rows) and (best.get("status") or "").lower() == "active" \
             and not is_zero_rate(best.get("rate_gross"), best.get("rate_net"))
 
@@ -2101,7 +2165,7 @@ class ReportBuilder:
             if not rows:
                 continue
 
-            best = best_incentive(rows, self._production_format, self._format_project_facts)
+            best = best_incentive(rows, self._production_format, self._project_facts)
 
             # Rebate rate string
             rebate_str = format_rate(
@@ -2539,6 +2603,27 @@ class ReportBuilder:
             )
 
     @staticmethod
+    def _unusable_territories(report: dict) -> set[str]:
+        """Territories whose modelled programme fails its own stated thresholds.
+
+        Read from ``incentiveEstimates``, which already carries the verdict, so the
+        ranking cannot disagree with the tax-incentive section about the same
+        programme. An estimate with no verdict is treated as usable: absent data must
+        not silently demote a territory.
+        """
+        unusable: set[str] = set()
+        estimates = report.get("incentiveEstimates")
+        if not isinstance(estimates, list):
+            return unusable
+        for est in estimates:
+            if not isinstance(est, dict):
+                continue
+            if (est.get("programmeEligibility") or {}).get("available") is False:
+                if est.get("territory"):
+                    unusable.add(est["territory"])
+        return unusable
+
+    @staticmethod
     def compute_overall_scores(
         report: dict,
         production_priority: str = "full",
@@ -2563,9 +2648,19 @@ class ReportBuilder:
 
             loc["score"] = ReportBuilder._weighted_score(loc, weights, weather_penalty)
 
-        # Sort by descending score
+        # An unusable programme's territory sorts below every usable one, whatever
+        # its score. Score alone put California second on a production whose entire
+        # budget was a seventeenth of California's stated minimum qualifying spend:
+        # the six scored dimensions measure how good a territory is, not whether this
+        # production can use its incentive at all, and no weighting of the former
+        # answers the latter. The territory keeps its score and its card, and states
+        # why it cannot be recommended.
+        unusable = ReportBuilder._unusable_territories(report)
         rankings.sort(
-            key=lambda loc: loc.get("score", 0) if isinstance(loc, dict) else 0,
+            key=lambda loc: (
+                0 if isinstance(loc, dict) and loc.get("name") in unusable else 1,
+                loc.get("score", 0) if isinstance(loc, dict) else 0,
+            ),
             reverse=True,
         )
 

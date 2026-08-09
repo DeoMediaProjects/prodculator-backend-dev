@@ -1002,6 +1002,15 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
            questions: can this production use the programme at all, and can a lender
            advance against it. Rendered from inc.formatEligibility, the same object
            the web report reads, so the two cannot disagree. #}
+        {# Availability comes first: it answers the blunter question of whether
+           this production can use the programme at all, and it is the one that
+           withdraws the figure rather than annotating it. #}
+        {% set pe = inc.programmeEligibility %}
+        {% if pe and pe.available is false %}
+        <span style="font-size:7.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;
+          {%- if pe.verdict == 'unavailable' %}background:#F7E6E3;color:#8E3323
+          {%- else %}background:#FBF1DE;color:#8A5A12{% endif %}">{{ pe.label }}</span>
+        {% endif %}
         {% set fe = inc.formatEligibility %}
         {% if fe and fe.verdict and fe.verdict != 'eligible' %}
         <span style="font-size:7.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;
@@ -1013,7 +1022,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       </div>
     </div>
     <div style="display:flex;gap:24px;font-size:10.5px;color:#3A382F;font-weight:500;padding:8px 0;border-top:1px solid var(--hairline)">
-      {% if inc.estimatedRebate %}
+      {# Suppressed entirely when the programme is unavailable: the chip above
+         already says so, and repeating it as a rebate value reads like a figure. #}
+      {% if inc.estimatedRebate and not (pe and pe.available is false) %}
       <span>
         <b>Est. rebate:</b> {{ inc.estimatedRebate }}
         {#- An unconfirmed programme's figure stays visible but never reads as an
@@ -1040,6 +1051,13 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% endif %}
     {# Programme-specific messaging. A restriction on one programme is stated on
        that programme, not raised as a warning over the whole report. #}
+    {# The threshold that rules this production out, with the arithmetic, so the
+       producer can check the exclusion rather than take it on trust. #}
+    {% if pe and pe.available is false and pe.explanation %}
+    <div style="margin-top:8px;font-size:10px;line-height:1.5;color:#3A382F;font-weight:500;border-left:2px solid #8E3323;padding-left:8px">
+      <b>Availability:</b> {{ pe.explanation }}
+    </div>
+    {% endif %}
     {% if fe and fe.verdict in ('needs_confirmation', 'ineligible') and fe.explanation %}
     <div style="margin-top:8px;font-size:10px;line-height:1.5;color:#3A382F;font-weight:500;border-left:2px solid #B87A1F;padding-left:8px">
       <b>Format:</b> {{ fe.explanation }}
@@ -1061,6 +1079,15 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
      so it retires itself once the eligibility data is populated. Styled as a
      warning rather than a footnote: it is the difference between a figure being an
      estimate and a figure being unavailable to this production at all. #}
+  {# Separate from the format caveat below on purpose: "does not take shorts" and
+     "your budget is under the floor" are different problems with different
+     remedies, and merging them would make both vaguer. #}
+  {% if report.programmeAvailabilityCaveat %}
+  <div style="margin-top:12px;border:1px solid #8E3323;border-left-width:3px;background:#FBF3F1;padding:11px 14px">
+    <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8E3323;margin-bottom:4px">Not available to this production</div>
+    <p style="font-size:10.5px;line-height:1.55;color:#3A382F;margin:0">{{ report.programmeAvailabilityCaveat }}</p>
+  </div>
+  {% endif %}
   {% if report.formatEligibilityCaveat %}
   <div style="margin-top:12px;border:1px solid #B87A1F;border-left-width:3px;background:#FBF6EC;padding:11px 14px">
     <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8A5A12;margin-bottom:4px">Confirm before you rely on these figures</div>

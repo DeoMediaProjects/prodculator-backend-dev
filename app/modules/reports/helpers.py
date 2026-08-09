@@ -219,6 +219,33 @@ def best_incentive(
             if verdict_rank(verdicts[id(r)]["verdict"]) == best_rank
         ]
 
+    # Prefer a programme this production can actually use over one it cannot.
+    #
+    # This band sits ABOVE format eligibility and rate, because it answers a blunter
+    # question: whether the production clears the programme's own stated thresholds
+    # at all. Before this, `qualifying_spend_min` was formatted into a display string
+    # in three separate modules and compared in none of them, so a programme whose
+    # floor was 17x the entire budget could be selected on the strength of its rate.
+    #
+    # Nothing is dropped, only demoted. The row still reaches the caller carrying its
+    # verdict, so a territory with one unusable programme keeps its place in the
+    # report and states why rather than vanishing from it.
+    from app.modules.reports.programme_eligibility import (
+        evaluate_programme_eligibility,
+        verdict_rank as programme_rank,
+    )
+
+    availability = {id(r): evaluate_programme_eligibility(r, project) for r in eligible}
+    best_availability = max(
+        programme_rank(availability[id(r)]["verdict"]) for r in eligible
+    )
+    usable = [
+        r for r in eligible
+        if programme_rank(availability[id(r)]["verdict"]) == best_availability
+    ]
+    if usable:
+        eligible = usable
+
     # Prefer universally-accessible rows over domestic-corp-only rows.
     foreign_accessible = [r for r in eligible if not is_domestic_corp_only(r)]
     if foreign_accessible:

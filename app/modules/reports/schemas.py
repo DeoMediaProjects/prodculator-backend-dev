@@ -225,6 +225,15 @@ class IncentiveEstimate(BaseModel):
     #: False when the verdict is unverified or needs confirmation, so no surface
     #: presents the rebate as an amount available to this production.
     rebateIsConfirmed: bool = True
+    #: Whether the production clears this programme's own stated thresholds:
+    #: minimum qualifying spend, budget ceiling, expiry, status. Carries the
+    #: verdict, a label, and one ``reasons`` entry per gate with the arithmetic
+    #: spelled out, so an exclusion can be checked rather than merely asserted.
+    programmeEligibility: dict[str, Any] | None = None
+    #: The rebate figure that would have been quoted had the programme been
+    #: available. Retained for audit; never rendered as an amount, because a figure
+    #: this production cannot claim outlives the caveat attached to it.
+    estimatedRebateWithheld: str | None = None
     #: Canonical window from ``resolve_payment_timing``; ``paymentSpeed`` is
     #: its rendered label. Every section reads this one object.
     paymentTiming: dict[str, Any] | None = None
@@ -545,6 +554,7 @@ class ScriptAnalysis(BaseModel):
     #: data does not record (today: short films). None when the default
     #: assumption is safe, or once applicable_formats is populated.
     formatEligibilityCaveat: str | None = None
+    programmeAvailabilityCaveat: str | None = None
     scriptStats: ScriptIntelligence | None = None  # parsed stats (scriptIntelligence is the AI-narrative key)
     festivalRecommendations: list[FestivalRecommendation] | None = None
     distributorRecommendations: list[DistributorRecommendation] | None = None
