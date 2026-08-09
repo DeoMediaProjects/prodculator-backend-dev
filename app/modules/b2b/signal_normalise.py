@@ -12,33 +12,15 @@ from __future__ import annotations
 from typing import Any
 
 # --- Format canonicalisation (R-10) -----------------------------------------
-# Every display/legacy label a script may arrive with -> one canonical value.
-FORMAT_MAP: dict[str, str] = {
-    "feature film": "feature",
-    "feature": "feature",
-    "short": "short",
-    "short film": "short",
-    "documentary": "documentary",
-    "docuseries": "documentary",
-    "tv series": "tv_series",
-    "tv pilot": "tv_series",
-    "tv": "tv_series",
-    "limited series": "tv_series",
-    "mini-series": "tv_series",
-    "mini series": "tv_series",
-    "series": "tv_series",
-    "animation": "animation",
-    "animated feature": "animation",
-    "animation series": "animation",
-}
-
-FORMAT_DISPLAY: dict[str, str] = {
-    "feature": "Feature Film",
-    "short": "Short",
-    "documentary": "Documentary",
-    "tv_series": "TV / Series",
-    "animation": "Animation",
-}
+# The table moved to app.core.formats so incentive-programme format eligibility
+# reads the same vocabulary this writer stores. Re-exported under the original
+# names, so every existing import keeps working and there is still one table.
+from app.core.formats import (  # noqa: F401  (re-exported)
+    CANONICAL_FORMATS,
+    FORMAT_DISPLAY,
+    FORMAT_MAP,
+    canonical_format,
+)
 
 # Canonical genre list (lowercase). Anything outside maps through as-is lowercased,
 # so a new genre never silently disappears — it just forms its own segment.
@@ -67,15 +49,6 @@ BUDGET_BAND_DISPLAY: dict[str, str] = {
     "high": "High (£24m–£80m)",
     "tentpole": "Tentpole (£80m+)",
 }
-
-
-def canonical_format(value: Any) -> str | None:
-    if value is None:
-        return None
-    key = str(value).strip().lower()
-    if not key:
-        return None
-    return FORMAT_MAP.get(key, key.replace(" ", "_"))
 
 
 def canonical_genres(values: Any) -> list[str] | None:

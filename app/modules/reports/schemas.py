@@ -218,6 +218,13 @@ class IncentiveEstimate(BaseModel):
     programmeNote: str | None = None
     # Enriched data-integrity fields
     paymentSpeed: str | None = None           # payment_timeline_notes from dataset
+    #: Per-programme format eligibility from ``evaluate_format_eligibility``:
+    #: verdict, label, whitelist, condition, source and verified date. Rendered by
+    #: the web report and the PDF from this one object so they cannot disagree.
+    formatEligibility: dict[str, Any] | None = None
+    #: False when the verdict is unverified or needs confirmation, so no surface
+    #: presents the rebate as an amount available to this production.
+    rebateIsConfirmed: bool = True
     #: Canonical window from ``resolve_payment_timing``; ``paymentSpeed`` is
     #: its rendered label. Every section reads this one object.
     paymentTiming: dict[str, Any] | None = None
