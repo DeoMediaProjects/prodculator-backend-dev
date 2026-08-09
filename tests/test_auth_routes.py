@@ -46,7 +46,11 @@ class FakeAuthService:
     def resend_verification(self, **kwargs):
         return None
 
-    def update_password(self, **kwargs):
+    def update_password(self, current_password: str = "", **kwargs):
+        # Mirrors the real service closely enough to exercise the route contract:
+        # a wrong current password is a ValueError, not a generic failure.
+        if current_password != "OldPassword123!":
+            raise ValueError("Current password is incorrect.")
         return None
 
     def _token_response(self, user_type: str | None = None):
@@ -315,5 +319,65 @@ def test_resend_verification_rejects_invalid_email(client):
     response = client.post(
         "/api/auth/resend-verification",
         json={"email": "not-an-email"},
+    )
+    assert response.status_code == 422
+
+
+# ── change password ───────────────────────────────────────────────────────────
+
+def _as_signed_in(client):
+    client.app.dependency_overrides[get_auth_service] = lambda: FakeAuthService()
+
+
+def test_update_password_succeeds_with_the_current_password(client):
+    _as_signed_in(client)
+    response = client.post(
+        "/api/auth/update-password",
+        json={"current_password": "OldPassword123!", "new_password": "BrandNewPassword456!"},
+        headers={"Authorization": "Bearer access"},
+    )
+    assert response.status_code == 200
+
+
+def test_update_password_requires_the_current_password_field(client):
+    """Omitting it must fail schema validation rather than fall through to a change
+    authorised by the session alone."""
+    _as_signed_in(client)
+    response = client.post(
+        "/api/auth/update-password",
+        json={"new_password": "BrandNewPassword456!"},
+        headers={"Authorization": "Bearer access"},
+    )
+    assert response.status_code == 422
+
+
+def test_update_password_rejects_a_wrong_current_password_without_signing_the_user_out(client):
+    """400, not 401. A 401 makes the client's interceptor treat a typo as an expired
+    session and sign the user out mid-form."""
+    _as_signed_in(client)
+    response = client.post(
+        "/api/auth/update-password",
+        json={"current_password": "wrong", "new_password": "BrandNewPassword456!"},
+        headers={"Authorization": "Bearer access"},
+    )
+    assert response.status_code == 400
+    assert "Current password is incorrect" in response.json()["detail"]
+
+
+def test_update_password_requires_authentication(client):
+    _as_signed_in(client)
+    response = client.post(
+        "/api/auth/update-password",
+        json={"current_password": "OldPassword123!", "new_password": "BrandNewPassword456!"},
+    )
+    assert response.status_code == 401
+
+
+def test_update_password_enforces_a_minimum_length(client):
+    _as_signed_in(client)
+    response = client.post(
+        "/api/auth/update-password",
+        json={"current_password": "OldPassword123!", "new_password": "short"},
+        headers={"Authorization": "Bearer access"},
     )
     assert response.status_code == 422

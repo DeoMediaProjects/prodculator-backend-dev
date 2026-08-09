@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import Settings, get_settings
-from app.core.database_client import DatabaseClient
+from app.core.database_client import DatabaseClient, verify_password
 from app.core.security import (
     create_access_token,
     create_password_reset_token,
@@ -470,15 +470,46 @@ class AuthService:
             context={"name": data.get("name"), "verification_url": verification_url},
         )
 
-    def update_password(self, token: str, new_password: str) -> None:
-        """Update the user's password."""
+    def update_password(
+        self, token: str, new_password: str, current_password: str,
+    ) -> None:
+        """Change the password of the signed-in user, re-authenticating them first.
+
+        The access token proves a session exists, not that the person at the keyboard
+        is the account holder. Since changing the password is precisely what locks the
+        real owner out, this is the one action where the session alone must not be
+        enough: an unlocked laptop or a leaked token would otherwise be a silent
+        takeover. The current password is checked against the stored hash.
+        """
         user_response = self.supabase.auth.get_user(token)
         if not user_response or not user_response.user:
             raise ValueError("Invalid or expired token")
-        self.supabase.auth.admin.update_user_by_id(
-            user_response.user.id,
-            {"password": new_password},
+
+        user_id = user_response.user.id
+        result = (
+            self.supabase.table("users")
+            .select("id,password_hash")
+            .eq("id", user_id)
+            .single()
+            .execute()
         )
+        if not result.data:
+            raise ValueError("User not found.")
+
+        stored = (result.data or {}).get("password_hash")
+        if not stored:
+            # Google accounts have no password to verify against, so there is nothing
+            # to re-authenticate with. Setting one here would let anyone holding the
+            # session create a password login that did not exist before.
+            raise ValueError(
+                "This account signs in with Google and has no password to change."
+            )
+        if not verify_password(current_password, stored):
+            raise ValueError("Current password is incorrect.")
+        if verify_password(new_password, stored):
+            raise ValueError("New password must be different from the current one.")
+
+        self.supabase.auth.admin.update_user_by_id(user_id, {"password": new_password})
 
     async def refresh_session(self, refresh_token: str, redis_client: Any | None = None) -> TokenResponse:
         """Refresh an expired access token and rotate the refresh token."""
