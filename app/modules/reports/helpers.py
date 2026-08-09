@@ -103,6 +103,51 @@ def is_domestic_corp_only(r: dict) -> bool:
     return isinstance(nr, list) and bool(nr) and r.get("spv_eligible") is False
 
 
+# Formats whose incentive eligibility is materially different from a feature and
+# is NOT recorded anywhere in the programme data. ``applicable_formats`` exists on
+# incentive_programs and is read by ``best_incentive``, but it is NULL on every
+# row, and NULL means "applies to all formats". So a short film is currently
+# modelled against every programme as though each one accepted shorts.
+#
+# Short-form work is commonly excluded from production tax credits altogether and
+# supported instead by separate, smaller grant schemes with their own criteria.
+# Quoting a feature-scale rebate against a short without saying so overstates what
+# the production can claim, so the report carries the caveat until the eligibility
+# data exists to replace it.
+FORMATS_NEEDING_ELIGIBILITY_CHECK: frozenset[str] = frozenset({
+    "short",
+    "short film",
+})
+
+
+def needs_format_eligibility_check(production_format: str | None) -> bool:
+    """True when *production_format* is one the programme data cannot vouch for."""
+    if not production_format:
+        return False
+    return production_format.strip().lower() in FORMATS_NEEDING_ELIGIBILITY_CHECK
+
+
+def format_eligibility_is_recorded(rows: list[dict]) -> bool:
+    """True when any row actually states which formats it applies to.
+
+    Guards the caveat against becoming permanent furniture: once the eligibility
+    data is populated, this returns True and the report can rely on the filtering
+    in ``best_incentive`` instead of a blanket warning.
+    """
+    for r in rows or []:
+        af = r.get("applicable_formats")
+        if af is None:
+            continue
+        if isinstance(af, str):
+            try:
+                af = _json.loads(af)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(af, list) and af:
+            return True
+    return False
+
+
 def best_incentive(rows: list[dict], production_format: str | None = None) -> dict:
     """Pick the row with the highest rate_gross (fallback to rate_net).
 

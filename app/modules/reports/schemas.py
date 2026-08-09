@@ -100,6 +100,12 @@ class CreateReportRequest(BaseModel):
     # removed (consent withdrawal). Checkbox copy on the frontend is a marked
     # placeholder until the solicitor wording arrives.
     b2b_consent: bool = False
+    #: True when the production format is one whose incentive eligibility the
+    #: programme data does not record (today: short films) and the producer
+    #: confirmed at intake that they understand the rebate figures assume it.
+    #: Stored with the request because the report carries the same caveat, so the
+    #: acknowledgement and the disclosure can be evidenced together.
+    format_eligibility_acknowledged: bool | None = None
 
     # Producer eligibility (for nationality / co-production checks)
     producer_country: str | None = None  # Jurisdiction of production company (ISO code, e.g. "GB")
@@ -528,6 +534,10 @@ class ScriptAnalysis(BaseModel):
     # v3 additions
     sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated
     # PRO report redesign additions (all computed, None-safe)
+    #: Caveat for a production format whose incentive eligibility the programme
+    #: data does not record (today: short films). None when the default
+    #: assumption is safe, or once applicable_formats is populated.
+    formatEligibilityCaveat: str | None = None
     scriptStats: ScriptIntelligence | None = None  # parsed stats (scriptIntelligence is the AI-narrative key)
     festivalRecommendations: list[FestivalRecommendation] | None = None
     distributorRecommendations: list[DistributorRecommendation] | None = None

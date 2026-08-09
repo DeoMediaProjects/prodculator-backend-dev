@@ -38,6 +38,8 @@ from app.modules.reports.helpers import (
     clean_source,
     resolve_payment_timing,
     resolve_schedule,
+    format_eligibility_is_recorded,
+    needs_format_eligibility_check,
 )
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -201,6 +203,10 @@ class ReportBuilder:
             # Deterministic sections
             "locationRankings": location_rankings,
             "incentiveEstimates": self._build_incentive_estimates(territories),
+            # Set only when the production format is one the programme data cannot
+            # vouch for, so the PDF carries the same caveat the wizard showed
+            # rather than the warning living only at intake.
+            "formatEligibilityCaveat": self._format_eligibility_caveat(),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -630,6 +636,27 @@ class ReportBuilder:
         )
 
     # ── Incentive Estimates ────────────────────────────────────────────────
+
+    def _format_eligibility_caveat(self) -> str | None:
+        """Caveat for a production format the programme data cannot vouch for.
+
+        Returns None for formats where the default assumption is safe, and None
+        once the eligibility data is populated, so this cannot outlive the gap it
+        describes.
+        """
+        if not needs_format_eligibility_check(self._production_format):
+            return None
+        all_rows = [r for rows in self._territory_incentives.values() for r in rows]
+        if format_eligibility_is_recorded(all_rows):
+            return None
+        return (
+            f"Format eligibility not verified. Every rebate in this report is modelled as though "
+            f"the programme accepts a {self._production_format.lower()}, which our programme "
+            f"records do not currently confirm either way. Short-form work is frequently excluded "
+            f"from production tax credits and supported instead by separate grant schemes with "
+            f"their own criteria and much smaller awards. Confirm eligibility with each film "
+            f"commission before treating any figure here as available to this production."
+        )
 
     def _build_incentive_estimates(self, territories: list[str]) -> list[dict]:
         """Build fully deterministic incentiveEstimates from DB data."""

@@ -1019,6 +1019,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% if inc.stackingNote %}<div style="margin-top:6px;font-size:10px;color:var(--grey);font-weight:500">{{ inc.stackingNote }}</div>{% endif %}
   </div>
   {% endfor %}
+  {# Set only for a production format the programme data cannot vouch for. It sits
+     above the standard estimates line, and is styled as a warning rather than a
+     footnote, because it is the difference between a figure being an estimate and
+     a figure being unavailable to this production at all. #}
+  {% if report.formatEligibilityCaveat %}
+  <div style="margin-top:12px;border:1px solid #B87A1F;border-left-width:3px;background:#FBF6EC;padding:11px 14px">
+    <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8A5A12;margin-bottom:4px">Confirm before you rely on these figures</div>
+    <p style="font-size:10.5px;line-height:1.55;color:#3A382F;margin:0">{{ report.formatEligibilityCaveat }}</p>
+  </div>
+  {% endif %}
   <p class="disclaimer" style="margin-top:10px">Estimates only. Final eligibility depends on official approval by the relevant authorities.</p>
   {% endif %}
 </div>
