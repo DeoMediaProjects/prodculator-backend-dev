@@ -165,11 +165,14 @@ def test_b2b_checkout_is_independent_from_normal_subscription(client, auth_user,
 
 
 def test_b2b_checkout_refused_while_pricing_unfinalised(client, auth_user, monkeypatch):
-    """No client can buy at a placeholder price (SOW 4.5).
+    """No client can buy a product whose checkout is not open (SOW 4.5).
 
-    The catalogue ships with self_service off and pricing_status "coming_soon";
-    this pins the refusal so re-opening purchase has to be a deliberate edit
-    rather than something that drifts back on unnoticed.
+    Pins the refusal so re-opening purchase has to be a deliberate edit rather
+    than something that drifts back on unnoticed. Asserted against the guarantee
+    (self_service off, and not "listed") rather than one literal status string:
+    the catalogue has since moved these products from "coming_soon" to
+    "waitlist", which publishes an agreed price while checkout stays closed, and
+    a test pinned to the old label failed for a change that did not weaken it.
     """
     _clear_tables()
     settings = get_settings()
@@ -193,7 +196,14 @@ def test_b2b_checkout_refused_while_pricing_unfinalised(client, auth_user, monke
     # The fake only grows a `kwargs` attribute when it is called, so its absence
     # proves Stripe was never reached: no customer, no session, no charge.
     assert not hasattr(fake_stripe, "kwargs")
-    assert B2B_PRODUCTS["camera_equipment"]["pricing_status"] == "coming_soon"
+    camera = B2B_PRODUCTS["camera_equipment"]
+    assert camera["self_service"] is False
+    assert camera["pricing_status"] != "listed"
+    # Every product in the catalogue is closed to self-service today. If one is
+    # opened, that is the deliberate edit this test exists to force someone to make.
+    assert all(
+        p["self_service"] is False for p in B2B_PRODUCTS.values()
+    ), "a product was opened for self-service purchase"
     assert B2B_PRODUCTS["camera_equipment"]["self_service"] is False
 
 

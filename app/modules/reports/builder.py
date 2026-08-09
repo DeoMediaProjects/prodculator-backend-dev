@@ -39,6 +39,11 @@ from app.modules.reports.helpers import (
     resolve_payment_timing,
     resolve_schedule,
 )
+from app.modules.reports.format_eligibility import (
+    UNCONFIRMED_VERDICTS,
+    any_unverified_for_format,
+    evaluate_format_eligibility,
+)
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
     compute_financial_readiness,
@@ -164,6 +169,14 @@ class ReportBuilder:
         )
         self._territory_financials: dict = datasets.get("_territory_financials") or {}
         self._production_format: str | None = datasets.get("_production_format")
+        # Facts a `conditional` programme's rule may test. Only what the platform
+        # actually collects goes in here: a condition it cannot answer must report
+        # as needing confirmation rather than be settled against a guess.
+        self._format_project_facts: dict = {
+            "format": datasets.get("_production_format"),
+            "runtime_minutes": datasets.get("_runtime_minutes"),
+            "budget_gbp": datasets.get("_budget_gbp"),
+        }
         self._production_priority: str = datasets.get("_production_priority", "full")
         self._currency_scores: dict | None = datasets.get("_currency_advantage_scores")
         self._territory_profiles: dict = datasets.get("_territory_profiles") or {}
@@ -201,6 +214,10 @@ class ReportBuilder:
             # Deterministic sections
             "locationRankings": location_rankings,
             "incentiveEstimates": self._build_incentive_estimates(territories),
+            # Set only when the production format is one the programme data cannot
+            # vouch for, so the PDF carries the same caveat the wizard showed
+            # rather than the warning living only at intake.
+            "formatEligibilityCaveat": self._format_eligibility_caveat(),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -369,7 +386,7 @@ class ReportBuilder:
             if not rows:
                 continue
 
-            best = best_incentive(rows, self._production_format)
+            best = best_incentive(rows, self._production_format, self._format_project_facts)
             effective_rate = format_rate(best.get("rate_gross"), best.get("rate_net"))
 
             # Cost efficiency: curated territory_profiles score (crew day-rate
@@ -631,6 +648,30 @@ class ReportBuilder:
 
     # ── Incentive Estimates ────────────────────────────────────────────────
 
+    def _format_eligibility_caveat(self) -> str | None:
+        """Blanket caveat, raised only while some programme in this report is unverified.
+
+        Driven by the data rather than by the format alone, so it retires itself the
+        moment every programme in the report carries verified or settled eligibility.
+        A caveat that cannot switch off stops being read.
+        """
+        if not self._production_format:
+            return None
+        rows = [r for rows in self._territory_incentives.values() for r in rows]
+        if not any_unverified_for_format(
+            rows, self._production_format, self._format_project_facts
+        ):
+            return None
+        label = (self._production_format or "").strip().lower()
+        return (
+            f"Format eligibility is unverified for some programmes in this report. Where a "
+            f"programme is marked unverified below, we have not established whether it accepts "
+            f"a {label}, and its rebate is shown as an indication only rather than as an amount "
+            f"available to this production. Programmes marked eligible have been checked against "
+            f"the source shown. Confirm anything unverified with the programme administrator or "
+            f"film commission before relying on it."
+        )
+
     def _build_incentive_estimates(self, territories: list[str]) -> list[dict]:
         """Build fully deterministic incentiveEstimates from DB data."""
         estimates: list[dict] = []
@@ -641,7 +682,7 @@ class ReportBuilder:
             if not rows:
                 continue
 
-            best = best_incentive(rows, self._production_format)
+            best = best_incentive(rows, self._production_format, self._format_project_facts)
             program_name = prog_name(best)
             if not program_name:
                 continue
@@ -799,6 +840,17 @@ class ReportBuilder:
             db_row, self._get_territory_profile(territory),
         )
         est["paymentSpeed"] = est["paymentTiming"]["label"]
+
+        # Format eligibility, evaluated once and rendered by every surface, so the
+        # web report and the PDF cannot disagree about whether this programme
+        # accepts the production's format.
+        eligibility = evaluate_format_eligibility(
+            db_row, self._production_format, self._format_project_facts,
+        )
+        est["formatEligibility"] = eligibility
+        # An unconfirmed programme must not present its rebate as an amount the
+        # production can count on. The figure stays visible, labelled.
+        est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
 
         # Qualifying spend
         qs_min = db_row.get("qualifying_spend_min")
@@ -1223,7 +1275,7 @@ class ReportBuilder:
         for territory in territories:
             profile = self._get_territory_profile(territory)
             rows = self._territory_incentives.get(territory, [])
-            best = best_incentive(rows, self._production_format) if rows else {}
+            best = best_incentive(rows, self._production_format, self._format_project_facts) if rows else {}
             canonical = resolve_payment_timing(best, profile)
             if canonical["minMonths"] is None:
                 # No verified window. An empty range is not rendered as a
@@ -1273,7 +1325,7 @@ class ReportBuilder:
             top = territories[0]
             rows = self._territory_incentives.get(top, [])
             if rows:
-                best = best_incentive(rows, self._production_format)
+                best = best_incentive(rows, self._production_format, self._format_project_facts)
                 summary["recommendedTerritoryPaymentSpeed"] = resolve_payment_timing(
                     best, self._get_territory_profile(top),
                 )["label"]
@@ -2020,7 +2072,7 @@ class ReportBuilder:
 
         # Incentive reality for the origin
         rows = self._territory_incentives.get(origin_label, [])
-        best = best_incentive(rows, self._production_format) if rows else {}
+        best = best_incentive(rows, self._production_format, self._format_project_facts) if rows else {}
         has_programme = bool(rows) and (best.get("status") or "").lower() == "active" \
             and not is_zero_rate(best.get("rate_gross"), best.get("rate_net"))
 
@@ -2049,7 +2101,7 @@ class ReportBuilder:
             if not rows:
                 continue
 
-            best = best_incentive(rows, self._production_format)
+            best = best_incentive(rows, self._production_format, self._format_project_facts)
 
             # Rebate rate string
             rebate_str = format_rate(

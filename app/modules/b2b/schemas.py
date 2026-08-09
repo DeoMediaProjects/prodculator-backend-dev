@@ -28,7 +28,15 @@ class B2BProductResponse(BaseModel):
     self_service: bool
     # "coming_soon" while pricing is being finalised, "custom_contract" for
     # bespoke agreements, "listed" once a real price is published.
-    pricing_status: Literal["coming_soon", "custom_contract", "listed"] = "listed"
+    #: ``coming_soon``    no price agreed yet, nothing shown
+    #: ``waitlist``       price published as a "from" figure, purchase not open
+    #: ``custom_contract`` priced per contract
+    #: ``listed``          priced and purchasable
+    #: ``waitlist`` exists because a published price and an open checkout are
+    #: separate decisions: these products have agreed pricing but no live Stripe
+    #: prices, so listing them as purchasable would offer a subscription that
+    #: cannot complete.
+    pricing_status: Literal["coming_soon", "waitlist", "custom_contract", "listed"] = "listed"
     stripe_price_configured: dict[str, bool]
 
 

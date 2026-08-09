@@ -108,9 +108,11 @@ def _report(
             {"territory": name, "riskLevel": "Low", "summary": long_narrative or f"{name} weather."}
             for name, _ in territories
         ],
-        "taxIncentiveAnalysis": [
+        # The template reads incentiveEstimates; taxIncentiveAnalysis is not a key
+        # it renders, so a fixture using that name silently skipped the section.
+        "incentiveEstimates": [
             {
-                "territory": name, "programme": f"{name} programme",
+                "territory": name, "program": f"{name} programme",
                 "paymentTiming": timing,
                 "paymentSpeed": (timing or {}).get("label", "Data not available"),
                 "estimatedRebate": money_line,
@@ -291,3 +293,53 @@ class TestReportShapes:
         assert "8 wk shoot" in html
         assert "you planned 8" in html
         assert "from the script" in html
+
+
+# ── Format eligibility caveat ────────────────────────────────────────────────
+
+class TestFormatEligibilityCaveatRendering:
+    """A short film must not be handed feature-scale rebates without the caveat.
+
+    The wizard warns and asks for confirmation, but the PDF is what gets forwarded
+    to a financier, so the caveat has to travel with the figures.
+    """
+
+    CAVEAT = (
+        "Format eligibility not verified. Every rebate in this report is modelled as though "
+        "the programme accepts a short, which our programme records do not currently confirm "
+        "either way. Confirm eligibility with each film commission."
+    )
+
+    def test_the_caveat_is_rendered_when_set(self):
+        report = _report(territories=[("United Kingdom", WINDOW_RANGE)])
+        report["formatEligibilityCaveat"] = self.CAVEAT
+        text = _visible_text(_render(report))
+        assert "Format eligibility not verified" in text
+        assert "Confirm eligibility with each film commission" in text
+
+    def test_it_sits_with_the_incentive_figures(self):
+        """Next to the numbers it qualifies, not buried in the closing legal page."""
+        report = _report(territories=[("United Kingdom", WINDOW_RANGE)])
+        report["formatEligibilityCaveat"] = self.CAVEAT
+        html = _render(report)
+        caveat_at = html.index("Format eligibility not verified")
+        estimates_at = html.index("Estimates only. Final eligibility depends on")
+        # Immediately above the standard estimates footnote in the tax section.
+        assert caveat_at < estimates_at
+        assert estimates_at - caveat_at < 1200, "caveat drifted away from the figures"
+
+    def test_nothing_is_rendered_when_the_format_is_safe(self):
+        """A feature must not carry a warning that does not apply to it."""
+        report = _report(territories=[("United Kingdom", WINDOW_RANGE)])
+        report["formatEligibilityCaveat"] = None
+        text = _visible_text(_render(report))
+        assert "Format eligibility not verified" not in text
+        # The standard estimates line still appears.
+        assert "Estimates only" in text
+
+    def test_an_absent_key_renders_nothing(self):
+        """Older stored reports have no such key and must render unchanged."""
+        report = _report(territories=[("United Kingdom", WINDOW_RANGE)])
+        report.pop("formatEligibilityCaveat", None)
+        text = _visible_text(_render(report))
+        assert "Format eligibility not verified" not in text

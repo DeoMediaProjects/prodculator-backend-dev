@@ -997,10 +997,32 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         <h4>{{ inc.territory }} — {{ inc.program }}</h4>
         <div class="meta">{{ inc.rate }}{% if inc.rateType %} · {{ inc.rateType | replace('_', ' ') }}{% endif %}{% if inc.cap %} · Cap: {{ inc.cap }}{% endif %}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">{{ bankchip(inc.bankabilityLabel) }}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        {# Format eligibility sits beside bankability because they answer adjacent
+           questions: can this production use the programme at all, and can a lender
+           advance against it. Rendered from inc.formatEligibility, the same object
+           the web report reads, so the two cannot disagree. #}
+        {% set fe = inc.formatEligibility %}
+        {% if fe and fe.verdict and fe.verdict != 'eligible' %}
+        <span style="font-size:7.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;
+          {%- if fe.verdict == 'ineligible' %}background:#F7E6E3;color:#8E3323
+          {%- elif fe.verdict == 'needs_confirmation' %}background:#FBF1DE;color:#8A5A12
+          {%- else %}background:#EFEDE7;color:#5B5750{% endif %}">{{ fe.label }}</span>
+        {% endif %}
+        {{ bankchip(inc.bankabilityLabel) }}
+      </div>
     </div>
     <div style="display:flex;gap:24px;font-size:10.5px;color:#3A382F;font-weight:500;padding:8px 0;border-top:1px solid var(--hairline)">
-      {% if inc.estimatedRebate %}<span><b>Est. rebate:</b> {{ inc.estimatedRebate }}</span>{% endif %}
+      {% if inc.estimatedRebate %}
+      <span>
+        <b>Est. rebate:</b> {{ inc.estimatedRebate }}
+        {#- An unconfirmed programme's figure stays visible but never reads as an
+            amount this production can count on. #}
+        {%- if inc.rebateIsConfirmed is defined and not inc.rebateIsConfirmed %}
+        <span style="color:#8A5A12;font-weight:700"> (eligibility unconfirmed)</span>
+        {%- endif %}
+      </span>
+      {% endif %}
       {# This is the programme's eligibility threshold (qualifying_spend_min), not
          this production's qualifying spend, which lives on budgetScenarios. #}
       {% if inc.qualifyingSpend %}<span><b>Min. qualifying spend:</b> {{ inc.qualifyingSpend }}</span>{% endif %}
@@ -1016,9 +1038,35 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       {% for w in inc.warnings[:2] %}⚠ {{ w }}<br>{% endfor %}
     </div>
     {% endif %}
+    {# Programme-specific messaging. A restriction on one programme is stated on
+       that programme, not raised as a warning over the whole report. #}
+    {% if fe and fe.verdict in ('needs_confirmation', 'ineligible') and fe.explanation %}
+    <div style="margin-top:8px;font-size:10px;line-height:1.5;color:#3A382F;font-weight:500;border-left:2px solid #B87A1F;padding-left:8px">
+      <b>Format:</b> {{ fe.explanation }}
+    </div>
+    {% elif fe and fe.verdict == 'unverified' %}
+    <div style="margin-top:8px;font-size:10px;line-height:1.5;color:var(--grey);font-weight:500">
+      Format eligibility for this programme has not been verified.
+    </div>
+    {% endif %}
+    {% if fe and fe.verdict == 'eligible' and fe.sourceUrl %}
+    <div style="margin-top:6px;font-size:9.5px;color:var(--grey);font-weight:500">
+      Format eligibility confirmed{% if fe.verifiedAt %} {{ fe.verifiedAt }}{% endif %} · {{ fe.sourceUrl }}
+    </div>
+    {% endif %}
     {% if inc.stackingNote %}<div style="margin-top:6px;font-size:10px;color:var(--grey);font-weight:500">{{ inc.stackingNote }}</div>{% endif %}
   </div>
   {% endfor %}
+  {# Raised only while some programme above is still unverified for this format,
+     so it retires itself once the eligibility data is populated. Styled as a
+     warning rather than a footnote: it is the difference between a figure being an
+     estimate and a figure being unavailable to this production at all. #}
+  {% if report.formatEligibilityCaveat %}
+  <div style="margin-top:12px;border:1px solid #B87A1F;border-left-width:3px;background:#FBF6EC;padding:11px 14px">
+    <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8A5A12;margin-bottom:4px">Confirm before you rely on these figures</div>
+    <p style="font-size:10.5px;line-height:1.55;color:#3A382F;margin:0">{{ report.formatEligibilityCaveat }}</p>
+  </div>
+  {% endif %}
   <p class="disclaimer" style="margin-top:10px">Estimates only. Final eligibility depends on official approval by the relevant authorities.</p>
   {% endif %}
 </div>

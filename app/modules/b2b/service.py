@@ -38,16 +38,19 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Genre-based equipment implications",
             "Seasonal trend analysis",
         ],
-        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
-        "price_gbp_cents": 160,
-        "price_usd_cents": 200,
-        # Pricing is not finalised. Self-service purchase stays closed so no
-        # client can subscribe at a placeholder price (SOW 4.5), and the
-        # catalogue shows "Coming soon" rather than a figure. Flip
-        # pricing_status to "listed" and self_service to True once the real
-        # prices are set.
+        # Agreed monthly list price, GBP. Published as a "from" figure: these are
+        # entry prices for the standard report cadence, not a ceiling.
+        "price_gbp_cents": 60000,
+        # No USD price has been agreed. Left unset rather than converted, so the
+        # catalogue falls back to showing the GBP figure instead of quoting a USD
+        # number nobody signed off. Set this when a USD price is agreed.
+        "price_usd_cents": None,
+        # Priced, but not purchasable: there are no live Stripe prices for these
+        # products yet, so self-service checkout stays closed and the catalogue
+        # invites a waitlist join. Flip to "listed" with self_service True once
+        # the Stripe prices exist.
         "self_service": False,
-        "pricing_status": "coming_soon",
+        "pricing_status": "waitlist",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_GBP",
             "usd": "STRIPE_PRICE_B2B_CAMERA_EQUIPMENT_USD",
@@ -67,16 +70,19 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Total headcount trend analysis",
             "Budget range breakdowns",
         ],
-        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
-        "price_gbp_cents": 160,
-        "price_usd_cents": 200,
-        # Pricing is not finalised. Self-service purchase stays closed so no
-        # client can subscribe at a placeholder price (SOW 4.5), and the
-        # catalogue shows "Coming soon" rather than a figure. Flip
-        # pricing_status to "listed" and self_service to True once the real
-        # prices are set.
+        # Agreed monthly list price, GBP. Published as a "from" figure: these are
+        # entry prices for the standard report cadence, not a ceiling.
+        "price_gbp_cents": 75000,
+        # No USD price has been agreed. Left unset rather than converted, so the
+        # catalogue falls back to showing the GBP figure instead of quoting a USD
+        # number nobody signed off. Set this when a USD price is agreed.
+        "price_usd_cents": None,
+        # Priced, but not purchasable: there are no live Stripe prices for these
+        # products yet, so self-service checkout stays closed and the catalogue
+        # invites a waitlist join. Flip to "listed" with self_service True once
+        # the Stripe prices exist.
         "self_service": False,
-        "pricing_status": "coming_soon",
+        "pricing_status": "waitlist",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_PRODUCTION_SERVICES_GBP",
             "usd": "STRIPE_PRICE_B2B_PRODUCTION_SERVICES_USD",
@@ -96,16 +102,19 @@ B2B_PRODUCTS: dict[str, dict[str, Any]] = {
             "Submission timing clusters",
             "Budget tier breakdown by format",
         ],
-        # Placeholder pricing (~$2 equivalent) pending final B2B price sign-off.
-        "price_gbp_cents": 160,
-        "price_usd_cents": 200,
-        # Pricing is not finalised. Self-service purchase stays closed so no
-        # client can subscribe at a placeholder price (SOW 4.5), and the
-        # catalogue shows "Coming soon" rather than a figure. Flip
-        # pricing_status to "listed" and self_service to True once the real
-        # prices are set.
+        # Agreed monthly list price, GBP. Published as a "from" figure: these are
+        # entry prices for the standard report cadence, not a ceiling.
+        "price_gbp_cents": 30000,
+        # No USD price has been agreed. Left unset rather than converted, so the
+        # catalogue falls back to showing the GBP figure instead of quoting a USD
+        # number nobody signed off. Set this when a USD price is agreed.
+        "price_usd_cents": None,
+        # Priced, but not purchasable: there are no live Stripe prices for these
+        # products yet, so self-service checkout stays closed and the catalogue
+        # invites a waitlist join. Flip to "listed" with self_service True once
+        # the Stripe prices exist.
         "self_service": False,
-        "pricing_status": "coming_soon",
+        "pricing_status": "waitlist",
         "price_attrs": {
             "gbp": "STRIPE_PRICE_B2B_CREW_CASTING_GBP",
             "usd": "STRIPE_PRICE_B2B_CREW_CASTING_USD",

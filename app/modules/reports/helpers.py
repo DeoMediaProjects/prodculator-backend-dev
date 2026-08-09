@@ -103,14 +103,67 @@ def is_domestic_corp_only(r: dict) -> bool:
     return isinstance(nr, list) and bool(nr) and r.get("spv_eligible") is False
 
 
-def best_incentive(rows: list[dict], production_format: str | None = None) -> dict:
-    """Pick the row with the highest rate_gross (fallback to rate_net).
+# Formats whose incentive eligibility is materially different from a feature and
+# is NOT recorded anywhere in the programme data. ``applicable_formats`` exists on
+# incentive_programs and is read by ``best_incentive``, but it is NULL on every
+# row, and NULL means "applies to all formats". So a short film is currently
+# modelled against every programme as though each one accepted shorts.
+#
+# Short-form work is commonly excluded from production tax credits altogether and
+# supported instead by separate, smaller grant schemes with their own criteria.
+# Quoting a feature-scale rebate against a short without saying so overstates what
+# the production can claim, so the report carries the caveat until the eligibility
+# data exists to replace it.
+FORMATS_NEEDING_ELIGIBILITY_CHECK: frozenset[str] = frozenset({
+    "short",
+    "short film",
+})
 
-    When *production_format* is given, rows whose ``applicable_formats`` JSON
-    array does NOT include that format are excluded before ranking.  A NULL /
-    absent ``applicable_formats`` means the programme applies to all formats
-    (backward-compatible default).  If filtering would leave no rows we fall
-    back to the full set so the caller never gets an error.
+
+def needs_format_eligibility_check(production_format: str | None) -> bool:
+    """True when *production_format* is one the programme data cannot vouch for."""
+    if not production_format:
+        return False
+    return production_format.strip().lower() in FORMATS_NEEDING_ELIGIBILITY_CHECK
+
+
+def format_eligibility_is_recorded(rows: list[dict]) -> bool:
+    """True when any row actually states which formats it applies to.
+
+    Guards the caveat against becoming permanent furniture: once the eligibility
+    data is populated, this returns True and the report can rely on the filtering
+    in ``best_incentive`` instead of a blanket warning.
+    """
+    for r in rows or []:
+        af = r.get("applicable_formats")
+        if af is None:
+            continue
+        if isinstance(af, str):
+            try:
+                af = _json.loads(af)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(af, list) and af:
+            return True
+    return False
+
+
+def best_incentive(
+    rows: list[dict],
+    production_format: str | None = None,
+    project: dict | None = None,
+) -> dict:
+    """Pick the best incentive row, preferring dependable eligibility over rate.
+
+    When *production_format* is given, each row is evaluated by
+    ``evaluate_format_eligibility``. Rows a verified whitelist excludes are dropped.
+    Among what remains, the most dependable verdict wins first and rate decides only
+    within that group, so a programme whose format eligibility is unverified can
+    never beat a verified one on the strength of a number nobody checked.
+
+    *project* carries fields a ``conditional`` programme's rule may reference (for
+    example ``runtime_minutes``). Without it, a condition that cannot be settled
+    reports as needing confirmation rather than being assumed either way.
 
     Rows that require a domestic corporation (``nationality_requirements`` is a
     non-empty array AND ``spv_eligible`` is explicitly ``False``) are treated as
@@ -131,23 +184,40 @@ def best_incentive(rows: list[dict], production_format: str | None = None) -> di
 
     eligible = rows
     if production_format:
-        def _format_ok(r: dict) -> bool:
-            af = r.get("applicable_formats")
-            if af is None:
-                return True  # NULL → applies to all formats
-            if isinstance(af, str):
-                try:
-                    af = _json.loads(af)
-                except (ValueError, TypeError):
-                    return True  # unparseable → don't exclude
-            if isinstance(af, list) and af:
-                return any(f.lower() == production_format.lower() for f in af)
-            return True  # empty list → applies to all formats
+        # Format eligibility is decided per programme by evaluate_format_eligibility,
+        # which knows the difference between "this whitelist excludes shorts" and
+        # "nobody has checked". The old rule here treated NULL as "all formats", so
+        # an unchecked programme was indistinguishable from a verified one and could
+        # win on rate alone.
+        from app.modules.reports.format_eligibility import (
+            INELIGIBLE,
+            evaluate_format_eligibility,
+            verdict_rank,
+        )
 
-        filtered = [r for r in rows if _format_ok(r)]
-        if filtered:
-            eligible = filtered
-        # else: no matching rows → fall back to full set (graceful degradation)
+        verdicts = {
+            id(r): evaluate_format_eligibility(r, production_format, project)
+            for r in rows
+        }
+
+        # A verified exclusion is a real answer: drop those outright. Anything else
+        # stays a candidate, because a programme whose eligibility is merely
+        # unverified may well qualify and hiding it would understate the options.
+        permitted = [r for r in rows if verdicts[id(r)]["verdict"] != INELIGIBLE]
+        if permitted:
+            eligible = permitted
+        # else: every programme is verified-ineligible for this format. The caller
+        # still gets a row so nothing crashes, but the verdict on it says ineligible,
+        # so no surface can present it as an available incentive.
+
+        # Prefer dependability over headline rate: a confirmed programme outranks an
+        # unverified one even when the unverified one computes a larger rebate. That
+        # inversion is the whole point — the larger number was never checked.
+        best_rank = max(verdict_rank(verdicts[id(r)]["verdict"]) for r in eligible)
+        eligible = [
+            r for r in eligible
+            if verdict_rank(verdicts[id(r)]["verdict"]) == best_rank
+        ]
 
     # Prefer universally-accessible rows over domestic-corp-only rows.
     foreign_accessible = [r for r in eligible if not is_domestic_corp_only(r)]
