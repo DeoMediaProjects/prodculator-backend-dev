@@ -12,6 +12,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from app.core.audit_notes import contains_audit_text, split_audit_text
 from app.modules.reports.helpers import (  # noqa: F401 — re-exported for backward compat
@@ -33,6 +34,7 @@ from app.modules.reports.helpers import (  # noqa: F401 — re-exported for back
     currency_symbol as _currency_symbol,
     budget_to_display as _budget_to_display,
     parse_money_string as _parse_money_string,
+    DEFAULT_SHOOT_DAYS_PER_WEEK,
 )
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -73,6 +75,9 @@ class ReportValidator:
         cls._assert_score_bounds(report, warnings)
         cls._assert_financial_consistency(report, datasets, warnings)
         cls._assert_territory_coverage(report, datasets, warnings)
+        cls._assert_ranked_territory_consistency(report, warnings)
+        cls._assert_payment_timing_consistency(report, warnings)
+        cls._assert_schedule_consistency(report, warnings)
         cls._assert_no_null_narratives(report, warnings)
 
         # Sort locationRankings by descending score (builder computes scores
@@ -312,6 +317,126 @@ class ReportValidator:
                 warnings.append(
                     f"[coverage] ranked territory '{loc.get('name')}' has no DB incentive data"
                 )
+
+    @classmethod
+    def _assert_ranked_territory_consistency(
+        cls, report: dict, warnings: list[str]
+    ) -> None:
+        """Every section describing ranked territories must cover the same set.
+
+        The PDF used to declare the full ranked count in the strategy heading
+        while slicing the cards to three, so a fourth ranked territory was
+        counted and then never shown; weather was sliced to four, which is how
+        the same territory appeared in some sections and not others. The template
+        no longer slices, and this catches any future divergence at the data
+        level rather than in a producer's inbox.
+        """
+        ranked = [
+            loc.get("name") for loc in (report.get("locationRankings") or [])
+            if isinstance(loc, dict) and loc.get("name")
+        ]
+        if not ranked:
+            return
+        dives = [
+            d.get("name") for d in (report.get("territoryDeepDives") or [])
+            if isinstance(d, dict) and d.get("name")
+        ]
+        missing = [name for name in ranked if name not in dives]
+        if missing:
+            warnings.append(
+                "[territory] ranked "
+                f"{'territory' if len(missing) == 1 else 'territories'} "
+                f"{', '.join(missing)} "
+                f"{'has' if len(missing) == 1 else 'have'} no territory-analysis entry, "
+                f"so the report declares {len(ranked)} ranked territories and profiles "
+                f"{len([n for n in ranked if n in dives])}"
+            )
+
+    @classmethod
+    def _assert_payment_timing_consistency(
+        cls, report: dict, warnings: list[str]
+    ) -> None:
+        """One canonical payment window per territory across every section.
+
+        Reads the resolved ``paymentTiming`` object rather than the rendered
+        strings: the strings are what a reader compares, but the object is what
+        they are all supposed to come from. A disagreement here means a section
+        has gone back to reading a raw column.
+        """
+        by_territory: dict[str, set[tuple]] = {}
+
+        def record(territory: Any, timing: Any) -> None:
+            if not territory or not isinstance(timing, dict):
+                return
+            window = (timing.get("minMonths"), timing.get("maxMonths"))
+            if window == (None, None):
+                return
+            by_territory.setdefault(str(territory), set()).add(window)
+
+        for loc in report.get("locationRankings") or []:
+            if isinstance(loc, dict):
+                record(loc.get("name"), loc.get("paymentTiming"))
+        for dive in report.get("territoryDeepDives") or []:
+            if isinstance(dive, dict):
+                record(dive.get("name"), dive.get("paymentTiming"))
+        for entry in ((report.get("financialAnalysis") or {}).get("paymentTiming") or []):
+            if isinstance(entry, dict):
+                record(entry.get("territory"), entry.get("paymentTiming"))
+
+        # A programme note that contradicts the programme's own numeric columns is
+        # a source-data fault. Surfaced rather than silently resolved, because the
+        # report has to pick one and the wrong one misstates when cash arrives.
+        for section in ("locationRankings", "territoryDeepDives"):
+            for row in report.get(section) or []:
+                if not isinstance(row, dict):
+                    continue
+                timing = row.get("paymentTiming")
+                if isinstance(timing, dict) and timing.get("conflict"):
+                    warnings.append(
+                        f"[payment] {row.get('name')} payment note "
+                        f"{timing.get('notes')!r} disagrees with the recorded "
+                        f"{timing.get('minMonths')} to {timing.get('maxMonths')} month window; "
+                        "the numeric columns were used"
+                    )
+
+        for territory, windows in by_territory.items():
+            if len(windows) > 1:
+                rendered = ", ".join(
+                    f"{lo} to {hi} months" if lo != hi else f"{lo} months"
+                    for lo, hi in sorted(windows, key=lambda w: (w[0] or 0, w[1] or 0))
+                )
+                warnings.append(
+                    f"[payment] {territory} reports more than one payment window "
+                    f"across sections: {rendered}"
+                )
+
+    @classmethod
+    def _assert_schedule_consistency(
+        cls, report: dict, warnings: list[str]
+    ) -> None:
+        """Shoot weeks and shooting days must describe one schedule.
+
+        A report that says fourteen shooting days in one section and an eight
+        week shoot in another is describing two different productions. Both are
+        now derived from ``resolve_schedule``; this flags any combination that
+        could not come from the same schedule model.
+        """
+        summary = report.get("executiveSummary") or {}
+        weeks = _to_float(summary.get("shootWeeks"))
+        script = report.get("scriptStats") or {}
+        days = _to_float(script.get("estShootingDays"))
+        if weeks is None or days is None or weeks <= 0 or days <= 0:
+            return
+
+        implied = days / DEFAULT_SHOOT_DAYS_PER_WEEK
+        # One week of slack either way absorbs rounding; beyond that the two
+        # figures cannot both be describing the same principal photography.
+        if abs(implied - weeks) > 1.0:
+            warnings.append(
+                f"[schedule] {days:g} shooting days implies about "
+                f"{implied:.1f} weeks at {DEFAULT_SHOOT_DAYS_PER_WEEK:g} days per week, "
+                f"but the summary states {weeks:g} weeks"
+            )
 
     @classmethod
     def _assert_no_null_narratives(

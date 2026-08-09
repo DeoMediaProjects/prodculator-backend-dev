@@ -49,6 +49,11 @@ class SubscriberItem(BaseModel):
 
 class SubscriberListResponse(BaseModel):
     items: list[SubscriberItem]
+    #: Rows the API could not render, usually an unexpected NULL in a column the
+    #: response model requires. Reported rather than swallowed: a silently short
+    #: list reads as "these are all the subscribers", which is worse than an
+    #: error, and the server log names the offending user_id.
+    unreadable: int = 0
     total: int
     limit: int
     offset: int

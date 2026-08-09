@@ -266,3 +266,44 @@ def test_list_subscribers_survives_a_user_with_no_email(client):
     assert by_id["u4"]["monthly_spend_estimated"] is True
     # The healthy rows are unaffected.
     assert by_id["u1"]["email"] == "alice@example.com"
+
+
+def test_one_unrenderable_row_does_not_take_down_the_whole_listing(client):
+    """A row the response model rejects must cost that row, not the page.
+
+    Validating the list in one go meant a single unexpected NULL failed the whole
+    response, the endpoint's blanket except turned it into a 500, and production
+    reported no subscribers while holding twenty-two.
+    """
+    fake = _setup(client)
+    # A row that cannot be rendered whatever the service does: report_limit is a
+    # value no coercion accepts, standing in for any future unexpected column.
+    fake.store["users"].append({
+        "id": "u9", "name": "Broken", "email": "broken@example.com",
+        "company": None, "user_type": "paid", "credits_remaining": 0,
+        "created_at": "2026-05-01T00:00:00Z",
+    })
+    fake.store["subscriptions"].append({
+        "id": "s9", "user_id": "u9", "status": "active", "plan_type": "studio",
+        "amount_cents": 29900, "currency": "usd",
+        "report_limit": "not-a-number",
+        "created_at": "2026-05-01T00:00:00Z",
+    })
+
+    response = client.get("/api/admin/subscribers", headers=HEADERS)
+    assert response.status_code == 200
+
+    data = response.json()
+    by_id = {item["id"]: item for item in data["items"]}
+    # Every healthy subscriber still comes back.
+    assert "u1" in by_id and "u2" in by_id and "u3" in by_id
+    # The bad row is dropped and counted, not silently omitted.
+    assert "u9" not in by_id
+    assert data["unreadable"] == 1
+
+
+def test_a_clean_listing_reports_nothing_unreadable(client):
+    _setup(client)
+    response = client.get("/api/admin/subscribers", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["unreadable"] == 0

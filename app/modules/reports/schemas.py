@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -167,6 +167,9 @@ class LocationRanking(BaseModel):
     culturalTestLikelihood: str | None = None
     adminComplexity: str | None = None
     paymentSpeed: str | None = None
+    #: Canonical window from ``resolve_payment_timing``; ``paymentSpeed`` is
+    #: its rendered label. Every section reads this one object.
+    paymentTiming: dict[str, Any] | None = None
     keyAdvantages: list[str] | None = None
     keyRisks: list[str] | None = None
     # v3 scoring dimensions
@@ -209,6 +212,9 @@ class IncentiveEstimate(BaseModel):
     programmeNote: str | None = None
     # Enriched data-integrity fields
     paymentSpeed: str | None = None           # payment_timeline_notes from dataset
+    #: Canonical window from ``resolve_payment_timing``; ``paymentSpeed`` is
+    #: its rendered label. Every section reads this one object.
+    paymentTiming: dict[str, Any] | None = None
     rateType: str | None = None               # e.g. "cash_rebate", "tax_credit"
     rateTiers: str | None = None              # human-readable tier summary
     eligibilityRules: list[str] | None = None # eligibility_rules_json from dataset
@@ -302,7 +308,14 @@ class ExecutiveSummary(BaseModel):
     recommendedTerritoryRebate: str | None = None
     recommendedTerritoryInfrastructure: str | None = None
     recommendedTerritoryPaymentSpeed: str | None = None
+    #: Weeks, despite the historical name. Kept for the Excel export and any
+    #: stored report an older client still reads; prefer ``shootWeeks``.
     shootDays: int | None = None
+    shootWeeks: int | None = None
+    #: Canonical schedule from ``resolve_schedule``: declared weeks, the script's
+    #: estimated days, which of the two the producer supplied, and whether they
+    #: diverge. Both figures reach the reader, so both must be labelled.
+    schedule: dict[str, Any] | None = None
     budget: str | None = None
     primaryLocations: list[str] | None = None
     shootWindow: ShootWindow | None = None
@@ -389,9 +402,19 @@ class FinancialScenario(BaseModel):
 
 
 class PaymentTimingEntry(BaseModel):
-    """Certification/payment receipt windows from territory_profiles bankability data."""
+    """One territory's payment window on the "when the money arrives" chart.
+
+    The window itself is ``paymentTiming``, the same canonical object the
+    territory card and incentive table read. The certification and payment weeks
+    are retained only for the bar breakdown.
+    """
 
     territory: str
+    #: Canonical window from ``resolve_payment_timing``.
+    paymentTiming: dict[str, Any] | None = None
+    label: str | None = None
+    minMonths: int | None = None
+    maxMonths: int | None = None
     certWeeksMin: float | None = None
     certWeeksMax: float | None = None
     paymentWeeksMin: float | None = None

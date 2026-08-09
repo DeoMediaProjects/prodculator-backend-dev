@@ -568,6 +568,58 @@ async def get_report_status(
 
 
 # Territory limits per plan — None means all territories included
+# Sections whose entries describe a ranked territory, keyed by the field that
+# names the territory. The plan cap has to trim every one of them together: it
+# used to trim locationRankings alone, so a capped plan declared five ranked
+# territories and still rendered a sixth territory-analysis card, a funding block
+# and a weather row for a territory that was no longer ranked.
+_RANKED_TERRITORY_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("locationRankings", "name"),
+    ("territoryDeepDives", "name"),
+    ("weatherLogistics", "territory"),
+    ("taxIncentiveAnalysis", "territory"),
+)
+
+
+def _apply_territory_cap(analysis: dict, limit: int | None) -> None:
+    """Trim every ranked-territory section to the same *limit* territories.
+
+    The ranking decides which territories survive, since it is the only section
+    that carries an order. Everything else is filtered to that set rather than
+    sliced independently, so no section can disagree about which territories the
+    report ranked.
+    """
+    if limit is None:
+        return
+    rankings = analysis.get("locationRankings")
+    if not isinstance(rankings, list) or len(rankings) <= limit:
+        return
+
+    analysis["locationRankings"] = rankings[:limit]
+    kept = {
+        loc.get("name") for loc in analysis["locationRankings"]
+        if isinstance(loc, dict) and loc.get("name")
+    }
+
+    for section, key in _RANKED_TERRITORY_SECTIONS[1:]:
+        rows = analysis.get(section)
+        if isinstance(rows, list):
+            analysis[section] = [
+                row for row in rows
+                if not isinstance(row, dict) or row.get(key) in kept
+            ]
+
+    financial = analysis.get("financialAnalysis")
+    if isinstance(financial, dict):
+        for section in ("paymentTiming", "budgetScenarios"):
+            rows = financial.get(section)
+            if isinstance(rows, list):
+                financial[section] = [
+                    row for row in rows
+                    if not isinstance(row, dict) or row.get("territory") in kept
+                ]
+
+
 _TERRITORY_LIMITS: dict[str, int | None] = {
     "free": 3,
     "professional": 5,
@@ -1243,9 +1295,7 @@ def _format_report_response(report: dict, settings: Settings, user_plan: str = "
     if analysis:
         analysis = copy.deepcopy(analysis)
         # Apply territory cap for the plan
-        territory_limit = _TERRITORY_LIMITS.get(user_plan)
-        if territory_limit is not None and "locationRankings" in analysis:
-            analysis["locationRankings"] = analysis["locationRankings"][:territory_limit]
+        _apply_territory_cap(analysis, _TERRITORY_LIMITS.get(user_plan))
 
         if is_free:
             analysis = _build_free_tier_report_data(analysis)

@@ -318,10 +318,26 @@ class TestBuildLocationRankings:
         assert loc["infrastructureTier"] == "Growing"
 
     def test_payment_speed_from_db(self):
-        inc = _make_incentive(payment_timeline_notes="6-12 months post-completion")
+        """The structured window is what displays.
+
+        The note is retained and cross-checked, but prose is not the source of a
+        figure: a programme recording 180-365 days and no note used to report
+        "Data not available", which is what made this the canonical value.
+        """
+        inc = _make_incentive(
+            payment_timeline_days_min=180,
+            payment_timeline_days_max=365,
+            payment_timeline_notes="6-12 months post-completion",
+        )
         ds = _make_datasets(incentives=[inc])
         report = _build(ds)
-        assert report["locationRankings"][0]["paymentSpeed"] == "6-12 months post-completion"
+        loc = report["locationRankings"][0]
+        assert loc["paymentSpeed"] == "6 to 12 months"
+        assert loc["paymentTiming"]["minMonths"] == 6
+        assert loc["paymentTiming"]["maxMonths"] == 12
+        assert loc["paymentTiming"]["source"] == "programme"
+        # The note agrees with the numbers, so nothing is flagged.
+        assert loc["paymentTiming"]["conflict"] is False
 
     def test_staleness_injected_into_key_risks(self):
         inc = _make_incentive(data_freshness_days=400)
@@ -464,7 +480,10 @@ class TestBuildIncentiveEstimates:
         assert est["program"] == "AVEC"
         assert est["rate"] == "34% gross"
         assert est["estimatedRebate"] == "£2,720,000"
-        assert est["paymentSpeed"] == "6-12 months post-completion"
+        # 90 days is the fixture default, so the window is three months and the
+        # note's "6-12 months" is flagged as contradicting it rather than shown.
+        assert est["paymentSpeed"] == "3 months"
+        assert est["paymentTiming"]["conflict"] is True
         assert est["dataSource"] == "BFI"
 
     def test_estimate_uses_net_rebate_as_primary_amount(self):

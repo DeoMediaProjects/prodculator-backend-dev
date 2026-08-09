@@ -347,6 +347,237 @@ def parse_money_string(text: Any) -> float | None:
 _SUPPRESSED_SOURCE_TOKENS = ("tmdb", "the movie database")
 
 
+# ── Production schedule (canonical) ──────────────────────────────────────────
+#
+# Two figures used to reach the reader with no stated relationship: the
+# executive summary printed a shoot length in weeks, and script intelligence
+# printed estimated shooting days. They are genuinely different facts, the
+# producer's planned duration versus what the script implies, but presented
+# side by side and unlabelled they read as a contradiction (14 days against an
+# 8 week shoot). Worse, the two places that converted days into weeks disagreed
+# on the divisor: the report service used 5 days per week, completion-date
+# estimation used 5.5, so the same script produced two different shoot lengths
+# depending on which code path asked.
+#
+# One divisor lives here now, and ``resolve_schedule`` returns both figures
+# together with which one the producer supplied, so a caller cannot present a
+# derived number as a declared one.
+
+#: Shooting days per production week. A six-day week is not assumed: a five-day
+#: week is the standard scheduling basis, and overtime is a cost question rather
+#: than a calendar one.
+DEFAULT_SHOOT_DAYS_PER_WEEK = 5.0
+
+
+def resolve_schedule(
+    declared_weeks: Any = None,
+    script_shoot_days: Any = None,
+) -> dict[str, Any]:
+    """Canonical production schedule.
+
+    ``declared_weeks`` is what the producer told us; ``script_shoot_days`` is
+    what the parser estimated from the screenplay. Returns:
+
+      ``shootWeeks``      weeks to plan against
+      ``shootDays``       the script's estimated shooting days, or None
+      ``weeksSource``     ``"declared"`` | ``"derived_from_script"`` | None
+      ``impliedWeeks``    what the script's days convert to, for comparison
+      ``divergent``       True when the two disagree by more than a week
+
+    The declared duration always wins: it is a decision, not an estimate, and
+    overwriting it with a derived figure would tell a producer their own
+    schedule is something other than what they entered.
+    """
+    weeks = to_float(declared_weeks)
+    days = to_float(script_shoot_days)
+
+    implied = days / DEFAULT_SHOOT_DAYS_PER_WEEK if days and days > 0 else None
+
+    if weeks and weeks > 0:
+        source = "declared"
+    elif implied is not None:
+        weeks = max(1.0, round(implied))
+        source = "derived_from_script"
+    else:
+        weeks = None
+        source = None
+
+    divergent = (
+        weeks is not None
+        and implied is not None
+        and source == "declared"
+        and abs(implied - weeks) > 1.0
+    )
+
+    return {
+        "shootWeeks": int(round(weeks)) if weeks else None,
+        "shootDays": int(round(days)) if days and days > 0 else None,
+        "weeksSource": source,
+        "impliedWeeks": round(implied, 1) if implied is not None else None,
+        "divergent": divergent,
+        "daysPerWeek": DEFAULT_SHOOT_DAYS_PER_WEEK,
+    }
+
+
+# ── Payment timing (canonical) ───────────────────────────────────────────────
+#
+# One representation of "when does the money arrive", resolved once and consumed
+# by every section. Before this existed, three sections read three different
+# sources and disagreed inside the same report:
+#
+#   * territory card / incentive table / executive summary read only
+#     ``payment_timeline_notes``, a free-text column. When it was NULL they
+#     printed "Data not available" even though the programme recorded
+#     ``payment_timeline_days_min/max`` (Italy: 180-365 days, i.e. 6 to 12
+#     months, was reported as unavailable);
+#   * the payment-timing chart read a different table entirely,
+#     ``territory_profiles`` certification + payment weeks, so it could show a
+#     window the rest of the report contradicted;
+#   * neither collapsed a degenerate range, so equal bounds rendered "12-12 MO".
+#
+# The programme's own numbers win when present, because they describe the
+# programme this report is quoting. The territory bankability research is the
+# documented fallback, and which one was used is recorded on the object so a
+# reader is never told research-derived timing is programme-stated.
+
+#: Days per month used for every days-to-months conversion in the pipeline, so
+#: chart, card and narrative round identically.
+DAYS_PER_MONTH = 30.0
+
+#: Weeks per month, for the territory-profile fallback (weeks are what the
+#: bankability research records).
+WEEKS_PER_MONTH = 4.345
+
+
+def _months_from_days(days: Any) -> float | None:
+    value = to_float(days)
+    return None if value is None else value / DAYS_PER_MONTH
+
+
+def _months_from_weeks(weeks: Any) -> float | None:
+    value = to_float(weeks)
+    return None if value is None else value / WEEKS_PER_MONTH
+
+
+#: A month window stated inside a free-text note, e.g. "6-12 months
+#: post-completion" or "about 4 months". Used only to cross-check the numeric
+#: columns, never as the displayed window: prose is not a data type.
+_NOTE_MONTHS_RE = _re.compile(
+    r"(\d{1,2})\s*(?:-|to|\u2013|\u2014)\s*(\d{1,2})\s*month|(\d{1,2})\s*month",
+    _re.I,
+)
+
+
+def months_stated_in_note(notes: Any) -> tuple[int, int] | None:
+    """The month window a note claims, when it states one, else None."""
+    if not notes:
+        return None
+    match = _NOTE_MONTHS_RE.search(str(notes))
+    if not match:
+        return None
+    if match.group(1) and match.group(2):
+        lo, hi = int(match.group(1)), int(match.group(2))
+        return (min(lo, hi), max(lo, hi))
+    single = int(match.group(3))
+    return (single, single)
+
+
+def resolve_payment_timing(
+    incentive_row: dict | None = None,
+    territory_profile: dict | None = None,
+) -> dict[str, Any]:
+    """Canonical payment timing for one programme in one territory.
+
+    Returns a dict with:
+      ``minMonths`` / ``maxMonths``  rounded whole months, or None
+      ``source``   ``"programme"`` | ``"territory_research"`` | None
+      ``notes``    the programme's free-text note, verbatim, when present
+      ``label``    the display string every section renders
+      ``conflict`` True when the note states a window the numbers contradict
+
+    Both bounds are always either populated together or both None: a window with
+    only one end is not a window, and rendering it as one invites a reader to
+    treat an unknown bound as certainty.
+
+    The structured columns win the display, because they are what the chart
+    scales and what bankability is computed from, and a number is comparable
+    across programmes in a way prose is not. A note that disagrees with them is
+    not silently discarded: ``conflict`` is set so the validator can surface it
+    and the source record can be corrected, rather than the report quietly
+    picking one of two contradictory claims.
+    """
+    row = incentive_row or {}
+    notes = row.get("payment_timeline_notes") or None
+
+    min_months = _months_from_days(row.get("payment_timeline_days_min"))
+    max_months = _months_from_days(row.get("payment_timeline_days_max"))
+    source: str | None = "programme" if (min_months is not None or max_months is not None) else None
+
+    if source is None and territory_profile:
+        # Certification window plus payment window is completion-to-cash, which
+        # is the same question the programme columns answer.
+        cert_min = _months_from_weeks(territory_profile.get("cert_weeks_min"))
+        cert_max = _months_from_weeks(territory_profile.get("cert_weeks_max"))
+        pay_min = _months_from_weeks(territory_profile.get("payment_weeks_min"))
+        pay_max = _months_from_weeks(territory_profile.get("payment_weeks_max"))
+        # Only a fully verified pair produces a total: adding a verified window
+        # to a missing one reads as a complete figure when it is not.
+        if cert_max is not None and pay_max is not None:
+            min_months = (cert_min if cert_min is not None else cert_max) + (
+                pay_min if pay_min is not None else pay_max
+            )
+            max_months = cert_max + pay_max
+            source = "territory_research"
+
+    if min_months is None and max_months is None:
+        # No structured window. A note that states one is the only thing we have,
+        # so it is shown verbatim rather than replaced with "Data not available".
+        return {
+            "minMonths": None, "maxMonths": None,
+            "source": "note" if notes else None,
+            "notes": notes,
+            "conflict": False,
+            "label": notes or "Data not available",
+        }
+
+    # A single recorded bound describes both ends of a one-point window.
+    lo = int(round(min_months if min_months is not None else max_months))
+    hi = int(round(max_months if max_months is not None else min_months))
+    if lo > hi:
+        lo, hi = hi, lo
+
+    stated = months_stated_in_note(notes)
+    # More than a month apart is a real disagreement rather than rounding.
+    conflict = bool(
+        stated and (abs(stated[0] - lo) > 1 or abs(stated[1] - hi) > 1)
+    )
+
+    return {
+        "minMonths": lo,
+        "maxMonths": hi,
+        "source": source,
+        "notes": notes,
+        "conflict": conflict,
+        "label": format_payment_timing(lo, hi),
+    }
+
+
+def format_payment_timing(min_months: int | None, max_months: int | None) -> str:
+    """Display string for a month window.
+
+    Equal bounds collapse to a single figure: "12-12 months" is a range whose
+    ends are the same number, which reads as a data error rather than as a
+    twelve-month wait.
+    """
+    if min_months is None and max_months is None:
+        return "Data not available"
+    lo = min_months if min_months is not None else max_months
+    hi = max_months if max_months is not None else min_months
+    if lo == hi:
+        return f"{lo} month" if lo == 1 else f"{lo} months"
+    return f"{lo} to {hi} months"
+
+
 def clean_source(source: Any) -> str:
     """Strip legally-suppressed provider attributions (e.g. TMDB) from a source
     string, keeping any remaining provenance. Returns "Industry sources" when
