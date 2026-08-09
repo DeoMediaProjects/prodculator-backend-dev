@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import logging
 import re as _re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any
 
@@ -151,7 +151,18 @@ _ISO_DATE_RE = _re.compile(r"(\d{4}-\d{2}-\d{2})")
 # ── Small parsing helpers ────────────────────────────────────────────────────
 
 def _parse_date(value: Any) -> date | None:
-    """Parse the first ISO date found in *value*. Returns None on anything else."""
+    """Parse the first ISO date found in *value*. Returns None on anything else.
+
+    Always returns a plain ``date``, never a ``datetime``. ``datetime`` is a
+    subclass of ``date``, so the isinstance check below used to pass a datetime
+    straight through; every caller then subtracted it from ``ctx.today``, a plain
+    date, and raised ``TypeError: unsupported operand type(s) for -: 'datetime.date'
+    and 'datetime.datetime'``. That killed report generation outright for any
+    territory whose ``last_reviewed_at`` came back from the driver as a timestamp
+    rather than a string. Narrowing here fixes every comparison site at once.
+    """
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     if not value:
