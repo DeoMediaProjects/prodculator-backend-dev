@@ -619,7 +619,22 @@ def _classify_estimate(
             f"that is not yet in place."
         )
     elif eligibility in ELIGIBILITY_CONFIRMED:
-        reasons.append("Producer qualifies outright (eligibility: qualified).")
+        # Producer structure is one required dimension, not the whole answer. Saying
+        # "qualifies outright" while the project's format eligibility for the same
+        # programme is unresolved is the contradiction this check used to produce:
+        # a status is only as strong as its weakest required dimension.
+        project_status = estimate.get("incentiveEligibilityStatus")
+        if estimate.get("incentiveIsConfirmed") is False:
+            contingent = True
+            detail = (estimate.get("incentiveEligibilityReasons") or [None])[0]
+            reasons.append(
+                "Producer structural requirements appear satisfied, but overall "
+                "programme eligibility remains "
+                f"{project_status or 'unresolved'}"
+                + (f": {detail}" if detail else ".")
+            )
+        else:
+            reasons.append("Producer qualifies outright (eligibility: qualified).")
     else:
         contingent = True
         reasons.append(

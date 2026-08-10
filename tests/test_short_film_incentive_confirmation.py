@@ -104,7 +104,10 @@ class TestRule5Conditional:
     def test_a_condition_the_project_cannot_settle_is_not_confirmed(self):
         f = financials("Short", [programme("Spain", **CONDITIONAL)])["Spain"]
         assert f["incentive_is_confirmed"] is False
-        assert f["incentive_eligibility_status"] == "needs_confirmation"
+        # The project-level taxonomy, not the format-level verdict: the status a
+        # section reads is now the combined one, and an unresolved condition is
+        # "conditional" there.
+        assert f["incentive_eligibility_status"] == "conditional"
         assert money(f["net_rebate"]) == 0
 
     def test_a_condition_the_project_satisfies_is_confirmed(self):

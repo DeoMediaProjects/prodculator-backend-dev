@@ -506,8 +506,28 @@ class ReportBuilder:
             # data -> neutral treatment downstream; AI may refine within ±15.
             territory_profile = self._get_territory_profile(territory)
 
-            # Compute deterministic scores
-            strength = self._compute_incentive_strength(best)
+            # Compute deterministic scores.
+            #
+            # Incentive strength measures the value of a rebate this production can
+            # actually access. When the project's eligibility for the programme is
+            # unresolved, that value is not zero and it is not the headline rate
+            # either — it is unknown, and scoring it either way states something we
+            # do not know. Set to None, which _weighted_score already treats as an
+            # unscored dimension worth a neutral 50, the same convention used for a
+            # territory with no sourced cost data.
+            #
+            # The effect is the one that matters: a 30% programme nobody has
+            # confirmed this project can use no longer outranks a 20% programme on
+            # the strength of the larger number.
+            tf_for_rank = self._territory_financials.get(territory) or {}
+            can_rank = tf_for_rank.get("incentive_can_affect_ranking")
+            status_for_rank = tf_for_rank.get("incentive_eligibility_status")
+            if can_rank is False:
+                # A verified exclusion is a real answer: there is no accessible value
+                # here, and neutral would overstate it. Anything else is unknown.
+                strength = 0 if status_for_rank == "ineligible" else None
+            else:
+                strength = self._compute_incentive_strength(best)
             reliability_score, bankability_label = self._compute_reliability(best, territory_profile)
             currency_score = self._get_currency_score(territory)
             cost_anchor = self._profile_score(territory_profile, "cost_efficiency_score")
@@ -1033,13 +1053,32 @@ class ReportBuilder:
         # amount this production can count on. The illustrative calculation is kept
         # under a separate key so it can be shown as "potential" without ever being
         # mistaken for, or summed into, a confirmed total.
+        # Read from the one resolved status rather than re-derived here. Every
+        # section that answered this question for itself is how the report came to
+        # contradict itself, so this reads the answer and adds nothing to it.
         tf_for_money = self._territory_financials.get(territory) or {}
         confirmed = bool(tf_for_money.get("incentive_is_confirmed", True))
-        est["incentiveEligibilityStatus"] = eligibility["verdict"]
+        est["incentiveEligibilityStatus"] = tf_for_money.get(
+            "incentive_eligibility_status", eligibility["verdict"]
+        )
         est["incentiveIsConfirmed"] = confirmed
+        est["incentiveEligibilityLabel"] = tf_for_money.get("incentive_eligibility_label")
+        est["incentiveEligibilityReasons"] = tf_for_money.get(
+            "incentive_eligibility_reasons"
+        ) or []
+        # The programme's own rate stays visible whatever the verdict: it is a fact
+        # about the programme. What it must never do is read as this project's rate.
+        est["headlineRate"] = est.get("rate")
         if not confirmed:
             est["confirmedIncentive"] = None
-            est["potentialIncentive"] = tf_for_money.get("potential_net_rebate")
+            # Suppressed entirely on a hard failure. A potential figure printed
+            # beside "not available at this budget" is a contradiction the reader
+            # has to resolve on our behalf.
+            est["potentialIncentive"] = (
+                tf_for_money.get("potential_net_rebate")
+                if tf_for_money.get("show_potential_incentive")
+                else None
+            )
             # Ranked on what the production can actually rely on. A territory must
             # never lead on the strength of a figure whose eligibility is unverified.
             est["incentiveStrength"] = 0
@@ -1456,6 +1495,17 @@ class ReportBuilder:
                 "netBudgetValue": tf.get("net_budget_value"),
                 "rateGrossValue": tf.get("rate_gross_value"),
                 "rateNetValue": tf.get("rate_net_value"),
+                # The chart reads these to decide whether a rebate bar may be drawn
+                # at all. A gold bar stepping the budget down reads as money
+                # received, whatever the caption underneath it says, so an
+                # unconfirmed incentive must not appear in the confirmed waterfall.
+                "incentiveIsConfirmed": tf.get("incentive_is_confirmed", True),
+                "incentiveEligibilityStatus": tf.get("incentive_eligibility_status"),
+                "incentiveEligibilityLabel": tf.get("incentive_eligibility_label"),
+                "potentialIncentive": (
+                    tf.get("potential_net_rebate")
+                    if tf.get("show_potential_incentive") else None
+                ),
             }
 
             # ATL deduction
@@ -1590,6 +1640,7 @@ class ReportBuilder:
 
         # Deadline proximity
         self._inject_deadline_flags(summary)
+        self._inject_eligibility_first_step(summary)
 
         return summary
 
@@ -1616,6 +1667,53 @@ class ReportBuilder:
         key_flags = summary.setdefault("keyFlags", [])
         if not any("shoot timeline" in f.lower() or "shooting days" in f.lower() for f in key_flags):
             key_flags.append(flag)
+
+    def _inject_eligibility_first_step(self, summary: dict) -> None:
+        """Put verification before any action that spends money on programme access.
+
+        The report was telling producers to establish a qualifying production entity
+        and file for certification under a programme this project had not been
+        confirmed eligible for. Those steps cost money — company formation, legal,
+        accountant — and the eligibility question is free to ask. Ordering them the
+        other way round asks a producer to spend against an assumption we have
+        explicitly told them elsewhere is unverified.
+
+        Deterministic and prepended, so it leads regardless of what the narrative
+        proposed.
+        """
+        unresolved = [
+            est for est in (self._built_incentive_estimates or [])
+            if est.get("incentiveIsConfirmed") is False
+        ]
+        if not unresolved:
+            return
+
+        lead = unresolved[0]
+        territory = lead.get("territory") or "the recommended territory"
+        programme = lead.get("program") or "the incentive programme"
+        timeline = summary.setdefault("actionTimeline", [])
+        if not isinstance(timeline, list):
+            return
+
+        already = " ".join(
+            str(item.get("action", "")) for item in timeline if isinstance(item, dict)
+        ).lower()
+        if "confirm" in already and "eligib" in already:
+            return
+
+        fmt = (self._production_format or "this project").lower()
+        timeline.insert(0, {
+            "action": (
+                f"Confirm that this {fmt} is eligible for {programme} with the "
+                f"{territory} film commission or programme administrator"
+            ),
+            "note": (
+                "Do this before relying on the incentive or incurring costs "
+                "associated with programme qualification, such as forming a "
+                "qualifying entity or filing for certification. Those steps only "
+                "pay off if the format is accepted."
+            ),
+        })
 
     def _inject_deadline_flags(self, summary: dict) -> None:
         """Flag imminent funding/festival deadlines."""

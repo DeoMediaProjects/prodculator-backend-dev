@@ -20,7 +20,7 @@ from app.modules.b2b.signal_normalise import (
     gbp_band,
 )
 from app.modules.fx.service import FXService
-from app.modules.reports.format_eligibility import ELIGIBLE, evaluate_format_eligibility
+from app.modules.reports.project_incentive import resolve_project_incentive
 from app.modules.reports.helpers import needs_format_eligibility_check
 from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
@@ -1144,25 +1144,28 @@ class ReportService:
             # waterfall and total already reads net_rebate/net_budget, so the
             # confirmed figure has to BE those fields; anything else means finding
             # and fixing a dozen consumers and missing one.
-            eligibility = evaluate_format_eligibility(
-                best,
-                production_format,
-                {
-                    "format": production_format,
-                    "budget_gbp": budget_gbp,
-                    "runtime_minutes": datasets.get("_runtime_minutes"),
-                },
+            # One status, combining every required dimension. Consulting format
+            # eligibility alone was how a programme the project fails on budget could
+            # still print a potential figure beside "not available at this budget":
+            # each check was right about its own dimension and silent about the rest.
+            project_facts = {
+                "format": production_format,
+                "budget_gbp": budget_gbp,
+                "runtime_minutes": datasets.get("_runtime_minutes"),
+                "completion_date": datasets.get("_completion_date"),
+                "filming_start_date": datasets.get("_filming_start_date"),
+            }
+            eligibility = resolve_project_incentive(
+                best, project_facts, production_format=production_format,
             )
-            format_verdict = eligibility["verdict"]
-            # Scoped to formats whose eligibility genuinely diverges from what these
-            # programmes are written for. A feature is not held back by the absence
-            # of a record saying features are accepted.
-            eligibility_gates_money = needs_format_eligibility_check(production_format)
-            incentive_is_confirmed = (
-                not eligibility_gates_money or format_verdict == ELIGIBLE
-            )
+            format_verdict = eligibility["status"]
+            incentive_is_confirmed = eligibility["canAffectNetCost"]
 
-            d_potential_rebate = d_net_rebate
+            # A hard failure leaves no figure to show. An unresolved one leaves a
+            # figure that is an illustration and nothing more.
+            d_potential_rebate = (
+                d_net_rebate if eligibility["showPotentialAmount"] else 0.0
+            )
             if not incentive_is_confirmed:
                 # Zero, not hidden: the calculation still exists and is reported
                 # separately as an illustrative figure. What it must not do is
@@ -1211,7 +1214,15 @@ class ReportService:
                 "incentive_is_confirmed": incentive_is_confirmed,
                 "incentive_eligibility_status": format_verdict,
                 "incentive_eligibility_label": eligibility["label"],
-                "incentive_eligibility_explanation": eligibility["explanation"],
+                "incentive_eligibility_explanation": (
+                    eligibility["reasons"][0] if eligibility["reasons"] else None
+                ),
+                "incentive_eligibility_reasons": eligibility["reasons"],
+                # False when there is nothing to illustrate, so no surface has to
+                # decide for itself whether a figure is worth showing.
+                "show_potential_incentive": eligibility["showPotentialAmount"],
+                "incentive_can_affect_ranking": eligibility["canAffectRanking"],
+                "incentive_can_be_recommended": eligibility["canBeRecommended"],
                 "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
                 "programme": programme_name,
                 "programme_note": corrected.get("programme_note"),
