@@ -555,6 +555,10 @@ class ScriptAnalysis(BaseModel):
     #: assumption is safe, or once applicable_formats is populated.
     formatEligibilityCaveat: str | None = None
     programmeAvailabilityCaveat: str | None = None
+    #: Territories the producer selected that no section could analyse, each
+    #: with a plain-language reason. A selection that vanishes without
+    #: explanation reads as a bug and hides the useful fact.
+    unanalysedTerritories: list[dict[str, Any]] = []
     scriptStats: ScriptIntelligence | None = None  # parsed stats (scriptIntelligence is the AI-narrative key)
     festivalRecommendations: list[FestivalRecommendation] | None = None
     distributorRecommendations: list[DistributorRecommendation] | None = None

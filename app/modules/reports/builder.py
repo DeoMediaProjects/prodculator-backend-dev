@@ -38,15 +38,18 @@ from app.modules.reports.helpers import (
     clean_source,
     resolve_payment_timing,
     resolve_schedule,
+    needs_format_eligibility_check,
 )
 from app.modules.reports.format_eligibility import (
     UNCONFIRMED_VERDICTS,
+    UNVERIFIED,
     any_unverified_for_format,
     evaluate_format_eligibility,
 )
 from app.modules.reports.programme_eligibility import (
     any_unavailable,
     evaluate_programme_eligibility,
+    verdict_rank as programme_rank,
 )
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -207,6 +210,9 @@ class ReportBuilder:
                 or request_metadata.get("filming_start_date")
             ),
         }
+        # Populated by _select_territories. Declared here so the attribute exists
+        # even if a caller reads it before build() runs.
+        self._unanalysed_territories: list[dict] = []
         self._budget_currency: str = datasets.get("_budget_currency", "GBP")
         self._budget_original_amount: float | None = datasets.get("_budget_amount")
         self._fx_rates_from_budget: dict = datasets.get("_fx_rates_from_budget") or {}
@@ -238,6 +244,9 @@ class ReportBuilder:
             # vouch for, so the PDF carries the same caveat the wizard showed
             # rather than the warning living only at intake.
             "formatEligibilityCaveat": self._format_eligibility_caveat(),
+            # Selected territories that no section could analyse, each with its
+            # reason. Empty in the ordinary case.
+            "unanalysedTerritories": list(self._unanalysed_territories),
             "programmeAvailabilityCaveat": self._programme_availability_caveat(),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
@@ -294,6 +303,11 @@ class ReportBuilder:
         are shown as stacking options under the parent territory.
         """
         user_territories: list[str] = self.datasets.get("_user_territories") or []
+        # Selected territories that end up in no section of the report, with the
+        # reason. A producer who chose three and sees two must be told which one is
+        # missing and why; silence reads as a bug, and it hides the more useful fact
+        # that the territory has no bankable programme on record.
+        self._unanalysed_territories: list[dict] = []
 
         if user_territories:
             # Use user-submitted territories, preserving order.
@@ -319,23 +333,52 @@ class ReportBuilder:
                         resolved = resolve_territory(parent_raw)
                         return resolved is not None and resolved.label == target
 
+                    def _is_child_of(child_label: str, target: str, rows: list) -> bool:
+                        """Whether *child_label* belongs to *target*.
+
+                        Asks the Territory enum as well as the DB column, because the
+                        column is NULL on every sub-territory row in the dataset. Relying
+                        on it alone meant selecting "United States" found no children and
+                        dropped the country from the report entirely, even though six of
+                        its states carry active programmes. A producer who picked three
+                        territories got two, with nothing saying why.
+                        """
+                        if any(_parent_matches(r.get("parent_territory"), target) for r in rows):
+                            return True
+                        resolved = resolve_territory(child_label)
+                        return bool(
+                            resolved and resolved.parent and resolved.parent.label == target
+                        )
+
                     children = [
                         child_t
                         for child_t, rows in self._territory_incentives.items()
-                        if any(
-                            _parent_matches(r.get("parent_territory"), t)
-                            for r in rows
-                        )
+                        if _is_child_of(child_t, t, rows)
                     ]
                     if children:
-                        # Pick the child with the best incentive rate
-                        best_child = max(
-                            children,
-                            key=lambda c: max(
+                        # Pick the child the production can actually use, then the
+                        # best rate within that. Picking on rate alone chose the
+                        # headline number regardless of whether its programme's
+                        # thresholds rule this production out, so "United States"
+                        # could resolve to a state whose minimum qualifying spend is
+                        # many times the entire budget.
+                        def _child_key(child: str) -> tuple[int, float]:
+                            rows_for_child = self._territory_incentives[child]
+                            usable = max(
+                                programme_rank(
+                                    evaluate_programme_eligibility(
+                                        r, self._project_facts
+                                    )["verdict"]
+                                )
+                                for r in rows_for_child
+                            )
+                            rate = max(
                                 (to_float(r.get("rate_gross")) or 0)
-                                for r in self._territory_incentives[c]
-                            ),
-                        )
+                                for r in rows_for_child
+                            )
+                            return (usable, rate)
+
+                        best_child = max(children, key=_child_key)
                         if best_child not in territories:
                             territories.append(best_child)
                     else:
@@ -343,13 +386,25 @@ class ReportBuilder:
                         # are stored under its parent ("United Kingdom").  Look up
                         # the parent via the Territory enum and use it instead.
                         enum_t = resolve_territory(t)
-                        if enum_t and enum_t.parent:
-                            parent_label = enum_t.parent.label
-                            if (
-                                parent_label in self._territory_incentives
-                                and parent_label not in territories
-                            ):
-                                territories.append(parent_label)
+                        parent_label = enum_t.parent.label if enum_t and enum_t.parent else None
+                        if (
+                            parent_label
+                            and parent_label in self._territory_incentives
+                            and parent_label not in territories
+                        ):
+                            territories.append(parent_label)
+                        elif parent_label and parent_label in territories:
+                            pass  # already covered by its parent
+                        else:
+                            self._unanalysed_territories.append({
+                                "territory": t,
+                                "reason": (
+                                    "No active incentive programme is on record for this "
+                                    "territory, so it carries no rebate to model. It may "
+                                    "still suit the production for locations, crew or "
+                                    "currency reasons."
+                                ),
+                            })
         else:
             # Fallback: all territories with pre-computed financials
             territories = list(self._territory_financials.keys())
@@ -357,11 +412,23 @@ class ReportBuilder:
                 if t and t not in territories:
                     territories.append(t)
 
-        # Filter out territories whose only incentive is supplementary
-        territories = [
-            t for t in territories
-            if not self._is_supplementary_only_territory(t)
-        ]
+        # Filter out territories whose only incentive is supplementary, recording
+        # the exclusion rather than performing it silently: a stacking credit is a
+        # real fact about the territory, just not a standalone incentive.
+        kept: list[str] = []
+        for t in territories:
+            if self._is_supplementary_only_territory(t):
+                self._unanalysed_territories.append({
+                    "territory": t,
+                    "reason": (
+                        "This territory's only incentive is a supplementary credit that "
+                        "stacks onto another programme, so it cannot be modelled as a "
+                        "standalone rebate."
+                    ),
+                })
+            else:
+                kept.append(t)
+        territories = kept
 
         if self.is_preview:
             territories = territories[:3]
@@ -700,7 +767,20 @@ class ReportBuilder:
         moment every programme in the report carries verified or settled eligibility.
         A caveat that cannot switch off stops being read.
         """
-        if not self._production_format:
+        # Scoped to formats whose eligibility materially diverges from the norm
+        # these programmes are written for. Production incentives in this dataset are
+        # built around features and scripted TV; the real exclusion risk is
+        # concentrated in short-form work, which is commonly served by separate grant
+        # schemes instead. Raising the caveat on every format made it fire on every
+        # report, including features, where it added no information and trained
+        # producers to scroll past the one warning that matters.
+        #
+        # This is a deliberate assumption and worth naming: a feature is treated as
+        # within a programme's intended scope unless a verified whitelist says
+        # otherwise. Where a programme IS verified as excluding a format, the
+        # per-programme verdict still says so on any format, because that is recorded
+        # fact rather than assumption.
+        if not needs_format_eligibility_check(self._production_format):
             return None
         rows = [r for rows in self._territory_incentives.values() for r in rows]
         if not any_unverified_for_format(
@@ -892,10 +972,22 @@ class ReportBuilder:
         eligibility = evaluate_format_eligibility(
             db_row, self._production_format, self._project_facts,
         )
-        est["formatEligibility"] = eligibility
-        # An unconfirmed programme must not present its rebate as an amount the
-        # production can count on. The figure stays visible, labelled.
-        est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+        # Surfaced only where it carries information. For a feature or scripted TV
+        # project — what these programmes are written for — "nobody has explicitly
+        # recorded that this programme accepts features" is true of every programme
+        # in the dataset, so showing it on all of them says nothing and buries the
+        # cases that matter. A recorded exclusion or a stated condition is different:
+        # that is fact rather than absence of data, and it shows on any format.
+        format_matters = needs_format_eligibility_check(self._production_format)
+        merely_unrecorded = eligibility["verdict"] == UNVERIFIED
+        if format_matters or not merely_unrecorded:
+            est["formatEligibility"] = eligibility
+            # An unconfirmed programme must not present its rebate as an amount the
+            # production can count on. The figure stays visible, labelled.
+            est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+        else:
+            est["formatEligibility"] = None
+            est["rebateIsConfirmed"] = True
 
         # Whether the production clears this programme's own stated thresholds:
         # minimum qualifying spend, budget ceiling, expiry, status. A blunter
