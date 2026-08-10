@@ -46,6 +46,7 @@ from app.modules.reports.format_eligibility import (
     any_unverified_for_format,
     evaluate_format_eligibility,
 )
+from app.core.formats import canonical_format
 from app.modules.reports.programme_eligibility import (
     any_unavailable,
     evaluate_programme_eligibility,
@@ -318,6 +319,8 @@ class ReportBuilder:
             # dropped from the report.
             territories: list[str] = []
             for t in user_territories:
+                if t in territories:
+                    continue  # already covered, directly or via an expansion
                 if t in self._territory_incentives or t in self._territory_financials:
                     territories.append(t)
                 else:
@@ -411,6 +414,17 @@ class ReportBuilder:
             for t in self._territory_incentives:
                 if t and t not in territories:
                     territories.append(t)
+
+        # A territory may be reached twice: chosen directly, and again as the best
+        # child of a parent country that was also chosen. Selecting New York and the
+        # United States is the ordinary way that happens, and it put the same
+        # territory in the ranking twice. Deduplicated here, keeping first position,
+        # so no ordering decision above has to remember to do it.
+        deduped: list[str] = []
+        for t in territories:
+            if t not in deduped:
+                deduped.append(t)
+        territories = deduped
 
         # Filter out territories whose only incentive is supplementary, recording
         # the exclusion rather than performing it silently: a stacking credit is a
@@ -2014,7 +2028,14 @@ class ReportBuilder:
     # ── Festival & Distributor Recommendations ─────────────────────────────
 
     # Production format → festival/distributor eligible_formats vocabulary
-    _FORMAT_TO_ELIGIBLE = {
+    # Superseded by canonical_format(). Kept only as documentation of what this
+    # hand-maintained map used to cover, because what it MISSED is the point: the
+    # wizard offers "Short" and "Animated Feature", and neither was a key. A miss
+    # returned no festivals at all, so a short film was told "no festival matches
+    # for this production's format and timing" while 107 festivals in the dataset
+    # accept shorts. A second vocabulary that has to be kept in step with the first
+    # will always drift; app/core/formats.py is the one both sides read.
+    _LEGACY_FORMAT_TO_ELIGIBLE = {
         "Feature Film": "feature",
         "Documentary": "documentary",
         "Docuseries": "documentary",
@@ -2093,10 +2114,7 @@ class ReportBuilder:
         festival_distributor_matcher.py). Format and timing are hard gates;
         representation is strict opt-in; audience is declared-only.
         """
-        eligible_format = (
-            self._FORMAT_TO_ELIGIBLE.get(self._production_format)
-            if self._production_format else None
-        )
+        eligible_format = canonical_format(self._production_format)
         if not eligible_format:
             return []
 
