@@ -214,6 +214,7 @@ class ReportBuilder:
         # Populated by _select_territories. Declared here so the attribute exists
         # even if a caller reads it before build() runs.
         self._unanalysed_territories: list[dict] = []
+        self._built_incentive_estimates: list[dict] = []
         self._budget_currency: str = datasets.get("_budget_currency", "GBP")
         self._budget_original_amount: float | None = datasets.get("_budget_amount")
         self._fx_rates_from_budget: dict = datasets.get("_fx_rates_from_budget") or {}
@@ -231,6 +232,11 @@ class ReportBuilder:
         self._rank_territories_provisionally(location_rankings, self._production_priority)
         territories = self._ranked_territory_order(territories, location_rankings)
         self._territory_names = territories
+        # Built from the RANKED order, after the reorder above, because every
+        # territory-keyed section has to lead with the recommended territory. Held
+        # on the instance so the short-film notice can be driven by what these
+        # estimates actually say rather than by the production format alone.
+        self._built_incentive_estimates = self._build_incentive_estimates(territories)
 
         report: dict = {
             # AI fills these top-level narrative fields
@@ -240,7 +246,7 @@ class ReportBuilder:
             "complexity": None,
             # Deterministic sections
             "locationRankings": location_rankings,
-            "incentiveEstimates": self._build_incentive_estimates(territories),
+            "incentiveEstimates": self._built_incentive_estimates,
             # Set only when the production format is one the programme data cannot
             # vouch for, so the PDF carries the same caveat the wizard showed
             # rather than the warning living only at intake.
@@ -249,6 +255,10 @@ class ReportBuilder:
             # reason. Empty in the ordinary case.
             "unanalysedTerritories": list(self._unanalysed_territories),
             "programmeAvailabilityCaveat": self._programme_availability_caveat(),
+            # Sits beside the incentive figures in every surface, because a warning
+            # at the top or bottom of a report does not travel with a number a
+            # producer copies out of the middle of it.
+            "shortFormatIncentiveNotice": self._short_format_incentive_notice(),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -750,6 +760,28 @@ class ReportBuilder:
 
     # ── Incentive Estimates ────────────────────────────────────────────────
 
+    def _short_format_incentive_notice(self) -> str | None:
+        """Notice placed beside the incentive figures, not only at the report ends.
+
+        Raised only for a short-form project and only when at least one incentive on
+        display is potential rather than confirmed. A notice that appears on every
+        report stops being read, and one that appears when every figure IS confirmed
+        is simply false.
+        """
+        if not needs_format_eligibility_check(self._production_format):
+            return None
+        estimates = self._built_incentive_estimates or []
+        if not any(e.get("incentiveIsConfirmed") is False for e in estimates):
+            return None
+        return (
+            "Tax incentives shown as Potential or Unverified are illustrative "
+            "calculations only. Short-film eligibility varies by programme and may "
+            "depend on format, running time, production spend, distribution plans "
+            "and other requirements. Unverified incentive amounts are not included "
+            "in confirmed project savings or in the net production cost shown "
+            "anywhere in this report."
+        )
+
     def _programme_availability_caveat(self) -> str | None:
         """Blanket caveat, raised only while some programme fails its own thresholds.
 
@@ -994,6 +1026,27 @@ class ReportBuilder:
         # that is fact rather than absence of data, and it shows on any format.
         format_matters = needs_format_eligibility_check(self._production_format)
         merely_unrecorded = eligibility["verdict"] == UNVERIFIED
+
+        # ── Confirmed vs potential, mirroring _pre_compute_territory_financials ──
+        # A rebate calculation is arithmetic; eligibility is a fact about the
+        # programme. Only a verified-eligible programme may present its figure as an
+        # amount this production can count on. The illustrative calculation is kept
+        # under a separate key so it can be shown as "potential" without ever being
+        # mistaken for, or summed into, a confirmed total.
+        tf_for_money = self._territory_financials.get(territory) or {}
+        confirmed = bool(tf_for_money.get("incentive_is_confirmed", True))
+        est["incentiveEligibilityStatus"] = eligibility["verdict"]
+        est["incentiveIsConfirmed"] = confirmed
+        if not confirmed:
+            est["confirmedIncentive"] = None
+            est["potentialIncentive"] = tf_for_money.get("potential_net_rebate")
+            # Ranked on what the production can actually rely on. A territory must
+            # never lead on the strength of a figure whose eligibility is unverified.
+            est["incentiveStrength"] = 0
+        else:
+            est["confirmedIncentive"] = est.get("estimatedRebate")
+            est["potentialIncentive"] = None
+
         if format_matters or not merely_unrecorded:
             est["formatEligibility"] = eligibility
             # An unconfirmed programme must not present its rebate as an amount the

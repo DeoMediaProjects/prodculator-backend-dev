@@ -1022,9 +1022,20 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       </div>
     </div>
     <div style="display:flex;gap:24px;font-size:10.5px;color:#3A382F;font-weight:500;padding:8px 0;border-top:1px solid var(--hairline)">
-      {# Suppressed entirely when the programme is unavailable: the chip above
-         already says so, and repeating it as a rebate value reads like a figure. #}
-      {% if inc.estimatedRebate and not (pe and pe.available is false) %}
+      {# An unconfirmed incentive is presented as a different KIND of thing, not as
+         the same number with a caveat. A figure that reads like a rebate will be
+         copied into a budget as one, and the asterisk does not travel with it. #}
+      {% if inc.incentiveIsConfirmed is defined and not inc.incentiveIsConfirmed %}
+      <span style="display:inline-block;border:1px dashed #B87A1F;background:#FBF6EC;padding:4px 8px;border-radius:4px">
+        <b style="color:#8A5A12;font-size:7.5px;letter-spacing:.1em;text-transform:uppercase">Potential incentive, eligibility unverified</b>
+        {% if inc.potentialIncentive %}
+        <span style="color:#8A5A12;font-weight:700"> {{ inc.potentialIncentive }}</span>
+        {% endif %}
+        <span style="display:block;color:#5B5750;font-weight:500;font-size:9px;margin-top:2px">
+          Illustrative only. Not included in confirmed savings or net production cost.
+        </span>
+      </span>
+      {% elif inc.estimatedRebate and not (pe and pe.available is false) %}
       <span>
         <b>Est. rebate:</b> {{ inc.estimatedRebate }}
         {#- An unconfirmed programme's figure stays visible but never reads as an
@@ -1082,6 +1093,12 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   {# Separate from the format caveat below on purpose: "does not take shorts" and
      "your budget is under the floor" are different problems with different
      remedies, and merging them would make both vaguer. #}
+  {% if report.shortFormatIncentiveNotice %}
+  <div style="margin-top:12px;border:1px solid #B87A1F;border-left-width:3px;background:#FBF6EC;padding:11px 14px">
+    <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8A5A12;margin-bottom:4px">Short-film incentive eligibility</div>
+    <p style="font-size:10.5px;line-height:1.55;color:#3A382F;margin:0">{{ report.shortFormatIncentiveNotice }}</p>
+  </div>
+  {% endif %}
   {% if report.programmeAvailabilityCaveat %}
   <div style="margin-top:12px;border:1px solid #8E3323;border-left-width:3px;background:#FBF3F1;padding:11px 14px">
     <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8E3323;margin-bottom:4px">Not available to this production</div>

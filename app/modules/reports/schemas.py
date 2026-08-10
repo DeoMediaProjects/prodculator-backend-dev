@@ -230,6 +230,18 @@ class IncentiveEstimate(BaseModel):
     #: verdict, a label, and one ``reasons`` entry per gate with the arithmetic
     #: spelled out, so an exclusion can be checked rather than merely asserted.
     programmeEligibility: dict[str, Any] | None = None
+    #: Whether this figure may be presented as an amount the production can rely
+    #: on. False for a short film whose programme has not been verified as
+    #: accepting the format. Consumers must not infer this from the presence of an
+    #: amount: an illustrative calculation looks identical to a confirmed one.
+    incentiveIsConfirmed: bool = True
+    #: eligible | ineligible | needs_confirmation | unverified
+    incentiveEligibilityStatus: str | None = None
+    #: The amount that may enter confirmed totals, or None when nothing may.
+    confirmedIncentive: str | None = None
+    #: The illustrative calculation, present only when it is NOT confirmed. Never
+    #: summed into savings, net production cost, or any comparison of value.
+    potentialIncentive: str | None = None
     #: The rebate figure that would have been quoted had the programme been
     #: available. Retained for audit; never rendered as an amount, because a figure
     #: this production cannot claim outlives the caveat attached to it.
@@ -555,6 +567,9 @@ class ScriptAnalysis(BaseModel):
     #: assumption is safe, or once applicable_formats is populated.
     formatEligibilityCaveat: str | None = None
     programmeAvailabilityCaveat: str | None = None
+    #: Short-form only, and only when some displayed incentive is potential
+    #: rather than confirmed. Rendered beside the figures it concerns.
+    shortFormatIncentiveNotice: str | None = None
     #: Territories the producer selected that no section could analyse, each
     #: with a plain-language reason. A selection that vanishes without
     #: explanation reads as a bug and hides the useful fact.

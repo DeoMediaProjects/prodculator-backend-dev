@@ -20,6 +20,8 @@ from app.modules.b2b.signal_normalise import (
     gbp_band,
 )
 from app.modules.fx.service import FXService
+from app.modules.reports.format_eligibility import ELIGIBLE, evaluate_format_eligibility
+from app.modules.reports.helpers import needs_format_eligibility_check
 from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
 
@@ -1130,6 +1132,42 @@ class ReportService:
             d_net_qs, _, _ = _disp(corrected["qualifying_spend"])
             d_gross_rebate, _, _ = _disp(corrected["gross_rebate"])
             d_net_rebate, _, _ = _disp(corrected["net_rebate"])
+
+            # ── Confirmed vs potential ───────────────────────────────────────
+            # A rebate calculation is arithmetic; eligibility is a fact about the
+            # programme. For a short film the two were being conflated: an
+            # unverified programme's figure was subtracted from the budget and
+            # presented as the net production cost, which makes an unconfirmed
+            # incentive look financially guaranteed.
+            #
+            # Split here rather than at each display site. Every chart, scenario,
+            # waterfall and total already reads net_rebate/net_budget, so the
+            # confirmed figure has to BE those fields; anything else means finding
+            # and fixing a dozen consumers and missing one.
+            eligibility = evaluate_format_eligibility(
+                best,
+                production_format,
+                {
+                    "format": production_format,
+                    "budget_gbp": budget_gbp,
+                    "runtime_minutes": datasets.get("_runtime_minutes"),
+                },
+            )
+            format_verdict = eligibility["verdict"]
+            # Scoped to formats whose eligibility genuinely diverges from what these
+            # programmes are written for. A feature is not held back by the absence
+            # of a record saying features are accepted.
+            eligibility_gates_money = needs_format_eligibility_check(production_format)
+            incentive_is_confirmed = (
+                not eligibility_gates_money or format_verdict == ELIGIBLE
+            )
+
+            d_potential_rebate = d_net_rebate
+            if not incentive_is_confirmed:
+                # Zero, not hidden: the calculation still exists and is reported
+                # separately as an illustrative figure. What it must not do is
+                # reduce the net cost the producer plans against.
+                d_net_rebate = 0.0
             d_net_budget = d_total - d_net_rebate
 
             atl_str = None
@@ -1161,8 +1199,19 @@ class ReportService:
                 "rate_gross": f"{corrected['rate_gross']:g}%",
                 "rate_net": f"{corrected['rate_net']:g}%" if corrected.get("rate_net") else None,
                 "gross_rebate": f"{sym}{d_gross_rebate:,.0f}",
+                # Confirmed figures. Zero when the programme's acceptance of this
+                # format is unverified, verified-ineligible, or conditional on
+                # something the project data cannot settle.
                 "net_rebate": f"{sym}{d_net_rebate:,.0f}",
                 "net_budget": f"{sym}{d_net_budget:,.0f}",
+                # The illustrative calculation, kept separately so it can be shown
+                # as "potential" without ever entering a confirmed total.
+                "potential_net_rebate": f"{sym}{d_potential_rebate:,.0f}",
+                "potential_net_rebate_value": d_potential_rebate,
+                "incentive_is_confirmed": incentive_is_confirmed,
+                "incentive_eligibility_status": format_verdict,
+                "incentive_eligibility_label": eligibility["label"],
+                "incentive_eligibility_explanation": eligibility["explanation"],
                 "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
                 "programme": programme_name,
                 "programme_note": corrected.get("programme_note"),
