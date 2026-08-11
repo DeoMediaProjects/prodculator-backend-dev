@@ -2346,6 +2346,8 @@ class ReportBuilder:
                 "matchScore": m.score,
                 "matchedOn": reasons,
                 "whyMatched": ". ".join(reasons) + "." if reasons else "",
+                # Rendered as a link by both surfaces. A festival recommendation
+                # the reader cannot open is a name they have to go and search for.
                 "sourceUrl": fest.get("website_url"),
             })
         return entries

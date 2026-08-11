@@ -226,9 +226,55 @@ def _figure(label: str, value: str, basis: str) -> dict:
     return {"label": label, "value": value, "basis": basis}
 
 
-def _flag(severity: str, field: str, detail: str, action: str) -> dict:
-    """An unverified or stale input. *severity* is critical / warning / info."""
-    return {"severity": severity, "input": field, "detail": detail, "action": action}
+def _flag(
+    severity: str,
+    field: str,
+    detail: str,
+    action: str,
+    *,
+    label: str | None = None,
+) -> dict:
+    """An unverified or stale input. *severity* is critical / warning / info.
+
+    Two audiences were being served the same text. ``field`` is a database
+    identifier and ``action`` was often an instruction to us — "add comparable
+    productions in the admin comparables dataset", "curate a sourced cost-efficiency
+    score" — which is our data backlog, printed inside a customer's financing
+    document beneath a column heading that says WHAT TO DO. A producer cannot act on
+    it and should never have seen it.
+
+    ``label`` is what the reader sees in place of the raw column, and ``action`` is
+    now written for them: what it means for their numbers and what they can do about
+    it, which is sometimes nothing. ``field`` stays on the object because admin and
+    support genuinely need to know which record is thin; it is simply not rendered
+    to the customer.
+    """
+    return {
+        "severity": severity,
+        "input": field,
+        "label": label or _humanise_field(field),
+        "detail": detail,
+        "action": action,
+    }
+
+
+def _humanise_field(field: str) -> str:
+    """Fallback label for a flag that did not supply one.
+
+    Turns ``territory_profiles.cost_efficiency_score (New Mexico)`` into
+    ``Cost efficiency score (New Mexico)``. A safety net rather than the intended
+    path: a flag should name itself.
+    """
+    text = str(field or "").strip()
+    if not text:
+        return "Report input"
+    qualifier = ""
+    if "(" in text and text.endswith(")"):
+        text, _, tail = text.partition("(")
+        text = text.strip()
+        qualifier = f" ({tail[:-1].strip()})"
+    leaf = text.split(".")[-1].replace("_", " ").strip()
+    return (leaf[:1].upper() + leaf[1:] + qualifier) if leaf else "Report input"
 
 
 def _worst_status(statuses: list[str]) -> str:
@@ -364,6 +410,7 @@ def _assess_budget_vs_cost_base(ctx: _Context, flags: list[dict]) -> dict:
             "critical", "budget_amount",
             "Budget could not be normalised to GBP, so no cost-base test could run.",
             "Re-submit the production with a budget amount and a supported currency.",
+            label="Production budget",
         ))
         return {
             "key": "budget_vs_cost_base",
@@ -406,8 +453,9 @@ def _assess_budget_vs_cost_base(ctx: _Context, flags: list[dict]) -> dict:
                 "warning", f"incentive_programs.qualifying_spend_currency ({qs_currency})",
                 "No GBP fallback rate is held for this currency, so the "
                 "programme's minimum spend was not tested against the budget.",
-                f"Add a sourced GBP fallback rate for {qs_currency}, or verify "
-                f"the threshold with the film commission directly.",
+                "Confirm this threshold with the film commission directly. We "
+                "could not convert it into your budget currency to test it.",
+                label=f"Minimum spend, stated in {qs_currency}",
             ))
             statuses.append(STATUS_INSUFFICIENT)
         elif ctx.budget_gbp < qs_min_gbp:
@@ -478,8 +526,10 @@ def _assess_budget_vs_cost_base(ctx: _Context, flags: list[dict]) -> dict:
             "info", "comparable_productions.budget_usd",
             f"{len(anchor_comps)} comparable(s) with a known budget — too few "
             f"to anchor the budget against a local cost base.",
-            "Add comparable productions for this territory and budget tier in "
-            "the admin comparables dataset.",
+            "Treat the budget-versus-market comparison as unanchored. Nothing "
+            "here is wrong; there is simply not enough matched data to place "
+            "your budget against local norms.",
+            label="Comparable production budgets",
         ))
         statuses.append(STATUS_INSUFFICIENT)
     else:
@@ -542,8 +592,10 @@ def _assess_budget_vs_cost_base(ctx: _Context, flags: list[dict]) -> dict:
             "warning", f"territory_profiles.cost_efficiency_score ({ctx.territory})",
             "No sourced cost-efficiency score — the location ranking used a "
             "neutral 50 placeholder for this dimension.",
-            "Curate a sourced cost-efficiency score for this territory before "
-            "relying on its cost ranking in a financing document.",
+            "Treat this territory's cost ranking as indicative rather than "
+            "sourced, and confirm local costs with a line producer before "
+            "relying on it in a financing document.",
+            label=f"Cost-efficiency data for {ctx.territory}",
         ))
     else:
         checks.append(_check(
@@ -556,7 +608,9 @@ def _assess_budget_vs_cost_base(ctx: _Context, flags: list[dict]) -> dict:
                 "info", f"territory_profiles.cost_efficiency_source ({ctx.territory})",
                 "A cost-efficiency score is held but carries no source "
                 "attribution.",
-                "Record the source for this score so the figure is defensible.",
+                "The score is usable but not yet attributable, so treat it as "
+            "indicative if the figure is challenged.",
+                label=f"Cost-efficiency source for {ctx.territory}",
             ))
 
     status = _worst_status(statuses)
@@ -699,8 +753,9 @@ def _assess_incentive_confidence(ctx: _Context, flags: list[dict]) -> dict:
             "critical", "incentiveEstimates",
             f"No modelled incentive estimate is held for "
             f"{ctx.territory or 'the recommended territory'}.",
-            "Confirm whether the territory operates a production incentive, "
-            "and add the programme to the incentives dataset if it does.",
+            "Confirm with the film commission whether this territory operates "
+            "a production incentive your project could use.",
+            label="Incentive programme",
         ))
         return {
             "key": "incentive_confidence",
@@ -774,12 +829,15 @@ def _assess_incentive_confidence(ctx: _Context, flags: list[dict]) -> dict:
             f"cap and rules modelled here may no longer be current.",
             "Re-verify the programme against the film commission's published "
             "terms before using these figures in a financing document.",
+            label=f"Programme record for {ctx.programme or ctx.territory}",
         ))
     if not ctx.estimate.get("lastUpdated"):
         flags.append(_flag(
             "warning", f"incentive_programs.last_verified_at ({ctx.territory})",
             "No verification date is held for the modelled programme.",
-            "Record a verification date so staleness can be assessed at all.",
+            "Confirm the current terms with the programme administrator before "
+            "relying on these figures.",
+            label=f"Verification date for the {ctx.territory} programme",
         ))
     if (ctx.estimate.get("eligibilityStatus") or "unknown").lower() not in (
         ELIGIBILITY_CONFIRMED | ELIGIBILITY_CONTINGENT | ELIGIBILITY_FAIL
@@ -790,13 +848,16 @@ def _assess_incentive_confidence(ctx: _Context, flags: list[dict]) -> dict:
             "determined.",
             "Complete producer nationality and co-production status at intake, "
             "then confirm the route with the programme administrator.",
+            label="Producer eligibility",
         ))
     source_quality = (ctx.timing_entry.get("sourceQuality") or "").strip()
     if ctx.timing_entry and not source_quality:
         flags.append(_flag(
             "info", f"territory_profiles.bankability_source_quality ({ctx.territory})",
             "Payment-timing data carries no source-quality grading.",
-            "Grade the source so the payment window can be relied on.",
+            "Confirm the payment window with the programme administrator "
+            "before treating it as a financing date.",
+            label=f"Payment-timing source for {ctx.territory}",
         ))
     if ctx.profile.get("bankability_suspended"):
         flags.append(_flag(
@@ -806,6 +867,7 @@ def _assess_incentive_confidence(ctx: _Context, flags: list[dict]) -> dict:
             "timeline.",
             "Do not bank this incentive. Confirm current payment status with "
             "productions that have recently certified in this territory.",
+            label=f"Payment reliability for {ctx.territory}",
         ))
 
     status = {
@@ -956,8 +1018,9 @@ def _assess_soft_money(ctx: _Context, flags: list[dict]) -> dict:
             "info", "grants.max_amount",
             f"{len(unquantified)} matched fund(s) have no usable award amount, "
             f"so soft-money coverage is understated.",
-            "Record max_amount and currency for these funds in the admin "
-            "grants dataset.",
+            "Check each fund's own guidelines for its award ceiling. Your "
+            "soft-money coverage is understated here, not overstated.",
+            label="Grant award amounts",
         ))
 
     if open_deadlines:
@@ -1046,6 +1109,7 @@ def _assess_timeline(ctx: _Context, flags: list[dict]) -> dict:
             "festival-window feasibility could not be tested.",
             "Capture the expected completion date at intake and re-run the "
             "report.",
+            label="Expected completion date",
         ))
         checks.append(_check(
             "completion date declared", "skipped",
@@ -1180,8 +1244,8 @@ def _assess_timeline(ctx: _Context, flags: list[dict]) -> dict:
             f"territory_profiles.cert_weeks_max / payment_weeks_max ({ctx.territory})",
             "No payment-timing data, so the gap between completion and "
             "incentive receipt is unknown.",
-            "Research and record the certification and payment windows for "
-            "this territory.",
+            "Ask the programme administrator how long certification and "
+            "payment take. It determines when the cash actually arrives.",
         ))
         statuses.append(STATUS_INSUFFICIENT)
 
@@ -1241,8 +1305,9 @@ def _assess_timeline(ctx: _Context, flags: list[dict]) -> dict:
                 "Matched festivals carry no dated submission deadline, so the "
                 "delivery schedule could not be tested against the festival "
                 "calendar.",
-                "Record dated submission deadlines for these festivals in the "
-                "admin festivals dataset.",
+                "Check each festival's own site for this cycle's dates. "
+                "Deadlines move year to year, so we do not carry undated ones.",
+                label="Festival submission deadlines",
             ))
         statuses.append(STATUS_INSUFFICIENT)
 
@@ -1295,6 +1360,7 @@ def _collect_input_flags(ctx: _Context, flags: list[dict]) -> None:
             "Budget currency was submitted as 'Other', so no FX rate could be "
             "applied and every converted figure in this report is unreliable.",
             "Re-submit the production with a supported budget currency.",
+            label="Budget currency",
         ))
     elif (
         (ctx.budget_currency or "GBP").upper() != "GBP"
