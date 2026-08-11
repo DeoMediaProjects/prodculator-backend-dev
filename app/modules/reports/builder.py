@@ -2198,6 +2198,52 @@ class ReportBuilder:
         "Animation Series": "animation",
     }
 
+    # Format words that can appear in a festival's free-text deadline note. The
+    # notes are curator prose, not structured data, so a festival that accepts
+    # shorts may still describe only its FEATURE deadline.
+    _DEADLINE_FORMAT_WORDS = {
+        "feature": "feature",
+        "features": "feature",
+        "documentary": "documentary",
+        "documentaries": "documentary",
+        "short": "short",
+        "shorts": "short",
+        "animation": "animation",
+        "animated": "animation",
+    }
+
+    def _deadline_for_format(self, text: str | None) -> str | None:
+        """Return the deadline note only when it plausibly applies to this format.
+
+        AFRIFF's note reads "Feature submissions typically close ~2 months before
+        the November festival". Printed in a short film's report under a heading
+        promising matches on format, that reads as this production's deadline. It is
+        someone else's deadline.
+
+        A note that names formats and does not name ours is withheld and replaced
+        with a statement of what we actually know. A note that names no format at all
+        is left alone: a general note is general.
+        """
+        if not text:
+            return None
+        lowered = str(text).lower()
+        mentioned = {
+            token for word, token in self._DEADLINE_FORMAT_WORDS.items()
+            if word in lowered
+        }
+        if not mentioned:
+            return text  # says nothing about format, so it constrains nothing
+
+        wanted = canonical_format(self._production_format)
+        if wanted and wanted in mentioned:
+            return text
+
+        named = ", ".join(sorted(mentioned))
+        return (
+            f"Submission deadline not independently verified for this format. The "
+            f"programme's recorded note describes {named} submissions only."
+        )
+
     def _production_genres(self) -> set[str]:
         raw = self.request_metadata.get("genre") or []
         if isinstance(raw, str):
@@ -2293,8 +2339,9 @@ class ReportBuilder:
                 "location": fest.get("location") or fest.get("territory"),
                 "tier": fest.get("tier"),
                 "oscarQualifying": bool(fest.get("oscar_qualifying")),
-                "deadlinePattern": fest.get("deadline_pattern")
-                or fest.get("submission_deadline"),
+                "deadlinePattern": self._deadline_for_format(
+                    fest.get("deadline_pattern") or fest.get("submission_deadline")
+                ),
                 "eligibleFormats": fest.get("eligible_formats") or [],
                 "matchScore": m.score,
                 "matchedOn": reasons,
@@ -2448,8 +2495,27 @@ class ReportBuilder:
                 "name": territory,
                 "country": territory,
                 "score": None,  # set after score computation
+                # "rebate" is the PROGRAMME's headline rate, a fact about the
+                # programme. It is kept under the old key so nothing downstream
+                # breaks, and re-labelled in the templates, because reading "Rebate
+                # 30%" next to "Est. rebate £0" invites the reader to conclude the
+                # £0 is a mistake rather than a statement about eligibility.
                 "rebate": rebate_str,
+                "headlineRate": rebate_str,
                 "estimatedRebate": estimated_rebate,
+                # The same project-specific result the tax-incentive section reads,
+                # so the two sections cannot show different eligibility for the same
+                # programme. Read, never re-derived here.
+                "incentiveEligibilityStatus": (tf or {}).get("incentive_eligibility_status"),
+                "incentiveEligibilityLabel": (tf or {}).get("incentive_eligibility_label"),
+                "incentiveIsConfirmed": (tf or {}).get("incentive_is_confirmed", True),
+                "confirmedIncentive": (
+                    estimated_rebate if (tf or {}).get("incentive_is_confirmed", True) else None
+                ),
+                "potentialIncentive": (
+                    (tf or {}).get("potential_net_rebate")
+                    if (tf or {}).get("show_potential_incentive") else None
+                ),
                 # AI-filled narratives
                 "infrastructure": None,
                 "keyAdvantages": None,

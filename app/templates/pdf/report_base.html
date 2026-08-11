@@ -531,8 +531,12 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   </div>
   {% endif %}
 
+  {#- Kept with the summary it belongs to. A single short callout was breaking
+      onto a page of its own, which reads as a rendering fault rather than as
+      emphasis. break-inside keeps the row together and page-break-before:avoid
+      stops it starting a fresh page on its own. -#}
   {% if not is_preview and es.keyFlags %}
-  <div class="riskrow">
+  <div class="riskrow" style="break-inside:avoid;page-break-inside:avoid;page-break-before:avoid">
     {% for flag in es.keyFlags[:3] %}
     <div class="risk"><div class="rk">Flag</div><p>{{ flag }}</p></div>
     {% endfor %}
@@ -658,6 +662,19 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="tcard-body">
       <div class="dims">
         {{ dimbar('Incentive value', loc.incentiveStrength) }}
+        {#- dimbar renders nothing for a None value, which is exactly what an
+            unscored dimension is. Saying so beats leaving a gap the reader has to
+            interpret, and beats printing a number we do not have. -#}
+        {% if loc.incentiveStrength is none %}
+        <div class="dim">
+          <div class="dk"><span>Incentive value</span><span>Not scored</span></div>
+          <div style="font-size:8.5px;color:var(--grey);font-weight:500;line-height:1.45;margin-top:2px">
+            Eligibility for this project's format is unverified, so the potential
+            incentive neither raises nor lowers this territory's score. The dimension
+            is treated as neutral in the weighted total.
+          </div>
+        </div>
+        {% endif %}
         {{ dimbar('Incentive reliability', loc.incentiveReliability) }}
         {{ dimbar('Cost efficiency', loc.costEfficiency) }}
         {{ dimbar('Currency advantage', loc.currencyAdvantage) }}
@@ -741,8 +758,20 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     </div>
     <div class="tcard-body">
       <div class="dims" style="width:50%">
-        <div class="tfact"><span class="k">Rebate</span><span class="v">{{ dd.rebate }}</span></div>
-        <div class="tfact"><span class="k">Est. rebate</span><span class="v">{{ dd.estimatedRebate }}</span></div>
+        {#- Programme rate and project entitlement are different facts and are now
+            labelled as such. "Rebate 30%" beside "Est. rebate £0" read as a
+            contradiction; it was actually a headline rate beside an eligibility
+            statement. -#}
+        <div class="tfact"><span class="k">Programme rate</span><span class="v">{{ dd.headlineRate or dd.rebate }}</span></div>
+        {% if dd.incentiveIsConfirmed is defined and not dd.incentiveIsConfirmed %}
+        <div class="tfact"><span class="k">Eligibility</span><span class="v">{{ dd.incentiveEligibilityLabel or 'Unverified' }}</span></div>
+        <div class="tfact"><span class="k">Confirmed incentive</span><span class="v">{{ dd.confirmedIncentive or '0' }}</span></div>
+        {% if dd.potentialIncentive %}
+        <div class="tfact"><span class="k">Potential incentive</span><span class="v">{{ dd.potentialIncentive }} <small style="font-weight:500;color:#8A5A12">illustrative</small></span></div>
+        {% endif %}
+        {% else %}
+        <div class="tfact"><span class="k">Est. incentive</span><span class="v">{{ dd.estimatedRebate }}</span></div>
+        {% endif %}
         <div class="tfact"><span class="k">Infrastructure</span><span class="v">{{ dd.infrastructure }}</span></div>
         <div class="tfact"><span class="k">Payment</span><span class="v">{{ dd.paymentSpeed }}</span></div>
         <div class="tfact"><span class="k">Cultural test</span><span class="v">{{ dd.culturalTestLikelihood }}</span></div>
@@ -790,6 +819,18 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div style="border-top:1px solid var(--hairline);margin-top:10px;padding-top:14px;margin-bottom:8px">
     <div style="font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--grey);margin-bottom:10px">How to read this chart</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:10px;line-height:1.55;color:#3A382F;font-weight:500">
+      {#- The key describes what the chart actually shows. When there is no
+          confirmed rebate the chart has no rebate step, so explaining a "gross
+          rebate" and a tax-treatment step describes a chart that is not on the
+          page and implies a deduction that has not happened. -#}
+      {% if main_sc.incentiveIsConfirmed is defined and main_sc.incentiveIsConfirmed is false %}
+      <div><b>1 · Total budget</b> — the full cost of the production, before any incentive.</div>
+      <div><b>2 · Confirmed incentive</b> — {{ main_sc.currencySymbol }}0, because this project's eligibility for the programme has not been established. Only a confirmed incentive is deducted here.</div>
+      <div><b>3 · Confirmed net position</b> — total budget less confirmed incentives only.</div>
+      {% if main_sc.potentialIncentive %}
+      <div><b>Potential incentive</b> — {{ main_sc.potentialIncentive }} is shown separately above. It is an illustrative calculation and does not affect the confirmed net position.</div>
+      {% endif %}
+      {% else %}
       <div><b>1 · Total budget</b> — the full cost of the production, before any incentive.</div>
       <div><b>2 · Gross rebate</b> — the headline rate applies only to <i>qualifying spend</i>{% if main_sc.qualifyingSpend %}: the {{ main_sc.qualifyingSpend }} the programme counts, not the whole budget{% endif %}.</div>
       {% if main_sc.rateNet and main_sc.rateGross and main_sc.rateNet != main_sc.rateGross %}
@@ -797,6 +838,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       <div><b>4 · Net budget</b> — what the production effectively costs once the {{ main_sc.netRebate }} that actually lands is deducted.</div>
       {% else %}
       <div><b>3 · Net position</b> — cash rebates have no tax-treatment step: gross and net are the same, so the chart has one fewer bar.</div>
+      {% endif %}
       {% endif %}
     </div>
     {% if main_sc.notes %}<p style="font-size:9.5px;color:var(--grey);margin-top:10px;font-weight:500">{{ main_sc.notes }}</p>{% endif %}
@@ -1061,16 +1103,23 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       {# An unconfirmed incentive is presented as a different KIND of thing, not as
          the same number with a caveat. A figure that reads like a rebate will be
          copied into a budget as one, and the asterisk does not travel with it. #}
-      {% if inc.incentiveIsConfirmed is defined and not inc.incentiveIsConfirmed %}
+      {#- Gated on the AMOUNT, not merely on the status. A hard failure — a budget
+          below the programme's minimum — resolves to no potential figure at all,
+          and rendering the labelled box anyway produced an empty "Potential
+          incentive, eligibility unverified" card beside "not available at this
+          budget". An empty promise is worse than no card. -#}
+      {% if inc.potentialIncentive %}
       <span style="display:inline-block;border:1px dashed #B87A1F;background:#FBF6EC;padding:4px 8px;border-radius:4px">
         <b style="color:#8A5A12;font-size:7.5px;letter-spacing:.1em;text-transform:uppercase">Potential incentive, eligibility unverified</b>
-        {% if inc.potentialIncentive %}
         <span style="color:#8A5A12;font-weight:700"> {{ inc.potentialIncentive }}</span>
-        {% endif %}
         <span style="display:block;color:#5B5750;font-weight:500;font-size:9px;margin-top:2px">
           Illustrative only. Not included in confirmed savings or net production cost.
         </span>
       </span>
+      {% elif inc.incentiveIsConfirmed is defined and not inc.incentiveIsConfirmed %}
+      {#- Unavailable outright: state the confirmed position rather than leaving a
+          gap where a figure would be. -#}
+      <span><b>Confirmed incentive:</b> {{ inc.currencySymbol or '' }}0 · {{ inc.incentiveEligibilityLabel or 'not available to this production' }}</span>
       {% elif inc.estimatedRebate and not (pe and pe.available is false) %}
       <span>
         <b>Est. rebate:</b> {{ inc.estimatedRebate }}
@@ -1191,6 +1240,10 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   <div class="eyebrow">{{ num_map['comparables'] }} — Comparable Productions</div>
   <div class="sectitle">Films that made similar choices</div>
   <p class="secsub">Matched on genre, budget tier and territory relevance.</p>
+  {#- Section-level, not per row. Comparables are frequently features, and a
+      feature shot under a programme says the territory can host the work; it says
+      nothing about whether that programme accepts this production's format. -#}
+  <p class="secsub" style="margin-top:-4px">Where a comparable used a tax incentive, that shows the territory&rsquo;s production ecosystem. It does not establish that this production&rsquo;s format is eligible for the same programme.</p>
 
   {% if descriptions_only %}
   {{ section_desc('comparables') }}
