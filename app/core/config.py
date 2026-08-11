@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     STRIPE_PROMO_COUPON_ID: str = ""
     STRIPE_PROMO_PERCENT_OFF: int = 0
     STRIPE_PROMO_LABEL: str = ""
+    # Which plans the coupon actually covers, comma separated. A Stripe coupon is
+    # scoped to specific products, and applying it to a checkout for a product it
+    # does not cover makes Stripe reject the session — which would break the
+    # purchase entirely, not merely fail to discount it. It is also what stops the
+    # pricing page advertising a saving on a plan that will be charged in full.
+    STRIPE_PROMO_PLANS: str = "professional,producer,studio"
     # Legacy one-time / pay-per-report prices
     STRIPE_PRICE_SINGLE_USD: str = ""
     STRIPE_PRICE_SINGLE_GBP: str = ""

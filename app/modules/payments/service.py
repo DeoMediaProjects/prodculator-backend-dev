@@ -20,16 +20,31 @@ class StripeService:
         self.settings = settings
         stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    def _promo_discounts(self) -> list[dict] | None:
+    def promo_plans(self) -> set[str]:
+        """Plans the coupon is scoped to in Stripe."""
+        raw = self.settings.STRIPE_PROMO_PLANS or ""
+        return {p.strip().lower() for p in raw.split(",") if p.strip()}
+
+    def _promo_discounts(self, plan_type: str | None = None) -> list[dict] | None:
         """The active promotional coupon, or None.
 
         Returned as Stripe's ``discounts`` argument so the discount is applied by
         Stripe itself. This is the only place a promotion becomes real: the price
         object carries the list price, so a percentage advertised on the pricing page
         without this would show one number to the customer and charge another.
+
+        A coupon is scoped to specific products in Stripe. Sending it on a checkout
+        for a product it does not cover does not quietly skip the discount — Stripe
+        rejects the session, and the customer cannot buy at all. So a plan outside
+        the coupon's scope gets no discounts argument rather than a broken checkout.
         """
         coupon = (self.settings.STRIPE_PROMO_COUPON_ID or "").strip()
-        return [{"coupon": coupon}] if coupon else None
+        if not coupon:
+            return None
+        plans = self.promo_plans()
+        if plans and (plan_type or "").strip().lower() not in plans:
+            return None
+        return [{"coupon": coupon}]
 
     def create_checkout_session(
         self, price_id: str, user_email: str, user_id: str, metadata: dict | None = None
@@ -43,7 +58,6 @@ class StripeService:
             success_url=f"{self.settings.FRONTEND_URL}/dashboard?payment=success",
             cancel_url=f"{self.settings.FRONTEND_URL}/pricing?payment=cancelled",
             metadata={"userId": user_id, **(metadata or {})},
-            **({"discounts": d} if (d := self._promo_discounts()) else {}),
         )
         return {"session_id": session.id, "url": session.url}
 
@@ -59,7 +73,6 @@ class StripeService:
             success_url=f"{self.settings.FRONTEND_URL}/dashboard?credit=success",
             cancel_url=f"{self.settings.FRONTEND_URL}/pay-per-report?payment=cancelled",
             metadata={"userId": user_id, "paymentType": "credit"},
-            **({"discounts": d} if (d := self._promo_discounts()) else {}),
         )
         return {"session_id": session.id, "url": session.url}
 
@@ -100,7 +113,7 @@ class StripeService:
             # price, and discounting a token would obscure what the test charged.
             **(
                 {"discounts": d}
-                if not test_billing and (d := self._promo_discounts())
+                if not test_billing and (d := self._promo_discounts(plan_type))
                 else {}
             ),
         )

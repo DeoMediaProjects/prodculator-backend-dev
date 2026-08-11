@@ -136,11 +136,16 @@ async def active_promotion(settings: Settings = Depends(get_settings)) -> dict:
     coupon = (settings.STRIPE_PROMO_COUPON_ID or "").strip()
     percent = int(settings.STRIPE_PROMO_PERCENT_OFF or 0)
     if not coupon or percent <= 0 or percent >= 100:
-        return {"active": False, "percentOff": 0, "label": ""}
+        return {"active": False, "percentOff": 0, "label": "", "plans": []}
+    # The plans the coupon is scoped to in Stripe. The pricing surfaces discount
+    # exactly these and no others, so a plan outside the coupon never shows a saving
+    # it would not receive at checkout.
+    plans = sorted({p.strip().lower() for p in (settings.STRIPE_PROMO_PLANS or "").split(",") if p.strip()})
     return {
         "active": True,
         "percentOff": percent,
         "label": settings.STRIPE_PROMO_LABEL or f"{percent}% off all subscription plans",
+        "plans": plans,
     }
 
 

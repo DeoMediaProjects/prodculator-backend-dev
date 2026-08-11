@@ -13,27 +13,57 @@ from app.core.config import Settings
 from app.modules.payments.service import StripeService
 
 
+# Settings reads the real .env, which now carries a live coupon. Tests that mean
+# "no promotion configured" have to say so explicitly, or they pass or fail
+# depending on the machine they run on.
+NO_PROMO = dict(
+    STRIPE_PROMO_COUPON_ID="",
+    STRIPE_PROMO_PERCENT_OFF=0,
+    STRIPE_PROMO_LABEL="",
+)
+
+
+def settings_for(**overrides):
+    return Settings(STRIPE_SECRET_KEY="sk_test", **{**NO_PROMO, **overrides})
+
+
 def service(**overrides):
-    settings = Settings(STRIPE_SECRET_KEY="sk_test", **overrides)
-    return StripeService(settings)
+    return StripeService(settings_for(**overrides))
+
+
+LIVE = dict(
+    STRIPE_PROMO_COUPON_ID="promo_45",
+    STRIPE_PROMO_PERCENT_OFF=45,
+    STRIPE_PROMO_PLANS="professional,producer,studio",
+)
 
 
 class TestCouponDrivesTheDiscount:
     def test_no_coupon_configured_means_no_discount_argument(self):
-        assert service()._promo_discounts() is None
+        assert service()._promo_discounts("professional") is None
 
-    def test_a_configured_coupon_is_passed_to_stripe(self):
-        s = service(STRIPE_PROMO_COUPON_ID="promo_45", STRIPE_PROMO_PERCENT_OFF=45)
-        assert s._promo_discounts() == [{"coupon": "promo_45"}]
+    @pytest.mark.parametrize("plan", ["professional", "producer", "studio"])
+    def test_a_covered_plan_carries_the_coupon(self, plan):
+        assert service(**LIVE)._promo_discounts(plan) == [{"coupon": "promo_45"}]
+
+    @pytest.mark.parametrize("plan", ["single", "credit", "", None])
+    def test_a_plan_outside_the_coupon_scope_carries_nothing(self, plan):
+        """Not merely undiscounted. Stripe rejects a session carrying a coupon for
+        a product it does not cover, so sending it anyway would stop the customer
+        buying at all."""
+        assert service(**LIVE)._promo_discounts(plan) is None
+
+    def test_the_scope_is_case_insensitive(self):
+        assert service(**LIVE)._promo_discounts("Professional") == [{"coupon": "promo_45"}]
 
     def test_a_blank_coupon_is_not_a_coupon(self):
-        assert service(STRIPE_PROMO_COUPON_ID="   ")._promo_discounts() is None
+        assert service(STRIPE_PROMO_COUPON_ID="   ")._promo_discounts("professional") is None
 
     def test_a_percentage_without_a_coupon_discounts_nothing(self):
         """The failure this guards: someone sets the advertised percentage and
         forgets the coupon, so the page promises 45% off and Stripe charges full
         price."""
-        assert service(STRIPE_PROMO_PERCENT_OFF=45)._promo_discounts() is None
+        assert service(STRIPE_PROMO_PERCENT_OFF=45)._promo_discounts("professional") is None
 
 
 class TestWhatTheSiteIsAllowedToAdvertise:
@@ -42,7 +72,7 @@ class TestWhatTheSiteIsAllowedToAdvertise:
         import asyncio
 
         return asyncio.get_event_loop().run_until_complete(
-            active_promotion(Settings(**overrides))
+            active_promotion(settings_for(**overrides))
         )
 
     def test_nothing_is_advertised_without_a_coupon(self):
@@ -52,13 +82,13 @@ class TestWhatTheSiteIsAllowedToAdvertise:
         assert self._promotion(STRIPE_PROMO_COUPON_ID="promo_45")["active"] is False
 
     def test_a_fully_configured_promotion_is_advertised(self):
-        result = self._promotion(
-            STRIPE_PROMO_COUPON_ID="promo_45", STRIPE_PROMO_PERCENT_OFF=45,
-        )
+        result = self._promotion(**LIVE)
         assert result == {
             "active": True,
             "percentOff": 45,
             "label": "45% off all subscription plans",
+            # The site discounts exactly these and nothing else.
+            "plans": ["producer", "professional", "studio"],
         }
 
     def test_a_custom_label_is_used_when_set(self):
