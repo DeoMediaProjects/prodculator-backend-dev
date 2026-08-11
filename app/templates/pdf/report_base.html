@@ -1007,7 +1007,12 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% for flag in readiness.flags %}
     <tr>
       <td><span class="sev sev-{{ flag.severity }}">{{ flag.severity }}</span></td>
-      <td style="font-weight:700;font-size:10px">{{ flag.input }}</td>
+      {#- The human label, not the database column. `flag.input` is retained on
+          the object for admin and support, who need to know which record is thin,
+          but a producer reading a financing document should never see
+          `territory_profiles.cost_efficiency_score` — and certainly not next to a
+          heading that says WHAT TO DO. -#}
+      <td style="font-weight:700;font-size:10px">{{ flag.label or flag.input }}</td>
       <td>{{ flag.detail }}</td>
       <td style="color:var(--grey);font-weight:500">{{ flag.action }}</td>
     </tr>
