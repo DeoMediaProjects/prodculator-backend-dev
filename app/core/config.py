@@ -91,6 +91,18 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+
+    # Promotional discount, applied automatically at checkout.
+    #
+    # A Stripe coupon ID. This is the ONLY thing that makes a discount real: the
+    # charged amount comes from the Stripe price, so a percentage written into the
+    # pricing page alone would show one number and bill another. The percentage
+    # below exists purely so the site can describe the coupon it is actually
+    # applying, and the marketing surfaces only advertise a discount while the
+    # coupon ID is set.
+    STRIPE_PROMO_COUPON_ID: str = ""
+    STRIPE_PROMO_PERCENT_OFF: int = 0
+    STRIPE_PROMO_LABEL: str = ""
     # Legacy one-time / pay-per-report prices
     STRIPE_PRICE_SINGLE_USD: str = ""
     STRIPE_PRICE_SINGLE_GBP: str = ""
