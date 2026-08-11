@@ -16,6 +16,7 @@ from app.core.dependencies import get_supabase, get_current_user
 from app.core.firebase import verify_firebase_token
 from app.core.limiter import limiter
 from app.core.schemas import SuccessResponse
+from app.core.security import decode_token, is_token_revoked, revoke_token
 from app.core.storage import StorageClient
 
 logger = logging.getLogger(__name__)
@@ -262,6 +263,53 @@ async def delete_logo(
     return LogoResponse(logo_url=None)
 
 
+def _optional_redis():
+    """The Redis client, or None when it is unavailable.
+
+    get_redis() raises when Redis was never initialised. Injecting it with Depends
+    would turn a cache outage into a 500 on the one endpoint a locked-out user needs
+    most, so the replay guard degrades instead of blocking the reset.
+    """
+    try:
+        return get_redis()
+    except Exception:
+        return None
+
+
+async def _reset_token_already_used(token: str, redis_client) -> bool:
+    """Whether this reset link has been spent.
+
+    Fails open on a Redis outage, deliberately and loudly. A user locked out of their
+    account with a valid emailed link must not be blocked because the cache is down;
+    the token still expires on its own schedule, so the exposure is bounded to the
+    replay window that existed before this check was added at all.
+    """
+    if redis_client is None:
+        return False
+    try:
+        claims = decode_token(token, get_settings())
+        return await is_token_revoked(claims, redis_client)
+    except ValueError:
+        # Undecodable token: let the service produce the real error message.
+        return False
+    except Exception as exc:
+        logger.warning("Reset-token replay check skipped (Redis unavailable): %s", exc)
+        return False
+
+
+async def _consume_reset_token(token: str, redis_client) -> None:
+    """Spend the link, so the same email cannot be used twice."""
+    if redis_client is None:
+        return
+    try:
+        await revoke_token(token, redis_client, get_settings())
+    except Exception as exc:
+        # The password has already been changed at this point. Failing here would
+        # tell the user the reset failed when it succeeded, which is worse than the
+        # replay window staying open.
+        logger.warning("Reset token not consumed (Redis unavailable): %s", exc)
+
+
 @router.post("/reset-password", response_model=SuccessResponse)
 @limiter.limit("5/minute")
 async def reset_password(
@@ -285,10 +333,25 @@ async def confirm_reset_password(
     body: ConfirmResetPasswordRequest,
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    """Complete a password reset using the token from the reset email."""
+    """Complete a password reset using the token from the reset email.
+
+    The link is single-use. The token already carried a jti and nothing consumed it,
+    so a reset link stayed live for its full hour: anyone who later reached the
+    mailbox, a forwarded message, or a browser-history entry could replay it and take
+    the account back. Consuming the jti closes that window at first use.
+    """
+    redis_client = _optional_redis()
     try:
+        if await _reset_token_already_used(body.token, redis_client):
+            raise HTTPException(
+                status_code=400,
+                detail="This reset link has already been used. Please request a new one.",
+            )
         auth_service.confirm_password_reset(token=body.token, new_password=body.new_password)
+        await _consume_reset_token(body.token, redis_client)
         return SuccessResponse(message="Password updated successfully")
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
@@ -333,22 +396,33 @@ async def verify_email(
 
 
 @router.post("/update-password", response_model=SuccessResponse)
+# Rate limited like every other credential endpoint. Without this, the current-password
+# check below is an oracle an attacker holding a session can brute-force offline-fast.
+@limiter.limit("5/minute")
 async def update_password(
     request: Request,
     body: UpdatePasswordRequest,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    """Update the current user's password."""
+    """Change the signed-in user's password, re-authenticating them first."""
     token = extract_access_token(request, credentials.credentials if credentials else None)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        auth_service.update_password(token=token, new_password=body.new_password)
+        auth_service.update_password(
+            token=token,
+            new_password=body.new_password,
+            current_password=body.current_password,
+        )
         return SuccessResponse(message="Password updated successfully")
     except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        # 400, not 401: the session is valid, the supplied password is not. Returning
+        # 401 made the client's interceptor treat a typo in the current-password field
+        # as an expired session and sign the user out mid-form.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception:
+        logger.error("Password update failed", exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to update password")
 
 

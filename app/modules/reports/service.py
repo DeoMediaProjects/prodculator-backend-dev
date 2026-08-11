@@ -20,6 +20,8 @@ from app.modules.b2b.signal_normalise import (
     gbp_band,
 )
 from app.modules.fx.service import FXService
+from app.modules.reports.project_incentive import resolve_project_incentive
+from app.modules.reports.helpers import needs_format_eligibility_check
 from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
 
@@ -746,6 +748,17 @@ class ReportService:
         # Open or international — start from user-selected territories
         hint = list(strict_territories)
 
+        # A declared "must film in" is the hardest constraint the producer gives us,
+        # and it was read into the request schema and then used by nothing at all.
+        # A territory the production is committed to has to be in the dataset before
+        # anything can rank it.
+        must_film_in = (request_metadata.get("must_film_in") or "").strip()
+        if must_film_in and must_film_in.lower() not in ("open to all", "open", "n/a", "none"):
+            resolved = resolve_territory(must_film_in)
+            label = resolved.label if resolved else must_film_in
+            if label not in hint:
+                hint.append(label)
+
         # Always add state_province to hint so state-level incentives get priority-boosted
         if state_province and state_province not in hint:
             hint.append(state_province)
@@ -935,8 +948,16 @@ class ReportService:
         raw_considering = request_metadata.get("territories_considering") or []
         user_territories: list[str] = []
         seen_ut: set[str] = set()
-        for raw in raw_considering:
-            if raw.lower() in ("open to all", "open"):
+        # The declared "must film in" leads the list. It is a commitment rather than
+        # a preference, so a report that ranks the other choices above it, or omits
+        # it, is answering a question the producer did not ask.
+        must_film_in = (request_metadata.get("must_film_in") or "").strip()
+        ordered_raw = list(raw_considering)
+        if must_film_in and must_film_in.lower() not in ("open to all", "open", "n/a", "none"):
+            ordered_raw.insert(0, must_film_in)
+
+        for raw in ordered_raw:
+            if not raw or raw.lower() in ("open to all", "open"):
                 continue
             t = resolve_territory(raw)
             label = t.label if t else raw
@@ -944,6 +965,13 @@ class ReportService:
                 seen_ut.add(label)
                 user_territories.append(label)
         datasets["_user_territories"] = user_territories
+        # Kept separate so downstream sections can say "you told us you must film
+        # here" rather than treating it as one option among several.
+        datasets["_must_film_in"] = (
+            resolve_territory(must_film_in).label
+            if must_film_in and resolve_territory(must_film_in)
+            else (must_film_in or None)
+        )
 
         # v3: Production format (needed by validator for format harmonisation)
         datasets["_production_format"] = request_metadata.get("format")
@@ -1104,6 +1132,45 @@ class ReportService:
             d_net_qs, _, _ = _disp(corrected["qualifying_spend"])
             d_gross_rebate, _, _ = _disp(corrected["gross_rebate"])
             d_net_rebate, _, _ = _disp(corrected["net_rebate"])
+
+            # ── Confirmed vs potential ───────────────────────────────────────
+            # A rebate calculation is arithmetic; eligibility is a fact about the
+            # programme. For a short film the two were being conflated: an
+            # unverified programme's figure was subtracted from the budget and
+            # presented as the net production cost, which makes an unconfirmed
+            # incentive look financially guaranteed.
+            #
+            # Split here rather than at each display site. Every chart, scenario,
+            # waterfall and total already reads net_rebate/net_budget, so the
+            # confirmed figure has to BE those fields; anything else means finding
+            # and fixing a dozen consumers and missing one.
+            # One status, combining every required dimension. Consulting format
+            # eligibility alone was how a programme the project fails on budget could
+            # still print a potential figure beside "not available at this budget":
+            # each check was right about its own dimension and silent about the rest.
+            project_facts = {
+                "format": production_format,
+                "budget_gbp": budget_gbp,
+                "runtime_minutes": datasets.get("_runtime_minutes"),
+                "completion_date": datasets.get("_completion_date"),
+                "filming_start_date": datasets.get("_filming_start_date"),
+            }
+            eligibility = resolve_project_incentive(
+                best, project_facts, production_format=production_format,
+            )
+            format_verdict = eligibility["status"]
+            incentive_is_confirmed = eligibility["canAffectNetCost"]
+
+            # A hard failure leaves no figure to show. An unresolved one leaves a
+            # figure that is an illustration and nothing more.
+            d_potential_rebate = (
+                d_net_rebate if eligibility["showPotentialAmount"] else 0.0
+            )
+            if not incentive_is_confirmed:
+                # Zero, not hidden: the calculation still exists and is reported
+                # separately as an illustrative figure. What it must not do is
+                # reduce the net cost the producer plans against.
+                d_net_rebate = 0.0
             d_net_budget = d_total - d_net_rebate
 
             atl_str = None
@@ -1135,8 +1202,27 @@ class ReportService:
                 "rate_gross": f"{corrected['rate_gross']:g}%",
                 "rate_net": f"{corrected['rate_net']:g}%" if corrected.get("rate_net") else None,
                 "gross_rebate": f"{sym}{d_gross_rebate:,.0f}",
+                # Confirmed figures. Zero when the programme's acceptance of this
+                # format is unverified, verified-ineligible, or conditional on
+                # something the project data cannot settle.
                 "net_rebate": f"{sym}{d_net_rebate:,.0f}",
                 "net_budget": f"{sym}{d_net_budget:,.0f}",
+                # The illustrative calculation, kept separately so it can be shown
+                # as "potential" without ever entering a confirmed total.
+                "potential_net_rebate": f"{sym}{d_potential_rebate:,.0f}",
+                "potential_net_rebate_value": d_potential_rebate,
+                "incentive_is_confirmed": incentive_is_confirmed,
+                "incentive_eligibility_status": format_verdict,
+                "incentive_eligibility_label": eligibility["label"],
+                "incentive_eligibility_explanation": (
+                    eligibility["reasons"][0] if eligibility["reasons"] else None
+                ),
+                "incentive_eligibility_reasons": eligibility["reasons"],
+                # False when there is nothing to illustrate, so no surface has to
+                # decide for itself whether a figure is worth showing.
+                "show_potential_incentive": eligibility["showPotentialAmount"],
+                "incentive_can_affect_ranking": eligibility["canAffectRanking"],
+                "incentive_can_be_recommended": eligibility["canBeRecommended"],
                 "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
                 "programme": programme_name,
                 "programme_note": corrected.get("programme_note"),
