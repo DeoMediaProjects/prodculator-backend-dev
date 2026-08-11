@@ -109,11 +109,11 @@ class Settings(BaseSettings):
     # purchase entirely, not merely fail to discount it. It is also what stops the
     # pricing page advertising a saving on a plan that will be charged in full.
     #
-    # The launch offer covers Professional alone. This value must stay equal to the
-    # coupon's product scope in Stripe: widening it here without widening it there
-    # makes Stripe reject those checkouts outright, and narrowing it there without
-    # narrowing it here puts a discount sticker on a plan billed in full.
-    STRIPE_PROMO_PLANS: str = "professional"
+    # The launch offer covers the three subscription plans. This value must stay
+    # equal to the coupon's product scope in Stripe: widening it here without
+    # widening it there makes Stripe reject those checkouts outright, and narrowing
+    # it there without narrowing it here puts a discount on a plan billed in full.
+    STRIPE_PROMO_PLANS: str = "professional,producer,studio"
     # Legacy one-time / pay-per-report prices
     STRIPE_PRICE_SINGLE_USD: str = ""
     STRIPE_PRICE_SINGLE_GBP: str = ""
