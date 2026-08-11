@@ -106,6 +106,111 @@ async def create_test_subscription_checkout(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+class InvoiceSubscriptionRequest(BaseModel):
+    """Admin-only: bill a user's subscription by invoice instead of by card."""
+    user_email: str
+    plan_type: str                 # professional | producer | studio
+    currency: str = "gbp"          # gbp | usd
+    billing_cycle: str = "monthly"  # monthly | annual
+    days_until_due: int = 30
+
+
+class InvoiceSubscriptionResponse(BaseModel):
+    subscription_id: str
+    customer_id: str
+    status: str | None = None
+    invoice_id: str | None = None
+    hosted_invoice_url: str | None = None
+
+
+@router.post("/invoice-subscription", response_model=InvoiceSubscriptionResponse)
+async def create_invoice_billed_subscription(
+    body: InvoiceSubscriptionRequest,
+    _admin: AdminUser = Depends(RequirePermission("canManageAdmins")),
+    settings: Settings = Depends(get_settings),
+    supabase: DatabaseClient = Depends(get_supabase),
+    service: StripeService = Depends(get_stripe_service),
+):
+    """Start an invoice-billed subscription for a user (contract/net-terms billing).
+
+    Stripe issues a real invoice with a hosted payment page for every cycle
+    instead of charging a card. Entitlements are applied by the ordinary
+    customer.subscription.created webhook — this endpoint deliberately writes
+    no plan itself, so there is exactly one path that grants access.
+    """
+    email = body.user_email.strip().lower()
+    user_rows = (
+        supabase.table("users").select("id,email,name").eq("email", email).limit(1)
+        .execute().data or []
+    )
+    if not user_rows:
+        raise HTTPException(status_code=404, detail=f"No user account found for {email}")
+    target = user_rows[0]
+
+    # Refuse if the user already has a live subscription — creating a second one
+    # would bill them twice, the same guard the self-serve checkout applies.
+    existing = SubscriptionService(supabase).get_active_subscription(target["id"])
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{email} already has an active subscription "
+                f"({existing.get('plan_type')}). Cancel or change it instead."
+            ),
+        )
+
+    if body.days_until_due < 0 or body.days_until_due > 365:
+        raise HTTPException(status_code=400, detail="days_until_due must be between 0 and 365")
+
+    price_id = _resolve_base_subscription_price(
+        settings, body.plan_type, body.currency, body.billing_cycle
+    )
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No Stripe price configured for {body.plan_type}/{body.currency}/"
+                f"{body.billing_cycle}. Set STRIPE_PRICE_{body.plan_type.strip().upper()}"
+                f"{'_ANNUAL' if body.billing_cycle == 'annual' else ''}_"
+                f"{body.currency.strip().upper()} on the server."
+            ),
+        )
+
+    # Reuse the customer already linked to this user where one exists, so their
+    # invoice history and payment methods stay on a single Stripe customer.
+    prior_rows = (
+        supabase.table("subscriptions").select("stripe_customer_id")
+        .eq("user_id", target["id"]).limit(1).execute().data or []
+    )
+    existing_customer_id = prior_rows[0].get("stripe_customer_id") if prior_rows else None
+
+    try:
+        customer_id = service.get_or_create_customer(
+            user_id=target["id"],
+            email=target["email"],
+            name=target.get("name"),
+            existing_customer_id=existing_customer_id,
+        )
+        result = service.create_invoice_billed_subscription(
+            customer_id=customer_id,
+            price_id=price_id,
+            user_id=target["id"],
+            plan_type=body.plan_type,
+            days_until_due=body.days_until_due,
+        )
+        logger.info(
+            "Invoice-billed subscription created for user=%s plan=%s subscription=%s by admin=%s",
+            target["id"], body.plan_type, result.get("subscription_id"), _admin.id,
+        )
+        return InvoiceSubscriptionResponse(**result)
+    except stripe_lib.StripeError as exc:
+        logger.exception("Stripe error creating invoice subscription for %s", email)
+        raise HTTPException(status_code=400, detail=f"Stripe rejected the request: {exc}")
+    except Exception:
+        logger.exception("Unexpected error creating invoice subscription for %s", email)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 def ensure_user_owns_subscription(
     supabase: DatabaseClient,
     user_id: str,

@@ -432,13 +432,54 @@ class WebhookHandler:
 
         rows = result.data or []
         if not rows:
-            # No row matched — skip creating a stub. The checkout.session.completed
-            # handler creates the row with the correct user_id and plan_type.
-            logger.info(
-                "subscription.updated received before checkout.session.completed for %s — skipping",
-                subscription_id,
+            # No row matched. Two ways to get here:
+            #
+            #  1. An invoice-billed subscription (created by an admin, billed by
+            #     invoice rather than Checkout). There is no checkout session at
+            #     all, so this handler is the ONLY chance to create the row — if
+            #     we skipped, the customer would be invoiced and never upgraded.
+            #  2. A Checkout race where subscription.created lands before
+            #     checkout.session.completed. Creating the row here is still
+            #     correct: that handler upserts on stripe_subscription_id, so
+            #     the two converge rather than duplicating.
+            #
+            # Either way we only create when Stripe metadata names the user —
+            # without userId there is no account to grant, and a stub row with a
+            # NULL user_id would be worse than nothing.
+            sub_metadata = subscription.get("metadata") or {}
+            meta_user_id = sub_metadata.get("userId")
+            if not meta_user_id:
+                logger.info(
+                    "subscription.updated for %s matched no row and carries no "
+                    "metadata.userId — skipping",
+                    subscription_id,
+                )
+                return
+
+            plan_for_new_row = resolved_plan or normalize_plan(
+                sub_metadata.get("planType") or "professional"
             )
-            return
+            self.supabase.table("subscriptions").upsert(
+                {
+                    "id": str(uuid4()),
+                    "user_id": meta_user_id,
+                    "stripe_customer_id": subscription.get("customer"),
+                    "stripe_subscription_id": subscription_id,
+                    "plan_type": plan_for_new_row,
+                    "report_limit": PLAN_REPORT_LIMITS.get(plan_for_new_row, 3),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    **payload,
+                },
+                on_conflict="stripe_subscription_id",
+            ).execute()
+            logger.info(
+                "Created subscriptions row from subscription event for user=%s "
+                "subscription=%s plan=%s (billing_mode=%s)",
+                meta_user_id, subscription_id, plan_for_new_row,
+                sub_metadata.get("billingMode", "checkout"),
+            )
+            rows = [{"user_id": meta_user_id}]
+            resolved_plan = resolved_plan or plan_for_new_row
 
         if not resolved_plan:
             # Status/period dates (and any pending-marker clear) were still

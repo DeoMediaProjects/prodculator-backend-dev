@@ -587,3 +587,105 @@ class TestCheckoutUpgradeResilientToGeoFailure:
         assert dict(row._mapping) == {
             "plan": "professional", "user_type": "paid", "country": "US", "state": "CA",
         }
+
+
+class _NoRowQuery(_FakeQuery):
+    """Like _FakeQuery but reports that no subscriptions row matched.
+
+    The shared fake hardcodes a matching row for subscriptions:update, which
+    models a subscription that already went through Checkout. An invoice-billed
+    subscription has no such row, and that is precisely the path under test.
+    """
+
+    def execute(self):
+        key = f"{self._table}:{self._op}"
+        self._store.setdefault(key, []).append({
+            "data": self._pending_data,
+            "filters": dict(self._filters),
+        })
+        if self._op == "update" and self._table == "subscriptions":
+            return _FakeResult([])  # no local row yet
+        if self._table == "processed_webhook_events" and self._op == "":
+            return _FakeResult([])
+        return _FakeResult([self._pending_data] if self._pending_data else [])
+
+
+class FakeSupabaseNoRows(FakeSupabase):
+    def table(self, name):
+        return _NoRowQuery(self.writes, name)
+
+
+class TestInvoiceBilledSubscription:
+    """An invoice-billed subscription has NO checkout session, so the
+    subscription event is the only chance to grant entitlements. Before this
+    path existed the handler skipped, and an invoiced customer would have been
+    billed and never upgraded."""
+
+    def _make_subscription(self, plan_type="producer", user_id="user-inv", **overrides):
+        sub = {
+            "id": "sub_inv_1",
+            "customer": "cus_inv_1",
+            "status": "active",
+            "cancel_at_period_end": False,
+            "metadata": {
+                "userId": user_id,
+                "planType": plan_type,
+                "billingMode": "invoice",
+            },
+            "items": {"data": [{"price": {"id": "price_producer"}}]},
+        }
+        sub.update(overrides)
+        return sub
+
+    def test_creates_subscription_row_when_none_exists(self):
+        db = FakeSupabaseNoRows()
+        handler = WebhookHandler(db, settings=_settings_with_prices())
+        handler.handle_event(
+            "evt_inv_1", "customer.subscription.created", self._make_subscription()
+        )
+
+        upserts = db.writes.get("subscriptions:upsert", [])
+        assert len(upserts) == 1, "invoice-billed subscription must create its own row"
+        row = upserts[0]["data"]
+        assert row["user_id"] == "user-inv"
+        assert row["stripe_subscription_id"] == "sub_inv_1"
+        assert row["stripe_customer_id"] == "cus_inv_1"
+        assert row["plan_type"] == "producer"
+        assert row["report_limit"] == 3
+
+    def test_grants_plan_entitlement_on_user_record(self):
+        db = FakeSupabaseNoRows()
+        handler = WebhookHandler(db, settings=_settings_with_prices())
+        handler.handle_event(
+            "evt_inv_2", "customer.subscription.created", self._make_subscription()
+        )
+
+        user_updates = db.writes.get("users:update", [])
+        assert user_updates, "the invoiced customer must actually be upgraded"
+        assert user_updates[-1]["data"]["plan"] == "producer"
+        assert user_updates[-1]["data"]["user_type"] == "paid"
+        assert user_updates[-1]["filters"]["id"] == "user-inv"
+
+    def test_price_id_wins_over_metadata_plan(self):
+        """The price is the source of truth; metadata is only a fallback."""
+        db = FakeSupabaseNoRows()
+        handler = WebhookHandler(db, settings=_settings_with_prices())
+        sub = self._make_subscription(plan_type="professional")
+        sub["items"] = {"data": [{"price": {"id": "price_studio"}}]}
+        handler.handle_event("evt_inv_3", "customer.subscription.created", sub)
+
+        row = db.writes["subscriptions:upsert"][0]["data"]
+        assert row["plan_type"] == "studio"
+        assert row["report_limit"] == 10
+
+    def test_skips_when_metadata_has_no_user(self):
+        """Without a userId there is no account to grant — a stub row with a
+        NULL user_id would be worse than skipping."""
+        db = FakeSupabaseNoRows()
+        handler = WebhookHandler(db, settings=_settings_with_prices())
+        sub = self._make_subscription()
+        sub["metadata"] = {}
+        handler.handle_event("evt_inv_4", "customer.subscription.created", sub)
+
+        assert db.writes.get("subscriptions:upsert", []) == []
+        assert db.writes.get("users:update", []) == []

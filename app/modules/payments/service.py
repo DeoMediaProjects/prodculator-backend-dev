@@ -132,6 +132,109 @@ class StripeService:
         )
         return {"session_id": session.id, "url": session.url}
 
+    # ── Invoice-billed subscriptions ─────────────────────────────────────────
+    #
+    # Checkout takes a card up front and charges it silently every cycle. An
+    # invoice-billed subscription instead issues a real invoice each cycle with
+    # a hosted payment page and payment terms — the way agencies and studios
+    # expect to be billed. Entitlements still flow through the ordinary
+    # customer.subscription.created/updated webhook, so nothing downstream
+    # needs to know which collection method was used.
+
+    def get_or_create_customer(
+        self, *, user_id: str, email: str, name: str | None = None,
+        existing_customer_id: str | None = None,
+    ) -> str:
+        """Return a Stripe customer id for this user, creating one if needed.
+
+        Checkout creates customers implicitly; invoicing cannot, so a customer
+        must exist before an invoice-billed subscription can be created. An
+        existing id is verified rather than trusted — a stale or deleted id
+        would otherwise fail later, at invoice creation.
+        """
+        if existing_customer_id:
+            try:
+                customer = stripe.Customer.retrieve(existing_customer_id)
+                if not getattr(customer, "deleted", False):
+                    return existing_customer_id
+                logger.warning(
+                    "Stripe customer %s is deleted; creating a replacement for user=%s",
+                    existing_customer_id, user_id,
+                )
+            except stripe.StripeError:
+                logger.warning(
+                    "Stripe customer %s could not be retrieved; creating a replacement "
+                    "for user=%s", existing_customer_id, user_id, exc_info=True,
+                )
+
+        customer = stripe.Customer.create(
+            email=email,
+            name=name or None,
+            metadata={"userId": user_id},
+        )
+        return customer.id
+
+    def create_invoice_billed_subscription(
+        self,
+        *,
+        customer_id: str,
+        price_id: str,
+        user_id: str,
+        plan_type: str,
+        days_until_due: int = 30,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Create a subscription Stripe bills by invoice instead of by card.
+
+        ``collection_method='send_invoice'`` makes Stripe finalise and send an
+        invoice for every cycle, including the first. The customer pays from
+        the hosted invoice page; ``invoice.paid`` and ``invoice.payment_failed``
+        then drive confirmation and dunning through the existing handlers.
+
+        The subscription carries the same metadata shape as the Checkout path so
+        the webhook resolves the plan identically.
+        """
+        combined_metadata = {
+            "userId": user_id,
+            "planType": plan_type,
+            "billingMode": "invoice",
+            **(metadata or {}),
+        }
+        subscription = stripe.Subscription.create(
+            customer=customer_id,
+            items=[{"price": price_id}],
+            collection_method="send_invoice",
+            days_until_due=days_until_due,
+            metadata=combined_metadata,
+        )
+        sub = subscription.to_dict() if hasattr(subscription, "to_dict") else dict(subscription)
+
+        # Surface the payment link for the first invoice so the caller can show
+        # or email it immediately. Absent when Stripe has not finalised the
+        # invoice yet — that is expected, and invoice.finalized fills it in.
+        hosted_url: str | None = None
+        invoice_id = sub.get("latest_invoice")
+        if isinstance(invoice_id, dict):
+            hosted_url = invoice_id.get("hosted_invoice_url")
+            invoice_id = invoice_id.get("id")
+        elif invoice_id:
+            try:
+                invoice = stripe.Invoice.retrieve(invoice_id)
+                hosted_url = invoice.get("hosted_invoice_url")
+            except stripe.StripeError:
+                logger.warning(
+                    "Could not retrieve first invoice %s for subscription %s",
+                    invoice_id, sub.get("id"), exc_info=True,
+                )
+
+        return {
+            "subscription_id": sub.get("id"),
+            "customer_id": customer_id,
+            "status": sub.get("status"),
+            "invoice_id": invoice_id,
+            "hosted_invoice_url": hosted_url,
+        }
+
     def cancel_subscription(self, subscription_id: str) -> None:
         """Cancel a Stripe subscription at period end."""
         stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
