@@ -15,9 +15,13 @@ Four components are assessed against the already-built report:
 
 ``incentive_confidence``
     How much of the modelled incentive value is confirmed-grade rather than
-    estimated. An estimate is confirmed-grade only when the producer qualifies
-    outright, the incentive is bankable, the underlying record was verified
-    inside ``STALE_DAYS``, and the programme has not expired before delivery.
+    estimated. An estimate is confirmed-grade only when the project is eligible for
+    the programme in its own production format, the producer qualifies outright, the
+    incentive is bankable, the underlying record was verified inside ``STALE_DAYS``,
+    and the programme has not expired before delivery. Format eligibility is not
+    optional here: it is the dimension that most often decides a short film, and
+    omitting it from this list is what let a report call an incentive confirmed
+    while the same report said its format eligibility was unverified.
 
 ``soft_money_coverage``
     Matched grant/fund money as a share of budget, alongside the modelled
@@ -619,7 +623,22 @@ def _classify_estimate(
             f"that is not yet in place."
         )
     elif eligibility in ELIGIBILITY_CONFIRMED:
-        reasons.append("Producer qualifies outright (eligibility: qualified).")
+        # Producer structure is one required dimension, not the whole answer. Saying
+        # "qualifies outright" while the project's format eligibility for the same
+        # programme is unresolved is the contradiction this check used to produce:
+        # a status is only as strong as its weakest required dimension.
+        project_status = estimate.get("incentiveEligibilityStatus")
+        if estimate.get("incentiveIsConfirmed") is False:
+            contingent = True
+            detail = (estimate.get("incentiveEligibilityReasons") or [None])[0]
+            reasons.append(
+                "Producer structural requirements appear satisfied, but overall "
+                "programme eligibility remains "
+                f"{project_status or 'unresolved'}"
+                + (f": {detail}" if detail else ".")
+            )
+        else:
+            reasons.append("Producer qualifies outright (eligibility: qualified).")
     else:
         contingent = True
         reasons.append(
@@ -718,7 +737,8 @@ def _assess_incentive_confidence(ctx: _Context, flags: list[dict]) -> dict:
     figures.append(_figure(
         "Confirmed incentive value",
         _fmt_money(sym, ctx.net_rebate_value) if grade == "confirmed" else _fmt_money(sym, 0),
-        "the modelled value counts as confirmed only when the producer "
+        "the modelled value counts as confirmed only when this project is eligible "
+        "for the programme in its own format, the producer "
         "qualifies outright, the incentive is bankable, the record was "
         f"verified inside {STALE_DAYS} days, and the programme has not expired",
     ))

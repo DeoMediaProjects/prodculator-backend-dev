@@ -38,15 +38,19 @@ from app.modules.reports.helpers import (
     clean_source,
     resolve_payment_timing,
     resolve_schedule,
+    needs_format_eligibility_check,
 )
 from app.modules.reports.format_eligibility import (
     UNCONFIRMED_VERDICTS,
+    UNVERIFIED,
     any_unverified_for_format,
     evaluate_format_eligibility,
 )
+from app.core.formats import canonical_format
 from app.modules.reports.programme_eligibility import (
     any_unavailable,
     evaluate_programme_eligibility,
+    verdict_rank as programme_rank,
 )
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -207,6 +211,10 @@ class ReportBuilder:
                 or request_metadata.get("filming_start_date")
             ),
         }
+        # Populated by _select_territories. Declared here so the attribute exists
+        # even if a caller reads it before build() runs.
+        self._unanalysed_territories: list[dict] = []
+        self._built_incentive_estimates: list[dict] = []
         self._budget_currency: str = datasets.get("_budget_currency", "GBP")
         self._budget_original_amount: float | None = datasets.get("_budget_amount")
         self._fx_rates_from_budget: dict = datasets.get("_fx_rates_from_budget") or {}
@@ -224,6 +232,11 @@ class ReportBuilder:
         self._rank_territories_provisionally(location_rankings, self._production_priority)
         territories = self._ranked_territory_order(territories, location_rankings)
         self._territory_names = territories
+        # Built from the RANKED order, after the reorder above, because every
+        # territory-keyed section has to lead with the recommended territory. Held
+        # on the instance so the short-film notice can be driven by what these
+        # estimates actually say rather than by the production format alone.
+        self._built_incentive_estimates = self._build_incentive_estimates(territories)
 
         report: dict = {
             # AI fills these top-level narrative fields
@@ -233,12 +246,19 @@ class ReportBuilder:
             "complexity": None,
             # Deterministic sections
             "locationRankings": location_rankings,
-            "incentiveEstimates": self._build_incentive_estimates(territories),
+            "incentiveEstimates": self._built_incentive_estimates,
             # Set only when the production format is one the programme data cannot
             # vouch for, so the PDF carries the same caveat the wizard showed
             # rather than the warning living only at intake.
             "formatEligibilityCaveat": self._format_eligibility_caveat(),
+            # Selected territories that no section could analyse, each with its
+            # reason. Empty in the ordinary case.
+            "unanalysedTerritories": list(self._unanalysed_territories),
             "programmeAvailabilityCaveat": self._programme_availability_caveat(),
+            # Sits beside the incentive figures in every surface, because a warning
+            # at the top or bottom of a report does not travel with a number a
+            # producer copies out of the middle of it.
+            "shortFormatIncentiveNotice": self._short_format_incentive_notice(),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -294,6 +314,11 @@ class ReportBuilder:
         are shown as stacking options under the parent territory.
         """
         user_territories: list[str] = self.datasets.get("_user_territories") or []
+        # Selected territories that end up in no section of the report, with the
+        # reason. A producer who chose three and sees two must be told which one is
+        # missing and why; silence reads as a bug, and it hides the more useful fact
+        # that the territory has no bankable programme on record.
+        self._unanalysed_territories: list[dict] = []
 
         if user_territories:
             # Use user-submitted territories, preserving order.
@@ -304,6 +329,8 @@ class ReportBuilder:
             # dropped from the report.
             territories: list[str] = []
             for t in user_territories:
+                if t in territories:
+                    continue  # already covered, directly or via an expansion
                 if t in self._territory_incentives or t in self._territory_financials:
                     territories.append(t)
                 else:
@@ -319,23 +346,52 @@ class ReportBuilder:
                         resolved = resolve_territory(parent_raw)
                         return resolved is not None and resolved.label == target
 
+                    def _is_child_of(child_label: str, target: str, rows: list) -> bool:
+                        """Whether *child_label* belongs to *target*.
+
+                        Asks the Territory enum as well as the DB column, because the
+                        column is NULL on every sub-territory row in the dataset. Relying
+                        on it alone meant selecting "United States" found no children and
+                        dropped the country from the report entirely, even though six of
+                        its states carry active programmes. A producer who picked three
+                        territories got two, with nothing saying why.
+                        """
+                        if any(_parent_matches(r.get("parent_territory"), target) for r in rows):
+                            return True
+                        resolved = resolve_territory(child_label)
+                        return bool(
+                            resolved and resolved.parent and resolved.parent.label == target
+                        )
+
                     children = [
                         child_t
                         for child_t, rows in self._territory_incentives.items()
-                        if any(
-                            _parent_matches(r.get("parent_territory"), t)
-                            for r in rows
-                        )
+                        if _is_child_of(child_t, t, rows)
                     ]
                     if children:
-                        # Pick the child with the best incentive rate
-                        best_child = max(
-                            children,
-                            key=lambda c: max(
+                        # Pick the child the production can actually use, then the
+                        # best rate within that. Picking on rate alone chose the
+                        # headline number regardless of whether its programme's
+                        # thresholds rule this production out, so "United States"
+                        # could resolve to a state whose minimum qualifying spend is
+                        # many times the entire budget.
+                        def _child_key(child: str) -> tuple[int, float]:
+                            rows_for_child = self._territory_incentives[child]
+                            usable = max(
+                                programme_rank(
+                                    evaluate_programme_eligibility(
+                                        r, self._project_facts
+                                    )["verdict"]
+                                )
+                                for r in rows_for_child
+                            )
+                            rate = max(
                                 (to_float(r.get("rate_gross")) or 0)
-                                for r in self._territory_incentives[c]
-                            ),
-                        )
+                                for r in rows_for_child
+                            )
+                            return (usable, rate)
+
+                        best_child = max(children, key=_child_key)
                         if best_child not in territories:
                             territories.append(best_child)
                     else:
@@ -343,13 +399,25 @@ class ReportBuilder:
                         # are stored under its parent ("United Kingdom").  Look up
                         # the parent via the Territory enum and use it instead.
                         enum_t = resolve_territory(t)
-                        if enum_t and enum_t.parent:
-                            parent_label = enum_t.parent.label
-                            if (
-                                parent_label in self._territory_incentives
-                                and parent_label not in territories
-                            ):
-                                territories.append(parent_label)
+                        parent_label = enum_t.parent.label if enum_t and enum_t.parent else None
+                        if (
+                            parent_label
+                            and parent_label in self._territory_incentives
+                            and parent_label not in territories
+                        ):
+                            territories.append(parent_label)
+                        elif parent_label and parent_label in territories:
+                            pass  # already covered by its parent
+                        else:
+                            self._unanalysed_territories.append({
+                                "territory": t,
+                                "reason": (
+                                    "No active incentive programme is on record for this "
+                                    "territory, so it carries no rebate to model. It may "
+                                    "still suit the production for locations, crew or "
+                                    "currency reasons."
+                                ),
+                            })
         else:
             # Fallback: all territories with pre-computed financials
             territories = list(self._territory_financials.keys())
@@ -357,11 +425,34 @@ class ReportBuilder:
                 if t and t not in territories:
                     territories.append(t)
 
-        # Filter out territories whose only incentive is supplementary
-        territories = [
-            t for t in territories
-            if not self._is_supplementary_only_territory(t)
-        ]
+        # A territory may be reached twice: chosen directly, and again as the best
+        # child of a parent country that was also chosen. Selecting New York and the
+        # United States is the ordinary way that happens, and it put the same
+        # territory in the ranking twice. Deduplicated here, keeping first position,
+        # so no ordering decision above has to remember to do it.
+        deduped: list[str] = []
+        for t in territories:
+            if t not in deduped:
+                deduped.append(t)
+        territories = deduped
+
+        # Filter out territories whose only incentive is supplementary, recording
+        # the exclusion rather than performing it silently: a stacking credit is a
+        # real fact about the territory, just not a standalone incentive.
+        kept: list[str] = []
+        for t in territories:
+            if self._is_supplementary_only_territory(t):
+                self._unanalysed_territories.append({
+                    "territory": t,
+                    "reason": (
+                        "This territory's only incentive is a supplementary credit that "
+                        "stacks onto another programme, so it cannot be modelled as a "
+                        "standalone rebate."
+                    ),
+                })
+            else:
+                kept.append(t)
+        territories = kept
 
         if self.is_preview:
             territories = territories[:3]
@@ -415,8 +506,28 @@ class ReportBuilder:
             # data -> neutral treatment downstream; AI may refine within ±15.
             territory_profile = self._get_territory_profile(territory)
 
-            # Compute deterministic scores
-            strength = self._compute_incentive_strength(best)
+            # Compute deterministic scores.
+            #
+            # Incentive strength measures the value of a rebate this production can
+            # actually access. When the project's eligibility for the programme is
+            # unresolved, that value is not zero and it is not the headline rate
+            # either — it is unknown, and scoring it either way states something we
+            # do not know. Set to None, which _weighted_score already treats as an
+            # unscored dimension worth a neutral 50, the same convention used for a
+            # territory with no sourced cost data.
+            #
+            # The effect is the one that matters: a 30% programme nobody has
+            # confirmed this project can use no longer outranks a 20% programme on
+            # the strength of the larger number.
+            tf_for_rank = self._territory_financials.get(territory) or {}
+            can_rank = tf_for_rank.get("incentive_can_affect_ranking")
+            status_for_rank = tf_for_rank.get("incentive_eligibility_status")
+            if can_rank is False:
+                # A verified exclusion is a real answer: there is no accessible value
+                # here, and neutral would overstate it. Anything else is unknown.
+                strength = 0 if status_for_rank == "ineligible" else None
+            else:
+                strength = self._compute_incentive_strength(best)
             reliability_score, bankability_label = self._compute_reliability(best, territory_profile)
             currency_score = self._get_currency_score(territory)
             cost_anchor = self._profile_score(territory_profile, "cost_efficiency_score")
@@ -669,6 +780,28 @@ class ReportBuilder:
 
     # ── Incentive Estimates ────────────────────────────────────────────────
 
+    def _short_format_incentive_notice(self) -> str | None:
+        """Notice placed beside the incentive figures, not only at the report ends.
+
+        Raised only for a short-form project and only when at least one incentive on
+        display is potential rather than confirmed. A notice that appears on every
+        report stops being read, and one that appears when every figure IS confirmed
+        is simply false.
+        """
+        if not needs_format_eligibility_check(self._production_format):
+            return None
+        estimates = self._built_incentive_estimates or []
+        if not any(e.get("incentiveIsConfirmed") is False for e in estimates):
+            return None
+        return (
+            "Tax incentives shown as Potential or Unverified are illustrative "
+            "calculations only. Short-film eligibility varies by programme and may "
+            "depend on format, running time, production spend, distribution plans "
+            "and other requirements. Unverified incentive amounts are not included "
+            "in confirmed project savings or in the net production cost shown "
+            "anywhere in this report."
+        )
+
     def _programme_availability_caveat(self) -> str | None:
         """Blanket caveat, raised only while some programme fails its own thresholds.
 
@@ -700,7 +833,20 @@ class ReportBuilder:
         moment every programme in the report carries verified or settled eligibility.
         A caveat that cannot switch off stops being read.
         """
-        if not self._production_format:
+        # Scoped to formats whose eligibility materially diverges from the norm
+        # these programmes are written for. Production incentives in this dataset are
+        # built around features and scripted TV; the real exclusion risk is
+        # concentrated in short-form work, which is commonly served by separate grant
+        # schemes instead. Raising the caveat on every format made it fire on every
+        # report, including features, where it added no information and trained
+        # producers to scroll past the one warning that matters.
+        #
+        # This is a deliberate assumption and worth naming: a feature is treated as
+        # within a programme's intended scope unless a verified whitelist says
+        # otherwise. Where a programme IS verified as excluding a format, the
+        # per-programme verdict still says so on any format, because that is recorded
+        # fact rather than assumption.
+        if not needs_format_eligibility_check(self._production_format):
             return None
         rows = [r for rows in self._territory_incentives.values() for r in rows]
         if not any_unverified_for_format(
@@ -892,10 +1038,62 @@ class ReportBuilder:
         eligibility = evaluate_format_eligibility(
             db_row, self._production_format, self._project_facts,
         )
-        est["formatEligibility"] = eligibility
-        # An unconfirmed programme must not present its rebate as an amount the
-        # production can count on. The figure stays visible, labelled.
-        est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+        # Surfaced only where it carries information. For a feature or scripted TV
+        # project — what these programmes are written for — "nobody has explicitly
+        # recorded that this programme accepts features" is true of every programme
+        # in the dataset, so showing it on all of them says nothing and buries the
+        # cases that matter. A recorded exclusion or a stated condition is different:
+        # that is fact rather than absence of data, and it shows on any format.
+        format_matters = needs_format_eligibility_check(self._production_format)
+        merely_unrecorded = eligibility["verdict"] == UNVERIFIED
+
+        # ── Confirmed vs potential, mirroring _pre_compute_territory_financials ──
+        # A rebate calculation is arithmetic; eligibility is a fact about the
+        # programme. Only a verified-eligible programme may present its figure as an
+        # amount this production can count on. The illustrative calculation is kept
+        # under a separate key so it can be shown as "potential" without ever being
+        # mistaken for, or summed into, a confirmed total.
+        # Read from the one resolved status rather than re-derived here. Every
+        # section that answered this question for itself is how the report came to
+        # contradict itself, so this reads the answer and adds nothing to it.
+        tf_for_money = self._territory_financials.get(territory) or {}
+        confirmed = bool(tf_for_money.get("incentive_is_confirmed", True))
+        est["incentiveEligibilityStatus"] = tf_for_money.get(
+            "incentive_eligibility_status", eligibility["verdict"]
+        )
+        est["incentiveIsConfirmed"] = confirmed
+        est["incentiveEligibilityLabel"] = tf_for_money.get("incentive_eligibility_label")
+        est["incentiveEligibilityReasons"] = tf_for_money.get(
+            "incentive_eligibility_reasons"
+        ) or []
+        # The programme's own rate stays visible whatever the verdict: it is a fact
+        # about the programme. What it must never do is read as this project's rate.
+        est["headlineRate"] = est.get("rate")
+        if not confirmed:
+            est["confirmedIncentive"] = None
+            # Suppressed entirely on a hard failure. A potential figure printed
+            # beside "not available at this budget" is a contradiction the reader
+            # has to resolve on our behalf.
+            est["potentialIncentive"] = (
+                tf_for_money.get("potential_net_rebate")
+                if tf_for_money.get("show_potential_incentive")
+                else None
+            )
+            # Ranked on what the production can actually rely on. A territory must
+            # never lead on the strength of a figure whose eligibility is unverified.
+            est["incentiveStrength"] = 0
+        else:
+            est["confirmedIncentive"] = est.get("estimatedRebate")
+            est["potentialIncentive"] = None
+
+        if format_matters or not merely_unrecorded:
+            est["formatEligibility"] = eligibility
+            # An unconfirmed programme must not present its rebate as an amount the
+            # production can count on. The figure stays visible, labelled.
+            est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+        else:
+            est["formatEligibility"] = None
+            est["rebateIsConfirmed"] = True
 
         # Whether the production clears this programme's own stated thresholds:
         # minimum qualifying spend, budget ceiling, expiry, status. A blunter
@@ -1297,6 +1495,17 @@ class ReportBuilder:
                 "netBudgetValue": tf.get("net_budget_value"),
                 "rateGrossValue": tf.get("rate_gross_value"),
                 "rateNetValue": tf.get("rate_net_value"),
+                # The chart reads these to decide whether a rebate bar may be drawn
+                # at all. A gold bar stepping the budget down reads as money
+                # received, whatever the caption underneath it says, so an
+                # unconfirmed incentive must not appear in the confirmed waterfall.
+                "incentiveIsConfirmed": tf.get("incentive_is_confirmed", True),
+                "incentiveEligibilityStatus": tf.get("incentive_eligibility_status"),
+                "incentiveEligibilityLabel": tf.get("incentive_eligibility_label"),
+                "potentialIncentive": (
+                    tf.get("potential_net_rebate")
+                    if tf.get("show_potential_incentive") else None
+                ),
             }
 
             # ATL deduction
@@ -1431,6 +1640,7 @@ class ReportBuilder:
 
         # Deadline proximity
         self._inject_deadline_flags(summary)
+        self._inject_eligibility_first_step(summary)
 
         return summary
 
@@ -1457,6 +1667,53 @@ class ReportBuilder:
         key_flags = summary.setdefault("keyFlags", [])
         if not any("shoot timeline" in f.lower() or "shooting days" in f.lower() for f in key_flags):
             key_flags.append(flag)
+
+    def _inject_eligibility_first_step(self, summary: dict) -> None:
+        """Put verification before any action that spends money on programme access.
+
+        The report was telling producers to establish a qualifying production entity
+        and file for certification under a programme this project had not been
+        confirmed eligible for. Those steps cost money — company formation, legal,
+        accountant — and the eligibility question is free to ask. Ordering them the
+        other way round asks a producer to spend against an assumption we have
+        explicitly told them elsewhere is unverified.
+
+        Deterministic and prepended, so it leads regardless of what the narrative
+        proposed.
+        """
+        unresolved = [
+            est for est in (self._built_incentive_estimates or [])
+            if est.get("incentiveIsConfirmed") is False
+        ]
+        if not unresolved:
+            return
+
+        lead = unresolved[0]
+        territory = lead.get("territory") or "the recommended territory"
+        programme = lead.get("program") or "the incentive programme"
+        timeline = summary.setdefault("actionTimeline", [])
+        if not isinstance(timeline, list):
+            return
+
+        already = " ".join(
+            str(item.get("action", "")) for item in timeline if isinstance(item, dict)
+        ).lower()
+        if "confirm" in already and "eligib" in already:
+            return
+
+        fmt = (self._production_format or "this project").lower()
+        timeline.insert(0, {
+            "action": (
+                f"Confirm that this {fmt} is eligible for {programme} with the "
+                f"{territory} film commission or programme administrator"
+            ),
+            "note": (
+                "Do this before relying on the incentive or incurring costs "
+                "associated with programme qualification, such as forming a "
+                "qualifying entity or filing for certification. Those steps only "
+                "pay off if the format is accepted."
+            ),
+        })
 
     def _inject_deadline_flags(self, summary: dict) -> None:
         """Flag imminent funding/festival deadlines."""
@@ -1922,7 +2179,14 @@ class ReportBuilder:
     # ── Festival & Distributor Recommendations ─────────────────────────────
 
     # Production format → festival/distributor eligible_formats vocabulary
-    _FORMAT_TO_ELIGIBLE = {
+    # Superseded by canonical_format(). Kept only as documentation of what this
+    # hand-maintained map used to cover, because what it MISSED is the point: the
+    # wizard offers "Short" and "Animated Feature", and neither was a key. A miss
+    # returned no festivals at all, so a short film was told "no festival matches
+    # for this production's format and timing" while 107 festivals in the dataset
+    # accept shorts. A second vocabulary that has to be kept in step with the first
+    # will always drift; app/core/formats.py is the one both sides read.
+    _LEGACY_FORMAT_TO_ELIGIBLE = {
         "Feature Film": "feature",
         "Documentary": "documentary",
         "Docuseries": "documentary",
@@ -1933,6 +2197,52 @@ class ReportBuilder:
         "Mini-Series": "tv_series",
         "Animation Series": "animation",
     }
+
+    # Format words that can appear in a festival's free-text deadline note. The
+    # notes are curator prose, not structured data, so a festival that accepts
+    # shorts may still describe only its FEATURE deadline.
+    _DEADLINE_FORMAT_WORDS = {
+        "feature": "feature",
+        "features": "feature",
+        "documentary": "documentary",
+        "documentaries": "documentary",
+        "short": "short",
+        "shorts": "short",
+        "animation": "animation",
+        "animated": "animation",
+    }
+
+    def _deadline_for_format(self, text: str | None) -> str | None:
+        """Return the deadline note only when it plausibly applies to this format.
+
+        AFRIFF's note reads "Feature submissions typically close ~2 months before
+        the November festival". Printed in a short film's report under a heading
+        promising matches on format, that reads as this production's deadline. It is
+        someone else's deadline.
+
+        A note that names formats and does not name ours is withheld and replaced
+        with a statement of what we actually know. A note that names no format at all
+        is left alone: a general note is general.
+        """
+        if not text:
+            return None
+        lowered = str(text).lower()
+        mentioned = {
+            token for word, token in self._DEADLINE_FORMAT_WORDS.items()
+            if word in lowered
+        }
+        if not mentioned:
+            return text  # says nothing about format, so it constrains nothing
+
+        wanted = canonical_format(self._production_format)
+        if wanted and wanted in mentioned:
+            return text
+
+        named = ", ".join(sorted(mentioned))
+        return (
+            f"Submission deadline not independently verified for this format. The "
+            f"programme's recorded note describes {named} submissions only."
+        )
 
     def _production_genres(self) -> set[str]:
         raw = self.request_metadata.get("genre") or []
@@ -2001,10 +2311,7 @@ class ReportBuilder:
         festival_distributor_matcher.py). Format and timing are hard gates;
         representation is strict opt-in; audience is declared-only.
         """
-        eligible_format = (
-            self._FORMAT_TO_ELIGIBLE.get(self._production_format)
-            if self._production_format else None
-        )
+        eligible_format = canonical_format(self._production_format)
         if not eligible_format:
             return []
 
@@ -2032,8 +2339,9 @@ class ReportBuilder:
                 "location": fest.get("location") or fest.get("territory"),
                 "tier": fest.get("tier"),
                 "oscarQualifying": bool(fest.get("oscar_qualifying")),
-                "deadlinePattern": fest.get("deadline_pattern")
-                or fest.get("submission_deadline"),
+                "deadlinePattern": self._deadline_for_format(
+                    fest.get("deadline_pattern") or fest.get("submission_deadline")
+                ),
                 "eligibleFormats": fest.get("eligible_formats") or [],
                 "matchScore": m.score,
                 "matchedOn": reasons,
@@ -2187,8 +2495,27 @@ class ReportBuilder:
                 "name": territory,
                 "country": territory,
                 "score": None,  # set after score computation
+                # "rebate" is the PROGRAMME's headline rate, a fact about the
+                # programme. It is kept under the old key so nothing downstream
+                # breaks, and re-labelled in the templates, because reading "Rebate
+                # 30%" next to "Est. rebate £0" invites the reader to conclude the
+                # £0 is a mistake rather than a statement about eligibility.
                 "rebate": rebate_str,
+                "headlineRate": rebate_str,
                 "estimatedRebate": estimated_rebate,
+                # The same project-specific result the tax-incentive section reads,
+                # so the two sections cannot show different eligibility for the same
+                # programme. Read, never re-derived here.
+                "incentiveEligibilityStatus": (tf or {}).get("incentive_eligibility_status"),
+                "incentiveEligibilityLabel": (tf or {}).get("incentive_eligibility_label"),
+                "incentiveIsConfirmed": (tf or {}).get("incentive_is_confirmed", True),
+                "confirmedIncentive": (
+                    estimated_rebate if (tf or {}).get("incentive_is_confirmed", True) else None
+                ),
+                "potentialIncentive": (
+                    (tf or {}).get("potential_net_rebate")
+                    if (tf or {}).get("show_potential_incentive") else None
+                ),
                 # AI-filled narratives
                 "infrastructure": None,
                 "keyAdvantages": None,

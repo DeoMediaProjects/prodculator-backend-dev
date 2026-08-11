@@ -31,6 +31,12 @@ from app.modules.reports.schemas import (
 )
 from app.modules.reports.service import ReportService
 from app.modules.scripts.service import ClaudeUnavailableError, ScriptAnalysisService
+from app.modules.reports.investor_copy import (
+    SYSTEM_PROMPT,
+    build_story_context,
+    build_user_content,
+    parse_draft,
+)
 from app.modules.email_gating.service import EmailGatingService
 from app.modules.subscriptions.service import SubscriptionService
 
@@ -1073,6 +1079,82 @@ async def update_project_details(
         raise HTTPException(status_code=403, detail="Access denied")
 
     return _format_report_response(updated, settings, user_plan=user.plan)
+
+
+@router.post("/{report_id}/project-details/draft")
+async def draft_project_details_copy(
+    report_id: str,
+    user: AuthUser = Depends(RequirePlan("producer")),
+    service: ReportService = Depends(get_report_service),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Draft a logline and synopsis from the analysis this report already holds.
+
+    Nothing is saved. The producer reviews and edits before the form is submitted,
+    which is the point: this removes the blank page, it does not author the document.
+    """
+    report = service.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.get("user_id") != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    report_data = report.get("report_data") or {}
+    story_context = build_story_context(report_data)
+    if not story_context:
+        # Nothing in the report describes the story, so there is nothing to restate.
+        # Drafting anyway would mean inventing it.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This report does not contain enough story analysis to draft from. "
+                "Write the logline and synopsis directly."
+            ),
+        )
+
+    metadata = report.get("request_metadata") or {}
+    genres = metadata.get("genre")
+    if isinstance(genres, str):
+        genres = [genres]
+
+    script_service = ScriptAnalysisService(settings)
+    try:
+        response = script_service._call_anthropic_with_retry(
+            system_prompt=SYSTEM_PROMPT,
+            user_content=build_user_content(
+                script_title=report.get("script_title") or "",
+                story_context=story_context,
+                genres=genres,
+                production_format=metadata.get("format"),
+            ),
+            temperature=0.4,
+            stage="investor_copy",
+        )
+    except ClaudeUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="Drafting is temporarily unavailable. Please write the fields directly.",
+        )
+    except Exception:
+        logger.error("Investor copy draft failed: report_id=%s", report_id, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Drafting is temporarily unavailable. Please write the fields directly.",
+        )
+
+    text = "".join(
+        getattr(block, "text", "") for block in getattr(response, "content", [])
+    )
+    draft = parse_draft(text)
+    if not draft["logline"] and not draft["synopsis"]:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "The analysis in this report was too thin to draft from. "
+                "Write the logline and synopsis directly."
+            ),
+        )
+    return draft
 
 
 @router.get("/{report_id}/investor-summary")

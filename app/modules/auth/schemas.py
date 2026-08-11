@@ -55,6 +55,11 @@ class ResendVerificationRequest(BaseModel):
 
 
 class UpdatePasswordRequest(BaseModel):
+    # Required. A valid access token proves the session, not the person holding it:
+    # an unlocked laptop, a borrowed device or a leaked token would otherwise be
+    # enough to take an account over silently, since changing the password is what
+    # locks the real owner out. Re-authenticating here is the standard control.
+    current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8)
 
 
