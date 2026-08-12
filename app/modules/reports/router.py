@@ -69,6 +69,22 @@ def _recent_report_for(key: str) -> str | None:
         return hit[0] if hit else None
 
 
+def reset_submission_dedupe() -> None:
+    """Forget every remembered submission.
+
+    The dedupe window is process-global on purpose: it is what makes an immediate
+    resubmit return the report already being generated rather than start a second
+    one. Under pytest that same state leaks between tests, since one test's payload
+    is byte-identical to the next test's, so the second request is answered from the
+    cache and never reaches the dispatch path it was written to exercise.
+
+    Called by an autouse fixture, alongside the analysis cache and the alert
+    throttle, which are global for the same kind of reason.
+    """
+    with _recent_submissions_lock:
+        _recent_submissions.clear()
+
+
 def _remember_submission(key: str, report_id: str) -> None:
     with _recent_submissions_lock:
         _recent_submissions[key] = (report_id, monotonic())
