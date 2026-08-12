@@ -648,13 +648,30 @@ class TestEligibility:
         est = report["incentiveEstimates"][0]
         assert est["eligibilityStatus"] == "ineligible"
 
-    def test_no_producer_country_adds_assumption(self):
+    def test_no_producer_country_asks_rather_than_assumes(self):
+        """The note used to read "Eligibility assumes a qualifying {territory}
+        entity", which is the assumption this gate exists to refuse. An untestable
+        requirement is a question to put to the producer, not a favourable answer
+        on their behalf — so the status is now 'unknown' and the note names the
+        requirement that could not be tested."""
         inc = _make_incentive(nationality_requirements=["GB"])
         ds = _make_datasets(incentives=[inc], producer_country=None)
         report = _build(ds)
         est = report["incentiveEstimates"][0]
+        assert est["eligibilityStatus"] == "unknown"
         reqs = est.get("requirements", [])
-        assert any("eligibility assumes" in r.lower() for r in reqs)
+        assert any("jurisdiction" in r.lower() and "GB" in r for r in reqs)
+
+    def test_no_requirement_means_no_jurisdiction_question(self):
+        """The note was unconditional before, so every programme carried it —
+        including the majority that state no nationality requirement at all."""
+        inc = _make_incentive(nationality_requirements=None)
+        ds = _make_datasets(incentives=[inc], producer_country=None)
+        report = _build(ds)
+        est = report["incentiveEstimates"][0]
+        assert est["eligibilityStatus"] == "qualified"
+        reqs = est.get("requirements", [])
+        assert not any("jurisdiction" in r.lower() for r in reqs)
 
 
 class TestHETVCheck:

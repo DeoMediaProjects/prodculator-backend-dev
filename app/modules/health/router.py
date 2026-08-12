@@ -186,6 +186,12 @@ def _territory_rows_to_options(
     # that has never had one.
     covered: set[str] = set()
     unconfirmed: set[str] = set()
+    # Territories holding a programme record in their own name, as opposed to
+    # ones that appear here only because a sub-territory does. The United States
+    # has no federal film incentive: it is selectable purely as a container for
+    # its states, and the caller needs to tell that apart from a country with a
+    # national programme of its own before treating the selection as a territory.
+    own_programme: set[str] = set()
     # Programme rows per picker label, for the format summary. A parent country
     # inherits its sub-territories' rows because selecting "United States" makes
     # every covered state's programme a candidate.
@@ -206,11 +212,15 @@ def _territory_rows_to_options(
             continue
         if status not in ("active", ""):
             if status != "no_programme":
+                # Suspended or unverified, but still this territory's own rebate.
+                # A `no_programme` row states an absence, so it confers nothing.
+                own_programme.add(label)
                 unconfirmed.add(label)
                 parent = resolve_territory(label)
                 if parent and parent.parent:
                     unconfirmed.add(parent.parent.label)
             continue
+        own_programme.add(label)
         covered.add(label)
         # Also surface the parent country so users can select e.g. "United States"
         # and have the builder expand to the best covered state.
@@ -246,6 +256,11 @@ def _territory_rows_to_options(
             # Additive, so existing consumers are unaffected. False means the
             # territory is selectable but carries no bankable incentive today.
             "hasActiveIncentive": label in covered,
+            # False on a country that is only in this list because its regions
+            # carry programmes (the United States). Selecting it commits to no
+            # incentive of its own, so it is a grouping control rather than a
+            # territory the analysis can model.
+            "hasOwnIncentive": label in own_programme,
             # Three-state, because the boolean above cannot tell a suspended or
             # unverified programme apart from no programme at all:
             #   active       a bankable incentive can be modelled
