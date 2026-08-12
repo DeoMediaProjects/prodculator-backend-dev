@@ -120,9 +120,8 @@ class Settings(BaseSettings):
     # purchase entirely, not merely fail to discount it. It is also what stops the
     # pricing page advertising a saving on a plan that will be charged in full.
     #
-    # The launch offer covers the individual side: the two subscription plans and
-    # the one-off Single Report. Studio is a business plan and is outside it;
-    # Explorer is free and has nothing to discount.
+    # The launch offer covers every paid product: all three subscription plans and
+    # the one-off Single Report. Explorer is free and has nothing to discount.
     #
     # "single" is the one-off report. It is not a subscription plan and has no place
     # in the plan hierarchy, but it is inside this coupon, so it needs a key here for
@@ -132,7 +131,7 @@ class Settings(BaseSettings):
     # it here without widening it there makes Stripe reject those checkouts
     # outright, and narrowing it there without narrowing it here puts a discount on
     # a plan billed in full.
-    STRIPE_PROMO_PLANS: str = "professional,producer,single"
+    STRIPE_PROMO_PLANS: str = "professional,producer,studio,single"
     # Legacy one-time / pay-per-report prices
     STRIPE_PRICE_SINGLE_USD: str = ""
     STRIPE_PRICE_SINGLE_GBP: str = ""

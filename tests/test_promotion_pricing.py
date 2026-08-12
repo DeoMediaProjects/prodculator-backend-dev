@@ -36,15 +36,15 @@ def service(**overrides):
 
 LIVE = dict(
     # Two coupons for one offer. The subscription one runs for a customer's first
-    # three months, which is duration=repeating, and Stripe will not apply a
-    # repeating coupon to a one-time payment — so the one-off report has its own at
-    # the same percentage with duration=once.
+    # six months, which is duration=repeating, and Stripe will not apply a repeating
+    # coupon to a one-time payment — so the one-off report has its own at the same
+    # percentage with duration=once.
     STRIPE_PROMO_COUPON_ID="promo_49",
     STRIPE_PROMO_ONEOFF_COUPON_ID="promo_49_once",
     STRIPE_PROMO_PERCENT_OFF=49,
-    # The launch offer: the individual side. "single" is the one-off report, which
-    # is not a subscription plan but is inside the offer.
-    STRIPE_PROMO_PLANS="professional,producer,single",
+    # The launch offer covers every paid product. "single" is the one-off report,
+    # which is not a subscription plan but is inside the offer.
+    STRIPE_PROMO_PLANS="professional,producer,studio,single",
 )
 
 
@@ -52,7 +52,7 @@ class TestCouponDrivesTheDiscount:
     def test_no_coupon_configured_means_no_discount_argument(self):
         assert service()._promo_discounts("professional") is None
 
-    @pytest.mark.parametrize("plan", ["professional", "producer"])
+    @pytest.mark.parametrize("plan", ["professional", "producer", "studio"])
     def test_a_covered_subscription_carries_the_subscription_coupon(self, plan):
         assert service(**LIVE)._promo_discounts(plan) == [{"coupon": "promo_49"}]
 
@@ -64,7 +64,7 @@ class TestCouponDrivesTheDiscount:
     def test_the_one_off_report_carries_nothing_until_its_coupon_exists(self):
         assert service(**{**LIVE, "STRIPE_PROMO_ONEOFF_COUPON_ID": ""})._promo_discounts("single") is None
 
-    @pytest.mark.parametrize("plan", ["studio", "credit", "", None])
+    @pytest.mark.parametrize("plan", ["credit", "b2b", "", None])
     def test_a_plan_outside_the_coupon_scope_carries_nothing(self, plan):
         """Not merely undiscounted. Stripe rejects a session carrying a coupon for
         a product it does not cover, so sending it anyway would stop the customer
@@ -151,7 +151,7 @@ class TestWhatTheSiteIsAllowedToAdvertise:
             "percentOff": 49,
             "label": "49% off",
             # The site discounts exactly these and nothing else.
-            "plans": ["producer", "professional", "single"],
+            "plans": ["producer", "professional", "single", "studio"],
         }
 
     def test_a_plan_with_no_coupon_behind_it_is_not_advertised(self):
@@ -160,7 +160,7 @@ class TestWhatTheSiteIsAllowedToAdvertise:
         checkout could not give — the $22-shown-$40-charged bug, reintroduced by
         configuration instead of by code."""
         result = self._promotion(**{**LIVE, "STRIPE_PROMO_ONEOFF_COUPON_ID": ""})
-        assert result["plans"] == ["producer", "professional"]
+        assert result["plans"] == ["producer", "professional", "studio"]
 
     def test_a_custom_label_is_used_when_set(self):
         result = self._promotion(
