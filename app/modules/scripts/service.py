@@ -37,6 +37,16 @@ _analysis_cache: "OrderedDict[str, tuple[ScriptAnalysisResult, dict[str, Any]]]"
 _analysis_cache_lock = Lock()
 
 
+def reset_analysis_cache() -> None:
+    """Empty the process-global analysis cache.
+
+    The cache exists so a re-run of the same script does not pay for a second
+    Anthropic call. Between tests it means one test's stubbed result is returned to
+    the next test that analyses the same sample text, which is how a sentinel object
+    from one test ended up asserted against in another.
+    """
+    with _analysis_cache_lock:
+        _analysis_cache.clear()
 def _analysis_cache_key(model: str, script_content: str) -> str:
     return hashlib.sha256(f"{model}\n{script_content}".encode("utf-8", "ignore")).hexdigest()
 

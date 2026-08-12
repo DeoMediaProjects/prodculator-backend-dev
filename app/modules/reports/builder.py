@@ -1472,6 +1472,24 @@ class ReportBuilder:
         for territory in territories:
             tf = self._territory_financials.get(territory)
             if not tf:
+                # A territory whose rebate cannot be computed used to vanish from
+                # this section entirely, so a producer who chose three saw two and
+                # was left to guess which. Canada is the ordinary case: CPTC is
+                # calculated on qualified Canadian labour expenditure, which this
+                # report does not model, so there is no figure to put in a chart.
+                # That is a fact worth stating, not a reason to omit the territory.
+                rows = self._territory_incentives.get(territory, [])
+                best = best_incentive(rows, self._production_format, self._project_facts) if rows else {}
+                budget_scenarios.append({
+                    "territory": territory,
+                    "programme": prog_name(best) if best else None,
+                    "noFinancialsReason": (
+                        "No rebate could be computed for this programme from the "
+                        "inputs held, so no net position is modelled here. The "
+                        "programme's own terms are in the Tax Incentive Analysis "
+                        "section."
+                    ),
+                })
                 continue
 
             scenario: dict = {

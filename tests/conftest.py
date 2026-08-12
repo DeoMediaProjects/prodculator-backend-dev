@@ -76,6 +76,32 @@ def _reset_alert_throttle() -> Iterator[None]:
     reset_throttle()
 
 
+@pytest.fixture(autouse=True)
+def _reset_process_caches() -> Iterator[None]:
+    """Clear the caches that outlive a single request, between tests.
+
+    Both are process-global by design and both are correct in production. The
+    submission dedupe window makes an immediate resubmit return the report already
+    being generated instead of starting a second one; the analysis cache stops a
+    re-run of the same script paying for a second Anthropic call.
+
+    Under pytest they leak. Test payloads are byte-identical to one another, so the
+    second test to post one is answered from the dedupe window and never reaches the
+    dispatch path it exists to exercise, and the second test to analyse the same
+    sample text receives the first test's stubbed sentinel. Three tests failed only
+    when the suite ran as a whole and passed individually, which is the signature of
+    exactly this.
+    """
+    from app.modules.reports.router import reset_submission_dedupe
+    from app.modules.scripts.service import reset_analysis_cache
+
+    reset_submission_dedupe()
+    reset_analysis_cache()
+    yield
+    reset_submission_dedupe()
+    reset_analysis_cache()
+
+
 @pytest.fixture
 def auth_user() -> AuthUser:
     return AuthUser(
