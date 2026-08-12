@@ -46,3 +46,7 @@ alembic/versions/__pycache__/
 seed_admin.py
 
 seed_admin.py
+
+# Local .env backups. These carry live secrets and are not ignored by the
+# bare ".env" rule above, so name them explicitly.
+.env.bak*
