@@ -15,6 +15,54 @@ def _first_line_description(inv: dict) -> str:
     return ""
 
 
+# The plan key the one-off Single Report is scoped under in STRIPE_PROMO_PLANS.
+# It is not a subscription plan, so it has no entry in the plan hierarchy — but the
+# launch offer covers it, and a coupon has to be sent for the discount to be real.
+# Named once here so the checkout, the endpoint and the pricing surfaces agree.
+SINGLE_REPORT_PROMO_KEY = "single"
+
+
+def promo_plans(settings: Settings) -> set[str]:
+    """Plans the promotion is configured to cover. Empty means unscoped."""
+    raw = settings.STRIPE_PROMO_PLANS or ""
+    return {p.strip().lower() for p in raw.split(",") if p.strip()}
+
+
+def promo_coupon_for(settings: Settings, plan_type: str | None) -> str | None:
+    """The coupon that will actually be sent for this plan, or None.
+
+    Two coupons, because Stripe will not take one coupon for both. A subscription
+    offer that runs for a customer's first three months is ``duration=repeating``,
+    and a repeating coupon cannot be applied to a one-time payment — Stripe's own
+    guidance is that one-time invoices accept ``once`` and ``forever`` only. The
+    Single Report is a one-time payment, so it needs its own ``duration=once``
+    coupon; sending it the subscription coupon would not merely fail to discount
+    the report, it would fail the whole session and the customer could not buy.
+
+    This is the single source of truth for whether a plan is discounted. Both the
+    checkout and the /promotion endpoint read it, so what the page advertises and
+    what the session carries cannot drift apart — which is the failure this whole
+    path exists to prevent.
+    """
+    key = (plan_type or "").strip().lower()
+    plans = promo_plans(settings)
+    if plans and key not in plans:
+        return None
+    if key == SINGLE_REPORT_PROMO_KEY:
+        return (settings.STRIPE_PROMO_ONEOFF_COUPON_ID or "").strip() or None
+    return (settings.STRIPE_PROMO_COUPON_ID or "").strip() or None
+
+
+def advertised_promo_plans(settings: Settings) -> list[str]:
+    """The plans allowed to show a saving: exactly those a coupon will be sent for.
+
+    A plan configured in STRIPE_PROMO_PLANS but with no coupon behind it — the
+    one-off report before its own coupon exists — is dropped here rather than
+    advertised, so it is never struck through at a discount it would not receive.
+    """
+    return sorted(p for p in promo_plans(settings) if promo_coupon_for(settings, p))
+
+
 class StripeService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -22,8 +70,7 @@ class StripeService:
 
     def promo_plans(self) -> set[str]:
         """Plans the coupon is scoped to in Stripe."""
-        raw = self.settings.STRIPE_PROMO_PLANS or ""
-        return {p.strip().lower() for p in raw.split(",") if p.strip()}
+        return promo_plans(self.settings)
 
     def _promo_discounts(self, plan_type: str | None = None) -> list[dict] | None:
         """The active promotional coupon, or None.
@@ -38,13 +85,8 @@ class StripeService:
         rejects the session, and the customer cannot buy at all. So a plan outside
         the coupon's scope gets no discounts argument rather than a broken checkout.
         """
-        coupon = (self.settings.STRIPE_PROMO_COUPON_ID or "").strip()
-        if not coupon:
-            return None
-        plans = self.promo_plans()
-        if plans and (plan_type or "").strip().lower() not in plans:
-            return None
-        return [{"coupon": coupon}]
+        coupon = promo_coupon_for(self.settings, plan_type)
+        return [{"coupon": coupon}] if coupon else None
 
     def create_checkout_session(
         self, price_id: str, user_email: str, user_id: str, metadata: dict | None = None
@@ -61,11 +103,7 @@ class StripeService:
         )
         return {"session_id": session.id, "url": session.url}
 
-    # The plan key the one-off Single Report is scoped under in STRIPE_PROMO_PLANS.
-    # It is not a subscription plan, so it has no entry in the plan hierarchy — but
-    # the launch offer covers it, and a coupon has to be sent for the discount to
-    # be real. Named once here so the checkout and the pricing surfaces agree.
-    SINGLE_REPORT_PROMO_KEY = "single"
+    SINGLE_REPORT_PROMO_KEY = SINGLE_REPORT_PROMO_KEY
 
     def create_credit_checkout_session(
         self, price_id: str, user_email: str, user_id: str

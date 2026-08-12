@@ -20,6 +20,7 @@ from app.modules.payments.service import StripeService
 # depending on the machine they run on.
 NO_PROMO = dict(
     STRIPE_PROMO_COUPON_ID="",
+    STRIPE_PROMO_ONEOFF_COUPON_ID="",
     STRIPE_PROMO_PERCENT_OFF=0,
     STRIPE_PROMO_LABEL="",
 )
@@ -34,10 +35,15 @@ def service(**overrides):
 
 
 LIVE = dict(
+    # Two coupons for one offer. The subscription one runs for a customer's first
+    # three months, which is duration=repeating, and Stripe will not apply a
+    # repeating coupon to a one-time payment — so the one-off report has its own at
+    # the same percentage with duration=once.
     STRIPE_PROMO_COUPON_ID="promo_49",
+    STRIPE_PROMO_ONEOFF_COUPON_ID="promo_49_once",
     STRIPE_PROMO_PERCENT_OFF=49,
     # The launch offer: the individual side. "single" is the one-off report, which
-    # is not a subscription plan but is inside the coupon.
+    # is not a subscription plan but is inside the offer.
     STRIPE_PROMO_PLANS="professional,producer,single",
 )
 
@@ -46,9 +52,17 @@ class TestCouponDrivesTheDiscount:
     def test_no_coupon_configured_means_no_discount_argument(self):
         assert service()._promo_discounts("professional") is None
 
-    @pytest.mark.parametrize("plan", ["professional", "producer", "single"])
-    def test_a_covered_plan_carries_the_coupon(self, plan):
+    @pytest.mark.parametrize("plan", ["professional", "producer"])
+    def test_a_covered_subscription_carries_the_subscription_coupon(self, plan):
         assert service(**LIVE)._promo_discounts(plan) == [{"coupon": "promo_49"}]
+
+    def test_the_one_off_report_carries_its_own_coupon(self):
+        """Not the subscription one. That coupon is repeating, and Stripe rejects a
+        repeating coupon on a one-time payment — the customer could not buy at all."""
+        assert service(**LIVE)._promo_discounts("single") == [{"coupon": "promo_49_once"}]
+
+    def test_the_one_off_report_carries_nothing_until_its_coupon_exists(self):
+        assert service(**{**LIVE, "STRIPE_PROMO_ONEOFF_COUPON_ID": ""})._promo_discounts("single") is None
 
     @pytest.mark.parametrize("plan", ["studio", "credit", "", None])
     def test_a_plan_outside_the_coupon_scope_carries_nothing(self, plan):
@@ -97,7 +111,7 @@ class TestTheOneOffReportIsChargedWhatItIsShown:
 
     def test_the_credit_checkout_carries_the_coupon_when_the_offer_covers_it(self, monkeypatch):
         captured = self._captured_session(monkeypatch, **LIVE)
-        assert captured["discounts"] == [{"coupon": "promo_49"}]
+        assert captured["discounts"] == [{"coupon": "promo_49_once"}]
 
     def test_it_carries_nothing_when_the_offer_does_not_cover_it(self, monkeypatch):
         """Dropping "single" from the scope has to stop the coupon being sent, not
@@ -139,6 +153,14 @@ class TestWhatTheSiteIsAllowedToAdvertise:
             # The site discounts exactly these and nothing else.
             "plans": ["producer", "professional", "single"],
         }
+
+    def test_a_plan_with_no_coupon_behind_it_is_not_advertised(self):
+        """The one-off report is configured as covered but has no coupon of its own
+        yet. Advertising it would strike its price through at a saving the credit
+        checkout could not give — the $22-shown-$40-charged bug, reintroduced by
+        configuration instead of by code."""
+        result = self._promotion(**{**LIVE, "STRIPE_PROMO_ONEOFF_COUPON_ID": ""})
+        assert result["plans"] == ["producer", "professional"]
 
     def test_a_custom_label_is_used_when_set(self):
         result = self._promotion(

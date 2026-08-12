@@ -23,7 +23,7 @@ from app.modules.payments.schemas import (
     CheckoutResponse,
     CustomerPortalResponse,
 )
-from app.modules.payments.service import StripeService
+from app.modules.payments.service import StripeService, advertised_promo_plans
 from app.modules.payments.webhook_handler import WebhookHandler
 from app.modules.subscriptions.service import SubscriptionService
 
@@ -242,10 +242,12 @@ async def active_promotion(settings: Settings = Depends(get_settings)) -> dict:
     percent = int(settings.STRIPE_PROMO_PERCENT_OFF or 0)
     if not coupon or percent <= 0 or percent >= 100:
         return {"active": False, "percentOff": 0, "label": "", "plans": []}
-    # The plans the coupon is scoped to in Stripe. The pricing surfaces discount
-    # exactly these and no others, so a plan outside the coupon never shows a saving
-    # it would not receive at checkout.
-    plans = sorted({p.strip().lower() for p in (settings.STRIPE_PROMO_PLANS or "").split(",") if p.strip()})
+    # Exactly the plans a coupon will actually be sent for — computed by the same
+    # function the checkout calls, not re-derived from the setting here. A plan
+    # listed in STRIPE_PROMO_PLANS with no coupon behind it (the one-off report
+    # before its own coupon exists) is absent from this list, so it is never struck
+    # through at a discount it would not receive.
+    plans = advertised_promo_plans(settings)
     return {
         "active": True,
         "percentOff": percent,

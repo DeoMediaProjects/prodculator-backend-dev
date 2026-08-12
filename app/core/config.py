@@ -101,6 +101,17 @@ class Settings(BaseSettings):
     # applying, and the marketing surfaces only advertise a discount while the
     # coupon ID is set.
     STRIPE_PROMO_COUPON_ID: str = ""
+    # The same offer for the one-off Single Report, as a separate coupon.
+    #
+    # Not a duplicate of the above by choice. The subscription offer runs for a
+    # customer's first three months, which is duration=repeating, and Stripe will
+    # not apply a repeating coupon to a one-time payment — one-time invoices take
+    # "once" and "forever" only. Sending the subscription coupon on the report's
+    # checkout would fail the session outright, so the report needs its own coupon
+    # at the same percentage with duration=once.
+    #
+    # Left blank, the report is not discounted AND is not advertised as discounted.
+    STRIPE_PROMO_ONEOFF_COUPON_ID: str = ""
     STRIPE_PROMO_PERCENT_OFF: int = 0
     STRIPE_PROMO_LABEL: str = ""
     # Which plans the coupon actually covers, comma separated. A Stripe coupon is
