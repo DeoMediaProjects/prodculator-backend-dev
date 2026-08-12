@@ -23,7 +23,7 @@ from app.modules.payments.schemas import (
     CheckoutResponse,
     CustomerPortalResponse,
 )
-from app.modules.payments.service import StripeService, advertised_promo_plans
+from app.modules.payments.service import StripeService, advertised_promo_plans, promo_label
 from app.modules.payments.webhook_handler import WebhookHandler
 from app.modules.subscriptions.service import SubscriptionService
 
@@ -251,7 +251,7 @@ async def active_promotion(settings: Settings = Depends(get_settings)) -> dict:
     return {
         "active": True,
         "percentOff": percent,
-        "label": settings.STRIPE_PROMO_LABEL or f"{percent}% off all subscription plans",
+        "label": promo_label(settings, percent),
         "plans": plans,
     }
 

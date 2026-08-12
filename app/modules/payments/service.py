@@ -1,4 +1,5 @@
 import logging
+import re
 
 import stripe
 
@@ -51,6 +52,38 @@ def promo_coupon_for(settings: Settings, plan_type: str | None) -> str | None:
     if key == SINGLE_REPORT_PROMO_KEY:
         return (settings.STRIPE_PROMO_ONEOFF_COUPON_ID or "").strip() or None
     return (settings.STRIPE_PROMO_COUPON_ID or "").strip() or None
+
+
+_PERCENT_IN_TEXT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+
+def promo_label(settings: Settings, percent: int) -> str:
+    """The customer-facing wording for the promotion, guaranteed not to contradict it.
+
+    STRIPE_PROMO_LABEL is free text and STRIPE_PROMO_PERCENT_OFF is a number, so the
+    two can be updated independently — and were. Production ran PERCENT_OFF=49 beside
+    a label still reading "45% off Professional, Producer and Studio", and the pricing
+    menu rendered both at once: "49% OFF" above "45% off…". Whichever figure a
+    customer believed, one of them was wrong, and the one they could act on was the
+    stale one.
+
+    A label stating a percentage that is not the percentage being applied is therefore
+    discarded rather than shown. A label that states no percentage is fine and is used
+    as written — that is the useful case, where the label carries the term and the
+    scope and lets the number come from one place.
+    """
+    configured = (settings.STRIPE_PROMO_LABEL or "").strip()
+    if configured:
+        stated = {float(m) for m in _PERCENT_IN_TEXT.findall(configured)}
+        if not stated or stated == {float(percent)}:
+            return configured
+        logger.warning(
+            "STRIPE_PROMO_LABEL states %s%% but STRIPE_PROMO_PERCENT_OFF is %s%%; "
+            "ignoring the label. Update the label to match, or drop the figure from it.",
+            "/".join(str(s) for s in sorted(stated)),
+            percent,
+        )
+    return f"{percent}% off"
 
 
 def advertised_promo_plans(settings: Settings) -> list[str]:

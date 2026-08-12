@@ -149,7 +149,7 @@ class TestWhatTheSiteIsAllowedToAdvertise:
         assert result == {
             "active": True,
             "percentOff": 49,
-            "label": "49% off all subscription plans",
+            "label": "49% off",
             # The site discounts exactly these and nothing else.
             "plans": ["producer", "professional", "single"],
         }
@@ -169,6 +169,28 @@ class TestWhatTheSiteIsAllowedToAdvertise:
             STRIPE_PROMO_LABEL="Launch offer: 45% off every plan",
         )
         assert result["label"] == "Launch offer: 45% off every plan"
+
+    def test_a_label_stating_the_wrong_percentage_is_discarded(self):
+        """The live failure this guards. Production ran PERCENT_OFF=49 beside a
+        label still reading "45% off", and the pricing menu showed "49% OFF" above
+        "45% off Professional, Producer and Studio". Two figures, one of them
+        wrong, and no way for a customer to tell which."""
+        result = self._promotion(
+            STRIPE_PROMO_COUPON_ID="promo_49",
+            STRIPE_PROMO_PERCENT_OFF=49,
+            STRIPE_PROMO_LABEL="First Launch Discount: 45% off Professional, Producer and Studio",
+        )
+        assert result["label"] == "49% off"
+
+    def test_a_label_carrying_no_figure_is_left_alone(self):
+        """The shape worth encouraging: the label carries the term and the scope,
+        the number comes from one place, and they cannot drift apart."""
+        result = self._promotion(
+            STRIPE_PROMO_COUPON_ID="promo_49",
+            STRIPE_PROMO_PERCENT_OFF=49,
+            STRIPE_PROMO_LABEL="First Launch Discount, off your first 3 months",
+        )
+        assert result["label"] == "First Launch Discount, off your first 3 months"
 
     @pytest.mark.parametrize("percent", [0, -10, 100, 150])
     def test_a_nonsensical_percentage_advertises_nothing(self, percent):
