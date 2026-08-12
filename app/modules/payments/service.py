@@ -61,10 +61,22 @@ class StripeService:
         )
         return {"session_id": session.id, "url": session.url}
 
+    # The plan key the one-off Single Report is scoped under in STRIPE_PROMO_PLANS.
+    # It is not a subscription plan, so it has no entry in the plan hierarchy — but
+    # the launch offer covers it, and a coupon has to be sent for the discount to
+    # be real. Named once here so the checkout and the pricing surfaces agree.
+    SINGLE_REPORT_PROMO_KEY = "single"
+
     def create_credit_checkout_session(
         self, price_id: str, user_email: str, user_id: str
     ) -> dict:
-        """Create a one-time Stripe Checkout session for a pay-per-report credit."""
+        """Create a one-time Stripe Checkout session for a pay-per-report credit.
+
+        Carries the promotional coupon when the offer covers the one-off report.
+        Without this the pricing page struck the report's price through while
+        Stripe charged the full amount — the page said $22 and the customer paid
+        $40 — so the discount has to be sent here, not merely displayed.
+        """
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
@@ -73,6 +85,11 @@ class StripeService:
             success_url=f"{self.settings.FRONTEND_URL}/dashboard?credit=success",
             cancel_url=f"{self.settings.FRONTEND_URL}/pay-per-report?payment=cancelled",
             metadata={"userId": user_id, "paymentType": "credit"},
+            **(
+                {"discounts": d}
+                if (d := self._promo_discounts(self.SINGLE_REPORT_PROMO_KEY))
+                else {}
+            ),
         )
         return {"session_id": session.id, "url": session.url}
 

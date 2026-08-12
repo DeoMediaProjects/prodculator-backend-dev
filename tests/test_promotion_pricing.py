@@ -7,6 +7,8 @@ coupon ID is configured, and the same setting is what the checkout applies.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.core.config import Settings
@@ -32,9 +34,11 @@ def service(**overrides):
 
 
 LIVE = dict(
-    STRIPE_PROMO_COUPON_ID="promo_45",
-    STRIPE_PROMO_PERCENT_OFF=45,
-    STRIPE_PROMO_PLANS="professional,producer,studio",
+    STRIPE_PROMO_COUPON_ID="promo_49",
+    STRIPE_PROMO_PERCENT_OFF=49,
+    # The launch offer: the individual side. "single" is the one-off report, which
+    # is not a subscription plan but is inside the coupon.
+    STRIPE_PROMO_PLANS="professional,producer,single",
 )
 
 
@@ -42,11 +46,11 @@ class TestCouponDrivesTheDiscount:
     def test_no_coupon_configured_means_no_discount_argument(self):
         assert service()._promo_discounts("professional") is None
 
-    @pytest.mark.parametrize("plan", ["professional", "producer", "studio"])
+    @pytest.mark.parametrize("plan", ["professional", "producer", "single"])
     def test_a_covered_plan_carries_the_coupon(self, plan):
-        assert service(**LIVE)._promo_discounts(plan) == [{"coupon": "promo_45"}]
+        assert service(**LIVE)._promo_discounts(plan) == [{"coupon": "promo_49"}]
 
-    @pytest.mark.parametrize("plan", ["single", "credit", "", None])
+    @pytest.mark.parametrize("plan", ["studio", "credit", "", None])
     def test_a_plan_outside_the_coupon_scope_carries_nothing(self, plan):
         """Not merely undiscounted. Stripe rejects a session carrying a coupon for
         a product it does not cover, so sending it anyway would stop the customer
@@ -54,16 +58,59 @@ class TestCouponDrivesTheDiscount:
         assert service(**LIVE)._promo_discounts(plan) is None
 
     def test_the_scope_is_case_insensitive(self):
-        assert service(**LIVE)._promo_discounts("Professional") == [{"coupon": "promo_45"}]
+        assert service(**LIVE)._promo_discounts("Professional") == [{"coupon": "promo_49"}]
 
     def test_a_blank_coupon_is_not_a_coupon(self):
         assert service(STRIPE_PROMO_COUPON_ID="   ")._promo_discounts("professional") is None
 
     def test_a_percentage_without_a_coupon_discounts_nothing(self):
         """The failure this guards: someone sets the advertised percentage and
-        forgets the coupon, so the page promises 45% off and Stripe charges full
+        forgets the coupon, so the page promises 49% off and Stripe charges full
         price."""
-        assert service(STRIPE_PROMO_PERCENT_OFF=45)._promo_discounts("professional") is None
+        assert service(STRIPE_PROMO_PERCENT_OFF=49)._promo_discounts("professional") is None
+
+
+class TestTheOneOffReportIsChargedWhatItIsShown:
+    """The Single Report card is struck through when the offer covers it, so the
+    session that sells it has to carry the coupon.
+
+    It did not, and nothing caught it: the card had no plan key at all, so it fell
+    through the frontend's scope check and advertised the subscription discount
+    while ``create_credit_checkout_session`` sent no coupon. The page said $22 and
+    Stripe charged $40.
+    """
+
+    def _captured_session(self, monkeypatch, **overrides):
+        import stripe
+
+        captured = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(id="cs_test", url="https://checkout.test")
+
+        monkeypatch.setattr(stripe.checkout.Session, "create", fake_create)
+        service(**overrides).create_credit_checkout_session(
+            price_id="price_single", user_email="a@b.test", user_id="u1",
+        )
+        return captured
+
+    def test_the_credit_checkout_carries_the_coupon_when_the_offer_covers_it(self, monkeypatch):
+        captured = self._captured_session(monkeypatch, **LIVE)
+        assert captured["discounts"] == [{"coupon": "promo_49"}]
+
+    def test_it_carries_nothing_when_the_offer_does_not_cover_it(self, monkeypatch):
+        """Dropping "single" from the scope has to stop the coupon being sent, not
+        just stop it being displayed — Stripe rejects a session carrying a coupon
+        for a product outside its scope, which would break the purchase."""
+        captured = self._captured_session(
+            monkeypatch, **{**LIVE, "STRIPE_PROMO_PLANS": "professional,producer"}
+        )
+        assert "discounts" not in captured
+
+    def test_it_carries_nothing_when_no_promotion_is_configured(self, monkeypatch):
+        captured = self._captured_session(monkeypatch)
+        assert "discounts" not in captured
 
 
 class TestWhatTheSiteIsAllowedToAdvertise:
@@ -71,9 +118,11 @@ class TestWhatTheSiteIsAllowedToAdvertise:
         from app.modules.payments.router import active_promotion
         import asyncio
 
-        return asyncio.get_event_loop().run_until_complete(
-            active_promotion(settings_for(**overrides))
-        )
+        # asyncio.run, not get_event_loop().run_until_complete. On Python 3.14 the
+        # latter raises "There is no current event loop in thread 'MainThread'"
+        # outside a running loop, which failed every test in this class regardless
+        # of what it was asserting.
+        return asyncio.run(active_promotion(settings_for(**overrides)))
 
     def test_nothing_is_advertised_without_a_coupon(self):
         assert self._promotion(STRIPE_PROMO_PERCENT_OFF=45)["active"] is False
@@ -85,10 +134,10 @@ class TestWhatTheSiteIsAllowedToAdvertise:
         result = self._promotion(**LIVE)
         assert result == {
             "active": True,
-            "percentOff": 45,
-            "label": "45% off all subscription plans",
+            "percentOff": 49,
+            "label": "49% off all subscription plans",
             # The site discounts exactly these and nothing else.
-            "plans": ["producer", "professional", "studio"],
+            "plans": ["producer", "professional", "single"],
         }
 
     def test_a_custom_label_is_used_when_set(self):
