@@ -264,6 +264,15 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {#- Rebate waterfall. Bars follow the programme mechanism: tax-credit
     programmes get a 4-bar chart (tax-treatment step), cash rebates 3 bars. -#}
 {% macro waterfall(sc, width, height, label_size) -%}
+{#- Nothing computable for this territory. Say so where the chart would be, rather
+    than dropping the territory and leaving the reader to notice one of their
+    choices is missing. -#}
+{% if sc.noFinancialsReason %}
+<div style="border:1px solid #E4E0D6;border-radius:4px;padding:12px 14px;break-inside:avoid;page-break-inside:avoid">
+  <div style="font-size:10.5px;font-weight:700;color:#141414;margin-bottom:3px">No modelled net position</div>
+  <div style="font-size:10px;line-height:1.5;color:#5B5750;font-weight:500">{{ sc.noFinancialsReason }}</div>
+</div>
+{%- else %}
 {#- An unconfirmed incentive gets a confirmed-only statement instead of a chart.
     A gold bar stepping the budget down reads as money received no matter what the
     caption underneath says, and the eye reaches the bar first. The illustrative
@@ -352,6 +361,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   </g>
 </svg>
 {% endif %}
+{%- endif %}
 {%- endif %}
 {%- endmacro %}
 
@@ -845,7 +855,10 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   </div>
   {% endif %}
 
-  {% set other_scs = scenarios[1:3] | selectattr('totalBudgetValue') | list %}
+  {#- Keep a territory that has no computable figure. The filter here dropped it,
+      which is how a producer who chose three territories saw two in this section
+      with nothing saying why. It now renders a stated reason instead of a chart. -#}
+  {% set other_scs = scenarios[1:3] | rejectattr('territory', 'none') | list %}
   {% if other_scs %}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:20px 0 4px">
     {% for sc in other_scs %}
@@ -1007,7 +1020,12 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     {% for flag in readiness.flags %}
     <tr>
       <td><span class="sev sev-{{ flag.severity }}">{{ flag.severity }}</span></td>
-      <td style="font-weight:700;font-size:10px">{{ flag.input }}</td>
+      {#- The human label, not the database column. `flag.input` is retained on
+          the object for admin and support, who need to know which record is thin,
+          but a producer reading a financing document should never see
+          `territory_profiles.cost_efficiency_score` — and certainly not next to a
+          heading that says WHAT TO DO. -#}
+      <td style="font-weight:700;font-size:10px">{{ flag.label or flag.input }}</td>
       <td>{{ flag.detail }}</td>
       <td style="color:var(--grey);font-weight:500">{{ flag.action }}</td>
     </tr>
