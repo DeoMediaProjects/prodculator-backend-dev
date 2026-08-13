@@ -36,6 +36,7 @@ from app.modules.reports.helpers import (  # noqa: F401 — re-exported for back
     parse_money_string as _parse_money_string,
     DEFAULT_SHOOT_DAYS_PER_WEEK,
 )
+from app.modules.reports.fabrication_guard import scrub_report
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
     compute_financial_readiness,
@@ -80,6 +81,13 @@ class ReportValidator:
         cls._assert_schedule_consistency(report, warnings)
         cls._assert_no_null_narratives(report, warnings)
 
+        # Defence in depth. The prompt forbids quoting a rate or a rebate for a
+        # territory that has none; this removes one if it appears anyway. Runs
+        # after the structural assertions so it reads a settled report, and its
+        # warnings surface rather than being swallowed — a figure caught here is
+        # a prompt regression, not routine cleanup.
+        warnings.extend(scrub_report(report))
+
         # Sort locationRankings by descending score (builder computes scores
         # but the merge step may have changed the order via AI dimensions)
         rankings = report.get("locationRankings")
@@ -121,8 +129,13 @@ class ReportValidator:
                     )
                     rows = by_territory.get(top["name"], [])
                     if rows:
+                        # Same project facts as every other selection site, so
+                        # the payment speed quoted here belongs to the programme
+                        # the rest of the report is costed under.
                         best = _best_incentive(
-                            rows, datasets.get("_production_format")
+                            rows,
+                            datasets.get("_production_format"),
+                            datasets.get("_project_facts"),
                         )
                         timeline = best.get("payment_timeline_notes")
                         if timeline:
@@ -483,6 +496,7 @@ class ReportValidator:
         budget_gbp: float,
         territory_incentives: dict[str, list[dict]],
         production_format: str | None = None,
+        project_facts: dict | None = None,
         fx_rate_to_gbp: float | None = None,
     ) -> dict | None:
         """Compute the correct rebate for a single incentive programme,
@@ -514,6 +528,7 @@ class ReportValidator:
             budget_gbp=budget_gbp,
             territory_incentives=territory_incentives,
             production_format=production_format,
+            project_facts=project_facts,
             fx_rate_to_gbp=fx_rate_to_gbp,
             rate_gross=rate_gross,
             rate_net=rate_net,
@@ -596,6 +611,10 @@ class ReportValidator:
         budget_gbp: float,
         territory_incentives: dict[str, list[dict]],
         production_format: str | None,
+        # The same facts every other programme-selection site uses. Defaulted so
+        # existing callers keep working; a caller that omits them gets the old
+        # "gates untested" behaviour rather than a crash.
+        project_facts: dict | None = None,
         fx_rate_to_gbp: float | None,
         rate_gross: float | None,
         rate_net: float | None,
@@ -643,7 +662,7 @@ class ReportValidator:
                 and not r.get("is_supplementary")
             ]
             if alternatives:
-                alt = _best_incentive(alternatives, production_format)
+                alt = _best_incentive(alternatives, production_format, project_facts)
                 switched_programme = _prog_name(alt)
                 cap_basis = (db_row.get("cap_basis") or "total_budget").lower()
                 programme_note = (

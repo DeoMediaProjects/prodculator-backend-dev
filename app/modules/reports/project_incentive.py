@@ -9,7 +9,7 @@ that same programme was unverified.
 Every one of those statements came from a different check. Eligibility was being
 answered independently in at least four places:
 
-    helpers.is_domestic_corp_only      producer / nationality structure
+    producer_eligibility               producer / nationality structure
     programme_eligibility              minimum spend, budget ceiling, expiry, status
     format_eligibility                 does the programme accept this format
     readiness._confirmed_incentive     bankability, staleness, producer eligibility
@@ -17,6 +17,13 @@ answered independently in at least four places:
 Each was correct about its own dimension and silent about the others, so whichever
 one a section happened to consult became that section's answer. That is what makes a
 report disagree with itself.
+
+For a while this module listed the producer dimension and then combined only the
+other two, which is worse than not listing it: a programme restricted to
+Canadian-controlled corporations came back ``eligible`` for a London producer, with
+``canAffectRanking`` and ``canBeRecommended`` both true and no reasons attached.
+``producer_eligibility`` now answers it, and its verdict enters the same precedence
+as everything else.
 
 This module combines them once, with a fixed precedence, and every consumer reads the
 result rather than re-deriving it:
@@ -41,6 +48,13 @@ from app.modules.reports.format_eligibility import (
     evaluate_format_eligibility,
 )
 from app.modules.reports.helpers import needs_format_eligibility_check
+from app.modules.reports.producer_eligibility import (
+    EXCLUDED as PRODUCER_EXCLUDED,
+    ROUTED as PRODUCER_ROUTED,
+    UNKNOWN as PRODUCER_UNKNOWN,
+    evaluate_producer_eligibility,
+    legacy_status as producer_legacy_status,
+)
 from app.modules.reports.programme_eligibility import (
     AVAILABLE,
     UNAVAILABLE,
@@ -86,6 +100,7 @@ def resolve_project_incentive(
 
     programme = evaluate_programme_eligibility(row, project)
     format_result = evaluate_format_eligibility(row, fmt, project)
+    producer = evaluate_producer_eligibility(row, project)
 
     # Format is only a required dimension for formats whose eligibility genuinely
     # diverges from what these programmes are written for. A feature is not held back
@@ -107,16 +122,29 @@ def resolve_project_incentive(
         hard_failures.append(programme["explanation"] or programme["label"])
     if format_is_required and format_result["verdict"] == FORMAT_INELIGIBLE:
         hard_failures.append(format_result["explanation"] or format_result["label"])
+    # A programme closed to this producer with no route in is as hard a failure as
+    # a budget below its floor, and unlike the budget it cannot be changed by
+    # spending more. This dimension was named in this module's contract from the
+    # start and never consulted, so a nationality-restricted programme scored,
+    # ranked and was recommended exactly like an open one.
+    if producer["verdict"] == PRODUCER_EXCLUDED:
+        hard_failures.append(producer["explanation"] or producer["label"])
 
     # ── Then anything required but unknown ───────────────────────────────────
     if programme["verdict"] not in (AVAILABLE, UNAVAILABLE):
         unknowns.append(programme["explanation"] or programme["label"])
     if format_is_required and format_result["verdict"] == FORMAT_UNVERIFIED:
         unknowns.append(format_result["explanation"] or format_result["label"])
+    if producer["verdict"] == PRODUCER_UNKNOWN:
+        unknowns.append(producer["explanation"] or producer["label"])
 
     # ── Then unresolved conditions ───────────────────────────────────────────
     if format_is_required and format_result["verdict"] == FORMAT_NEEDS_CONFIRMATION:
         conditions.append(format_result["explanation"] or format_result["label"])
+    # A route the programme states but the production has not built yet: real,
+    # reachable, and not money to count on today.
+    if producer["verdict"] == PRODUCER_ROUTED:
+        conditions.append(producer["explanation"] or producer["label"])
 
     if hard_failures:
         status = INELIGIBLE
@@ -145,6 +173,13 @@ def resolve_project_incentive(
         "formatIsRequired": format_is_required,
         "programmeStatus": programme["verdict"],
         "programmeReasons": programme.get("reasons", []),
+        "producerStatus": producer["verdict"],
+        "producerExplanation": producer["explanation"],
+        "producerRoutes": producer.get("routes", []),
+        "requiredNationalities": producer.get("requiredNationalities", []),
+        # The vocabulary readiness, the estimate cards and stored reports already
+        # speak, derived here so the two can never disagree.
+        "producerLegacyStatus": producer_legacy_status(producer),
         # Explicit permissions, so no consumer re-derives the rule and disagrees.
         "canAffectNetCost": confirmable,
         "canAffectRanking": confirmable,

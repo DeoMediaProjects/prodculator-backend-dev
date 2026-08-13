@@ -41,16 +41,25 @@ from app.modules.reports.helpers import (
     needs_format_eligibility_check,
 )
 from app.modules.reports.format_eligibility import (
+    FORMAT_INELIGIBLE,
+    FORMAT_UNVERIFIED,
     UNCONFIRMED_VERDICTS,
     UNVERIFIED,
     any_unverified_for_format,
     evaluate_format_eligibility,
+    gate_state as format_gate_state,
+    scores_zero as format_scores_zero,
 )
 from app.core.formats import canonical_format
 from app.modules.reports.programme_eligibility import (
     any_unavailable,
     evaluate_programme_eligibility,
     verdict_rank as programme_rank,
+)
+from app.modules.reports.producer_eligibility import (
+    UNKNOWN as PRODUCER_UNKNOWN,
+    evaluate_producer_eligibility,
+    legacy_status as producer_legacy_status,
 )
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -107,6 +116,15 @@ _LONG_SHOOT_THRESHOLDS: dict[str, int] = {
     "Feature Film": 26, "Mini-Series": 20,
 }
 _LONG_SHOOT_DEFAULT = 26
+
+
+def _join(names: list[str]) -> str:
+    """"A", "A and B", "A, B and C" — for territory names inside a sentence."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 # HETV constants (must match validator)
 _HETV_TV_FORMATS = frozenset({"TV Series", "Limited Series", "Mini-Series", "Docuseries"})
@@ -175,6 +193,14 @@ class ReportBuilder:
         self._territory_incentives = index_incentives_by_territory(
             datasets.get("incentives", [])
         )
+        # Programmes on record but not rankable today — suspended, withdrawn,
+        # awaiting verification. Kept strictly apart from the index above: no rate
+        # from here may be ranked, scored or costed. They are here so a territory
+        # whose programme is suspended can be described accurately instead of being
+        # reported as having no programme at all.
+        self._territory_inactive_incentives = index_incentives_by_territory(
+            datasets.get("_inactive_incentives", []) or []
+        )
         self._territory_financials: dict = datasets.get("_territory_financials") or {}
         self._production_format: str | None = datasets.get("_production_format")
         self._production_priority: str = datasets.get("_production_priority", "full")
@@ -195,7 +221,12 @@ class ReportBuilder:
         # and the gates need the scalar. Passing the dict made every budget-based
         # gate silently untestable, which is exactly the failure mode this whole
         # module is meant to remove.
-        self._project_facts: dict = {
+        # Prefer the canonical facts the service assembled, so the builder's
+        # programme selection and the financials precompute cannot disagree about
+        # which programme a territory is being costed under. The literal below is
+        # the fallback for callers that construct a builder directly (tests, and
+        # the sample report) and never went through the service.
+        self._project_facts: dict = datasets.get("_project_facts") or {
             "format": datasets.get("_production_format"),
             "runtime_minutes": datasets.get("_runtime_minutes"),
             "budget_gbp": self._budget_gbp,
@@ -210,10 +241,33 @@ class ReportBuilder:
                 datasets.get("_filming_start_date")
                 or request_metadata.get("filming_start_date")
             ),
+            # The country constraint. Resolved to ISO by the service because the
+            # programmes state their requirement as ISO codes; the raw label is
+            # carried too so the gate can resolve it itself when a caller builds
+            # facts without going through the service.
+            "producer_iso": datasets.get("_producer_iso"),
+            "producer_country": (
+                datasets.get("_producer_country")
+                or request_metadata.get("country")
+            ),
+            "co_production_intent": (
+                datasets.get("_co_production_intent")
+                or request_metadata.get("co_production_interest")
+            ),
         }
         # Populated by _select_territories. Declared here so the attribute exists
         # even if a caller reads it before build() runs.
         self._unanalysed_territories: list[dict] = []
+        # Where a chosen label was analysed under a different one: "United States"
+        # modelled as New Mexico, "Scotland" as the United Kingdom. A producer who
+        # commits to one place and reads figures headed by another cannot tell
+        # whether that is the incentive's real level or a mistake, so the report
+        # has to be able to say which substitution it made and why.
+        self._territory_substitutions: dict[str, str] = {}
+        # Analysed for locations, crew, weather and currency, but carrying no
+        # bankable rebate. They must not be scored on an incentive they do not
+        # have, and they must not be presented as if they might pay one.
+        self._no_incentive_territories: set[str] = set()
         self._built_incentive_estimates: list[dict] = []
         self._budget_currency: str = datasets.get("_budget_currency", "GBP")
         self._budget_original_amount: float | None = datasets.get("_budget_amount")
@@ -254,11 +308,19 @@ class ReportBuilder:
             # Selected territories that no section could analyse, each with its
             # reason. Empty in the ordinary case.
             "unanalysedTerritories": list(self._unanalysed_territories),
+            # Chosen label → the label it was actually analysed under. Empty in the
+            # ordinary case. Without it a producer who selected the United States
+            # and read a section headed "New Mexico" had no way to know whether the
+            # substitution was deliberate.
+            "territorySubstitutions": dict(self._territory_substitutions),
             "programmeAvailabilityCaveat": self._programme_availability_caveat(),
             # Sits beside the incentive figures in every surface, because a warning
             # at the top or bottom of a report does not travel with a number a
             # producer copies out of the middle of it.
             "shortFormatIncentiveNotice": self._short_format_incentive_notice(),
+            # Rendered before the recommendations on both surfaces. Built from the
+            # ranked territories, so it is computed after the ranking settles.
+            "shortFormatGateBanner": self._short_format_gate_banner(territories),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -319,6 +381,11 @@ class ReportBuilder:
         # missing and why; silence reads as a bug, and it hides the more useful fact
         # that the territory has no bankable programme on record.
         self._unanalysed_territories: list[dict] = []
+        self._territory_substitutions: dict[str, str] = {}
+        # Analysed for locations, crew, weather and currency, but carrying no
+        # bankable rebate. They must not be scored on an incentive they do not
+        # have, and they must not be presented as if they might pay one.
+        self._no_incentive_territories: set[str] = set()
 
         if user_territories:
             # Use user-submitted territories, preserving order.
@@ -327,12 +394,28 @@ class ReportBuilder:
             # incentive but has children with data (Georgia, New York, etc.),
             # expand to the best child territory so the parent isn't silently
             # dropped from the report.
+
+            # Parent countries the user also picked regions inside. The picker
+            # nests regions under their country and keeps the country selected, so
+            # choosing California and New Mexico submits "United States" as well.
+            # Expanding it to a best child then added a third state nobody asked
+            # for — usually New York — and presented it as a considered territory.
+            # A country with no national programme of its own is a container here,
+            # not a choice, so its regions speak for it.
+            parents_with_chosen_children: set[str] = set()
+            for t in user_territories:
+                resolved = resolve_territory(t)
+                if resolved and resolved.parent:
+                    parents_with_chosen_children.add(resolved.parent.label)
+
             territories: list[str] = []
             for t in user_territories:
                 if t in territories:
                     continue  # already covered, directly or via an expansion
                 if t in self._territory_incentives or t in self._territory_financials:
                     territories.append(t)
+                elif t in parents_with_chosen_children:
+                    continue  # represented by the regions chosen inside it
                 else:
                     # Check for child territories with incentive data.
                     # The DB parent_territory may use an alias (e.g. "USA")
@@ -392,6 +475,7 @@ class ReportBuilder:
                             return (usable, rate)
 
                         best_child = max(children, key=_child_key)
+                        self._territory_substitutions[t] = best_child
                         if best_child not in territories:
                             territories.append(best_child)
                     else:
@@ -405,18 +489,25 @@ class ReportBuilder:
                             and parent_label in self._territory_incentives
                             and parent_label not in territories
                         ):
+                            self._territory_substitutions[t] = parent_label
                             territories.append(parent_label)
                         elif parent_label and parent_label in territories:
-                            pass  # already covered by its parent
+                            self._territory_substitutions[t] = parent_label
+                        elif self._is_analysable_without_incentive(t):
+                            # No bankable rebate, but we hold a real profile for it:
+                            # crew depth, infrastructure, weather, currency. The
+                            # intake tells producers a territory stays selectable
+                            # "for location, crew or currency reasons", and then the
+                            # report contained nothing about it at all — not a
+                            # ranking row, not a weather entry, nothing. The
+                            # incentive database was deciding whether a territory
+                            # existed.
+                            territories.append(t)
+                            self._no_incentive_territories.add(t)
                         else:
                             self._unanalysed_territories.append({
                                 "territory": t,
-                                "reason": (
-                                    "No active incentive programme is on record for this "
-                                    "territory, so it carries no rebate to model. It may "
-                                    "still suit the production for locations, crew or "
-                                    "currency reasons."
-                                ),
+                                "reason": self._no_programme_reason(t),
                             })
         else:
             # Fallback: all territories with pre-computed financials
@@ -459,6 +550,57 @@ class ReportBuilder:
 
         return territories
 
+    def _is_analysable_without_incentive(self, territory: str) -> bool:
+        """Whether anything is known about *territory* beyond its rebate.
+
+        A curated profile carries crew depth, infrastructure, cost and payment
+        intelligence; weather carries the shoot-window risk. Any of that is enough
+        to give a producer a real answer about a place, and all of it was being
+        discarded because the incentive table had no active row.
+        """
+        if self._get_territory_profile(territory):
+            return True
+        return bool(self._territory_inactive_incentives.get(territory))
+
+    def _no_programme_reason(self, territory: str) -> str:
+        """Why *territory* carries no rebate — the true reason, not one of them.
+
+        "No active incentive programme is on record" was said about every case,
+        including a territory whose programme is on record and suspended. The
+        dataset is explicit that these are different facts: Nigeria has no
+        programme at all, South Africa has the DTIC rebate suspended since March
+        2024 with a documented backlog. Telling a producer the second is the first
+        misstates what they would be waiting for, and whether waiting is a plan.
+        """
+        rows = self._territory_inactive_incentives.get(territory) or []
+        if rows:
+            statuses = {
+                (r.get("status") or "").strip().lower() for r in rows if r.get("status")
+            }
+            names = [r.get("program_name") or r.get("program") for r in rows]
+            named = next((n for n in names if n), "Its incentive programme")
+            if "suspended" in statuses:
+                return (
+                    f"{named} is on record for this territory but is currently "
+                    f"suspended, so no rebate can be modelled against it today. This "
+                    f"is a programme that is not paying out, not the absence of one: "
+                    f"the territory remains relevant for locations, crew and currency, "
+                    f"and the position changes if the programme is reinstated."
+                )
+            return (
+                f"{named} is on record for this territory, but its status is "
+                f"“{', '.join(sorted(statuses)) or 'unconfirmed'}” and its "
+                f"availability cannot be confirmed today, so no rebate is modelled "
+                f"for it. The territory may still suit the production for locations, "
+                f"crew or currency reasons."
+            )
+        return (
+            "No incentive programme is on record for this territory at all, so it "
+            "carries no rebate to model. This is a structural fact rather than a "
+            "delay — there is no programme to wait for. It may still suit the "
+            "production for locations, crew or currency reasons."
+        )
+
     def _is_supplementary_only_territory(self, territory: str) -> bool:
         """True if every incentive row for this territory is supplementary."""
         rows = self._territory_incentives.get(territory, [])
@@ -477,6 +619,16 @@ class ReportBuilder:
         Territories with no incentive rows are dropped from rankings, so they
         are kept here in their original relative order after the ranked ones —
         they still appear in weather, funding and deep-dive sections.
+
+        Deliberately NOT reordered to put a declared ``must_film_in`` first. Doing
+        so would move the recommended-territory card, the financial waterfall and
+        the readiness verdict onto the committed territory, which is arguably where
+        they belong — but it also redefines what "recommended" means across the
+        product, and it would fight the post-AI re-sort in ``compute_overall_scores``.
+        The commitment is carried by ``executiveSummary.mustFilmInNote`` instead,
+        which states which territory to plan against and what the ranking is
+        actually telling you. Changing the ordering is a product decision, not a
+        defect fix.
         """
         ranked = [
             loc["name"] for loc in rankings
@@ -495,11 +647,24 @@ class ReportBuilder:
 
         for territory in territories:
             rows = self._territory_incentives.get(territory, [])
-            if not rows:
+            # A territory with no bankable programme still gets a row, provided
+            # _select_territories decided we know enough about it to say something.
+            # Skipping it here is the second of the two gates that made a committed
+            # territory vanish from the report entirely: the first dropped it from
+            # the selection, this one dropped it from the rankings even if it
+            # survived. Everything below that reads `best` is guarded.
+            no_incentive = territory in self._no_incentive_territories
+            if not rows and not no_incentive:
                 continue
 
-            best = best_incentive(rows, self._production_format, self._project_facts)
-            effective_rate = format_rate(best.get("rate_gross"), best.get("rate_net"))
+            best = (
+                best_incentive(rows, self._production_format, self._project_facts)
+                if rows else {}
+            )
+            effective_rate = (
+                format_rate(best.get("rate_gross"), best.get("rate_net"))
+                if rows else None
+            )
 
             # Cost efficiency: curated territory_profiles score (crew day-rate
             # derivation removed 2026-07, owner-approved). None = no sourced
@@ -508,24 +673,44 @@ class ReportBuilder:
 
             # Compute deterministic scores.
             #
-            # Incentive strength measures the value of a rebate this production can
-            # actually access. When the project's eligibility for the programme is
-            # unresolved, that value is not zero and it is not the headline rate
-            # either — it is unknown, and scoring it either way states something we
-            # do not know. Set to None, which _weighted_score already treats as an
-            # unscored dimension worth a neutral 50, the same convention used for a
-            # territory with no sourced cost data.
+            # Incentive strength is scored on evidence, and the three format gate
+            # states are three different pieces of evidence:
             #
-            # The effect is the one that matters: a 30% programme nobody has
-            # confirmed this project can use no longer outranks a 20% programme on
-            # the strength of the larger number.
+            #   FORMAT_INELIGIBLE   researched, and this format is excluded. Zero.
+            #                       There is no rebate here to value.
+            #   FORMAT_CONFIRMED    researched, and it qualifies. Computed strength.
+            #   FORMAT_UNVERIFIED   nobody has checked. Computed strength, with the
+            #                       caveat carrying the uncertainty.
+            #
+            # That last one changed. Unverified used to score None, which
+            # _weighted_score reads as a neutral 50 — the reasoning being that an
+            # unchecked 30% programme should not outrank a confirmed 20% one. But
+            # "nobody checked" is not evidence the rebate is worthless, and pricing
+            # it at a flat 50 understated a territory exactly as confidently as
+            # quoting the rebate would have overstated it. The uncertainty belongs
+            # in the caveat and the badge, which the reader can act on; it does not
+            # belong in a number that silently reorders the ranking.
+            fmt_verdict = (
+                evaluate_format_eligibility(
+                    best, self._production_format, self._project_facts,
+                ).get("verdict")
+                if rows else None
+            )
             tf_for_rank = self._territory_financials.get(territory) or {}
             can_rank = tf_for_rank.get("incentive_can_affect_ranking")
             status_for_rank = tf_for_rank.get("incentive_eligibility_status")
-            if can_rank is False:
-                # A verified exclusion is a real answer: there is no accessible value
-                # here, and neutral would overstate it. Anything else is unknown.
-                strength = 0 if status_for_rank == "ineligible" else None
+            if no_incentive:
+                # Zero, not neutral. There is no accessible rebate here and a
+                # neutral 50 would quietly credit the territory with half of one.
+                strength = 0
+            elif format_scores_zero(fmt_verdict):
+                # A researched exclusion. Distinct from every "unresolved" case
+                # below, and the only format state that zeroes the dimension.
+                strength = 0
+            elif can_rank is False and status_for_rank == "ineligible":
+                # A verified exclusion on non-format grounds — budget floor, ceiling,
+                # programme status. Also a real answer, also zero.
+                strength = 0
             else:
                 strength = self._compute_incentive_strength(best)
             reliability_score, bankability_label = self._compute_reliability(best, territory_profile)
@@ -566,6 +751,16 @@ class ReportBuilder:
                     "High (85%)" if best.get("cultural_test_required") is True else "N/A"
                 ),
             }
+
+            if no_incentive:
+                # Say it on the row itself. A territory shown beside others that
+                # carry rebate figures, with nothing stating why this one does not,
+                # reads as missing data rather than as the answer.
+                reason = self._no_programme_reason(territory)
+                loc["hasNoBankableIncentive"] = True
+                loc["incentiveAvailability"] = reason
+                loc["rebatePercent"] = "N/A"
+                loc["keyRisks"].append(reason)
 
             # Canonical payment timing. Reading payment_timeline_notes alone
             # reported "Data not available" for every programme that recorded its
@@ -863,6 +1058,71 @@ class ReportBuilder:
             f"film commission before relying on it."
         )
 
+    def _short_format_gate_banner(self, territories: list[str]) -> dict | None:
+        """Banner shown before the recommendations on a short-format report.
+
+        Raised when at least two RANKED territories cannot confirm the programme
+        accepts a short — either researched-and-excluded, or never checked. One
+        such territory is a fact about that territory; two or more is a fact about
+        short films, and a producer reading a page of rebate figures deserves to
+        be told which of those they are looking at before they read any of it.
+
+        Counted over ranked territories rather than over programme rows, because
+        the reader is comparing territories: three unverified programmes inside
+        one territory is still one territory they cannot rely on.
+        """
+        if not needs_format_eligibility_check(self._production_format):
+            return None
+
+        ineligible: list[str] = []
+        unverified: list[str] = []
+        for territory in territories:
+            rows = self._territory_incentives.get(territory, [])
+            if not rows:
+                continue
+            best = best_incentive(rows, self._production_format, self._project_facts)
+            state = format_gate_state(
+                evaluate_format_eligibility(
+                    best, self._production_format, self._project_facts,
+                ).get("verdict")
+            )
+            if state == FORMAT_INELIGIBLE:
+                ineligible.append(territory)
+            elif state == FORMAT_UNVERIFIED:
+                unverified.append(territory)
+
+        affected = ineligible + unverified
+        if len(affected) < 2:
+            return None
+
+        label = (self._production_format or "short").strip().lower()
+        parts = [
+            f"Many production incentive programmes are written for features and "
+            f"scripted television, and exclude short films outright."
+        ]
+        if ineligible:
+            parts.append(
+                f"{_join(ineligible)} {'is' if len(ineligible) == 1 else 'are'} "
+                f"confirmed as not accepting a {label}, so no rebate is modelled "
+                f"for {'it' if len(ineligible) == 1 else 'them'}."
+            )
+        if unverified:
+            parts.append(
+                f"For {_join(unverified)}, we have not established whether the "
+                f"programme accepts a {label}. Any figure shown is illustrative, "
+                f"not an amount this production can count on."
+            )
+        parts.append(
+            "Confirm with the programme administrator or film commission before "
+            "building either into a finance plan."
+        )
+        return {
+            "title": f"Short-format eligibility affects {len(affected)} of your territories",
+            "body": " ".join(parts),
+            "ineligibleTerritories": ineligible,
+            "unverifiedTerritories": unverified,
+        }
+
     def _build_incentive_estimates(self, territories: list[str]) -> list[dict]:
         """Build fully deterministic incentiveEstimates from DB data."""
         estimates: list[dict] = []
@@ -1079,9 +1339,22 @@ class ReportBuilder:
                 if tf_for_money.get("show_potential_incentive")
                 else None
             )
-            # Ranked on what the production can actually rely on. A territory must
-            # never lead on the strength of a figure whose eligibility is unverified.
-            est["incentiveStrength"] = 0
+            # Same rule as the ranking row, so the two fields of this name on one
+            # territory cannot disagree — they did, and the estimate's flat 0 was
+            # the number the badge picked up.
+            #
+            # Zero only where there is a researched answer of "no rebate here":
+            # format excluded, budget below the floor or above the ceiling,
+            # programme suspended or absent. Unverified keeps its computed
+            # strength, because nobody having checked is not evidence of zero.
+            est["incentiveStrength"] = (
+                0
+                if (
+                    format_scores_zero(eligibility.get("verdict"))
+                    or tf_for_money.get("incentive_eligibility_status") == "ineligible"
+                )
+                else self._compute_incentive_strength(db_row)
+            )
         else:
             est["confirmedIncentive"] = est.get("estimatedRebate")
             est["potentialIncentive"] = None
@@ -1239,71 +1512,45 @@ class ReportBuilder:
                     est["_stackingRates"] = stacking_rates
 
     def _apply_eligibility(self, est: dict, db_row: dict) -> None:
-        """Compute eligibility status from nationality_requirements."""
-        producer_country = self.datasets.get("_producer_country")
+        """Attach the producer/nationality verdict to this estimate.
 
-        nat_reqs_raw = db_row.get("nationality_requirements")
-        if not nat_reqs_raw:
-            if not est.get("eligibilityStatus"):
-                est["eligibilityStatus"] = "qualified"
-            return
+        Delegates rather than deciding. This method used to hold its own copy of
+        the nationality comparison, and it was wrong in two ways at once: it read
+        a ``_producer_country`` no client ever populated, so it took its
+        "jurisdiction unknown" branch on every report; and it compared that value
+        to the requirement as raw text, so a label like "United Kingdom" would
+        never have matched the stored code "GB" even once the field was wired up.
+        Both are fixed at the source now, and the verdict comes from the one gate
+        every other surface reads.
+        """
+        result = evaluate_producer_eligibility(db_row, self._project_facts)
 
-        try:
-            nat_reqs: list[str] = (
-                _json.loads(nat_reqs_raw)
-                if isinstance(nat_reqs_raw, str)
-                else list(nat_reqs_raw)
-            )
-        except (ValueError, TypeError):
-            nat_reqs = []
+        # Never overwrite a status another check already settled — the format and
+        # HETV checks run against the same estimate and their answers stand.
+        if not est.get("eligibilityStatus"):
+            est["eligibilityStatus"] = producer_legacy_status(result)
+        if result["explanation"] and not est.get("eligibilityNote"):
+            est["eligibilityNote"] = result["explanation"]
 
-        if not nat_reqs:
-            return
+        est["producerEligibilityStatus"] = result["verdict"]
+        if result["requiredNationalities"]:
+            est["requiredNationalities"] = result["requiredNationalities"]
+        if result["routes"]:
+            est["producerEligibilityRoutes"] = result["routes"]
 
-        program_name = est.get("program", "")
-        territory = db_row.get("territory", "")
-
-        if producer_country:
-            qualifies = producer_country.upper() in [n.upper() for n in nat_reqs]
-            if qualifies:
-                if not est.get("eligibilityStatus"):
-                    est["eligibilityStatus"] = "qualified"
-                    est.setdefault(
-                        "eligibilityNote",
-                        f"{producer_country} registered entity qualifies directly.",
-                    )
-            else:
-                co_prod_ok = bool(db_row.get("co_production_eligible"))
-                spv_ok = bool(db_row.get("spv_eligible"))
-                if not est.get("eligibilityStatus"):
-                    if spv_ok:
-                        est["eligibilityStatus"] = "requires_spv"
-                    elif co_prod_ok:
-                        est["eligibilityStatus"] = "requires_co_production"
-                    else:
-                        est["eligibilityStatus"] = "ineligible"
-
-                if not est.get("eligibilityNote"):
-                    options = []
-                    if spv_ok:
-                        options.append("establish a local SPV")
-                    if co_prod_ok:
-                        options.append("qualify via co-production treaty")
-                    note = (
-                        f"{producer_country} entity — {program_name} requires "
-                        f"{'/'.join(nat_reqs)} tax liability."
-                    )
-                    if options:
-                        note += f" Options: {'; '.join(options)}."
-                    est["eligibilityNote"] = note
-        else:
-            # No producer country — add assumption note
+        # An untestable requirement still has to reach the producer as a question
+        # to go and answer, which is what the old unconditional assumption note
+        # was reaching for. It is stated only when a requirement actually exists.
+        if result["verdict"] == PRODUCER_UNKNOWN:
             reqs = est.setdefault("requirements", [])
             assumption = (
-                f"Eligibility assumes a qualifying {territory} entity — "
-                f"verify company jurisdiction before committing."
+                f"Confirm the production company's jurisdiction: this programme is "
+                f"restricted to {', '.join(result['requiredNationalities'])} "
+                f"producers and none is recorded for this project."
             )
-            if not any("eligibility assumes" in r.lower() for r in reqs if isinstance(r, str)):
+            if not any(
+                "jurisdiction" in r.lower() for r in reqs if isinstance(r, str)
+            ):
                 reqs.append(assumption)
 
     def _apply_hetv_check(self, est: dict, db_row: dict) -> None:
@@ -1659,8 +1906,88 @@ class ReportBuilder:
         # Deadline proximity
         self._inject_deadline_flags(summary)
         self._inject_eligibility_first_step(summary)
+        self._inject_must_film_in(summary, territories)
 
         return summary
+
+    def _inject_must_film_in(self, summary: dict, territories: list[str]) -> None:
+        """Say back the commitment the producer declared, and how it was treated.
+
+        ``must_film_in`` was read into the request schema, prepended to the analysed
+        territories, and then never mentioned again. The producer told us the one
+        thing that is not negotiable about this production and the report answered
+        as though every territory in it were an open option — which reads as though
+        the constraint was ignored, whether or not it was.
+
+        Three things have to be stated, because each is a different answer:
+        the commitment was analysed and leads the ranking; it was analysed but
+        something else scored higher, so the ranking is advisory here rather than a
+        recommendation; or it could not be modelled at all, and why.
+        """
+        declared = self.datasets.get("_must_film_in")
+        if not declared:
+            return
+
+        summary["mustFilmIn"] = declared
+
+        # Where it was actually analysed. A commitment to the United States is
+        # modelled as one of its states; a commitment to Scotland as the UK.
+        analysed_as = self._territory_substitutions.get(declared, declared)
+        if analysed_as != declared:
+            summary["mustFilmInAnalysedAs"] = analysed_as
+
+        unanalysed = {
+            u.get("territory") for u in (self._unanalysed_territories or [])
+        }
+
+        if analysed_as in territories:
+            leads = territories[0] == analysed_as
+            where = (
+                f"{declared}"
+                if analysed_as == declared
+                else (
+                    f"{declared}, modelled under {analysed_as} because that is the "
+                    f"level the incentive exists at"
+                )
+            )
+            if leads:
+                note = (
+                    f"You told us this production must film in {where}. It is the "
+                    f"territory these figures are built around; the others are shown "
+                    f"for comparison, not as alternatives to it."
+                )
+            else:
+                note = (
+                    f"You told us this production must film in {where}. It is analysed "
+                    f"here, but {territories[0]} scores higher on the priorities you "
+                    f"set. Plan against {analysed_as}; the ranking above is what the "
+                    f"commitment costs, not a recommendation to break it."
+                )
+        elif declared in unanalysed or analysed_as in unanalysed:
+            reason = next(
+                (
+                    u.get("reason")
+                    for u in (self._unanalysed_territories or [])
+                    if u.get("territory") in (declared, analysed_as)
+                ),
+                None,
+            )
+            note = (
+                f"You told us this production must film in {declared}, and it could "
+                f"not be modelled here. {reason or ''}".strip()
+            )
+        else:
+            note = (
+                f"You told us this production must film in {declared}. No incentive "
+                f"programme on record could be matched to it, so no rebate is modelled "
+                f"for the commitment. The territories below are costed on their own "
+                f"terms and do not assume you are free to move."
+            )
+
+        summary["mustFilmInNote"] = note
+        key_flags = summary.setdefault("keyFlags", [])
+        if not any("must film in" in f.lower() for f in key_flags):
+            key_flags.insert(0, note)
 
     def _inject_shoot_duration_flag(self, summary: dict) -> None:
         """Add keyFlag for unusually long shoot durations."""
@@ -1808,12 +2135,34 @@ class ReportBuilder:
             prod_genres_raw = [prod_genres_raw]
         prod_genres = {g.lower().strip() for g in prod_genres_raw if g}
 
+        # FIX-03 Stage 1. Format is a criterion, not a tiebreak.
+        #
+        # A micro-budget supernatural short was offered eight comparables, every
+        # one of them a feature, because selection scored territory and genre and
+        # never asked what the production was. Two rules:
+        #
+        #   recorded and different  -> discarded outright, before scoring, so no
+        #                              amount of territory or genre affinity can
+        #                              bring an out-of-format title back
+        #   not recorded            -> kept, marked unverified, and scored below
+        #                              any row whose format is confirmed
+        #
+        # The second rule is the stopgap part. Discarding nulls would empty the
+        # section on today's data, which tells a producer less than a labelled
+        # list does. It closes when the curated dataset lands in Stage 2.
+        wanted_format = canonical_format(self._production_format)
+
         scored: list[tuple[float, dict]] = []
         for row in comparables:
             if not isinstance(row, dict):
                 continue
             title = (row.get("title") or "").strip()
             if not title:
+                continue
+
+            comp_format = canonical_format(row.get("format"))
+            format_known = bool(comp_format)
+            if wanted_format and format_known and comp_format != wanted_format:
                 continue
 
             comp_territory = (row.get("primary_territory") or "").strip()
@@ -1828,6 +2177,13 @@ class ReportBuilder:
 
             # Relevance scoring
             score = 0.0
+
+            # Format (+4 confirmed match). Weighted above territory, because a
+            # feature shot in the same territory is a weaker comparable for a
+            # short than a short shot elsewhere — the section exists to show what
+            # productions like this one did.
+            if wanted_format and format_known:
+                score += 4.0
 
             # Territory match (+3)
             if comp_territory and comp_territory.lower() in territories_set:
@@ -1873,6 +2229,11 @@ class ReportBuilder:
                 "budgetRange": budget_range,
                 "genre": genre_display,
                 "source": comp_source,
+                "format": comp_format,
+                # Rendered beside the row. A comparable whose format nobody has
+                # recorded is not the same claim as one confirmed to match, and
+                # the reader is the one deciding how much weight to give it.
+                "formatVerified": format_known,
                 "relevanceDescription": None,  # AI fills
             }
 
@@ -1890,7 +2251,27 @@ class ReportBuilder:
 
         # Sort by relevance score descending, take top 10
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [comp for _, comp in scored[:10]]
+        selected = [comp for _, comp in scored[:10]]
+
+        # Second pass. The gate above runs inside the scoring loop, where a future
+        # edit could reorder or short-circuit past it; this one runs on the final
+        # list, immediately before it leaves the method, and answers one question
+        # about each row that survived. Cheap, and it is the assertion the
+        # acceptance criterion is actually written against.
+        if wanted_format:
+            kept: list[dict] = []
+            for comp in selected:
+                comp_fmt = canonical_format(comp.get("format"))
+                if comp_fmt and comp_fmt != wanted_format:
+                    logger.warning(
+                        "Dropped out-of-format comparable %r (%s) from a %s report",
+                        comp.get("title"), comp_fmt, wanted_format,
+                    )
+                    continue
+                kept.append(comp)
+            selected = kept
+
+        return selected
 
     # ── Weather Logistics ──────────────────────────────────────────────────
 
@@ -2393,6 +2774,7 @@ class ReportBuilder:
             audience_segments=declared["audience_segments"],
             audience_skew=declared["audience_skew"],
             production_territories=production_territories,
+            production_format=self._production_format,
         )
 
         recommended_names = {f["name"] for f in festival_recs}

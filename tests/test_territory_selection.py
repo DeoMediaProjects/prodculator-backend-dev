@@ -37,6 +37,11 @@ def builder(user_territories, incentive_rows, project_facts=None):
     b = ReportBuilder.__new__(ReportBuilder)
     b.datasets = {"_user_territories": user_territories}
     b._territory_incentives = index_incentives_by_territory(incentive_rows)
+    # Selection now asks whether anything is known about a territory beyond its
+    # rebate, so these have to exist on the fixture as they do on a real builder.
+    # Empty here: these cases are all about territories with active programmes.
+    b._territory_inactive_incentives = {}
+    b._territory_profiles = {}
     b._territory_financials = {}
     b.is_preview = False
     b._unanalysed_territories = []
@@ -74,6 +79,46 @@ class TestParentExpansion:
         assert ReportBuilder._select_territories(b) == ["France"]
 
 
+class TestParentIsNotExpandedWhenItsRegionsWereChosen:
+    """Picking states put a state nobody asked for into the report.
+
+    The picker nests regions under their country and keeps the country selected
+    while they are visible, so choosing California and New Mexico submits
+    "United States" too. Expanding it to a best child then added a third state —
+    New York at ordinary budgets — and presented it as a considered territory.
+    The United States has no federal film incentive, so the country is a
+    container for its states, not a choice of its own.
+    """
+
+    def test_no_unchosen_state_is_added(self):
+        rows = [
+            row("California", 35), row("New Mexico", 25),
+            row("New York", 30), row("Georgia (USA)", 30),
+        ]
+        b = builder(["United States", "California", "New Mexico"], rows)
+        assert ReportBuilder._select_territories(b) == ["California", "New Mexico"]
+
+    def test_the_parent_still_expands_when_no_region_was_chosen(self):
+        rows = [row("California", 35), row("New York", 25)]
+        b = builder(["United States"], rows)
+        assert ReportBuilder._select_territories(b) == ["California"]
+
+    def test_a_parent_with_its_own_programme_is_still_analysed(self):
+        """Canada has a federal credit, so choosing Canada and Ontario is two
+        real territories — this rule only drops countries that model nothing."""
+        rows = [row("Canada", 25), row("Ontario", 35)]
+        b = builder(["Canada", "Ontario"], rows)
+        assert ReportBuilder._select_territories(b) == ["Canada", "Ontario"]
+
+    def test_the_dropped_parent_is_not_reported_as_unanalysed(self):
+        """It is represented by the states chosen inside it, so there is nothing
+        to explain — a warning here would read as a failure."""
+        rows = [row("California", 35), row("New York", 25)]
+        b = builder(["United States", "California"], rows)
+        ReportBuilder._select_territories(b)
+        assert b._unanalysed_territories == []
+
+
 class TestChildChoiceRespectsUsability:
     def test_the_child_the_production_can_use_wins_over_the_higher_rate(self):
         """Picking on rate alone resolved a country to a state whose minimum
@@ -103,7 +148,15 @@ class TestNothingVanishesSilently:
 
         assert analysed == ["France"]
         assert [d["territory"] for d in b._unanalysed_territories] == ["Nigeria"]
-        assert "no active incentive programme" in b._unanalysed_territories[0]["reason"].lower()
+        # Nigeria has no programme at all, which its own record insists is a
+        # different fact from a suspended one: "not a slow or developing incentive
+        # timeline — there is no incentive program to time". The reason used to be
+        # a single sentence covering both cases, and it was written for the wrong
+        # one. See test_territory_without_incentive.py for the suspended case.
+        reason = b._unanalysed_territories[0]["reason"].lower()
+        assert "no incentive programme is on record" in reason
+        assert "structural fact rather than a delay" in reason
+        assert "suspended" not in reason
 
     def test_a_supplementary_only_territory_says_so_specifically(self):
         """A stacking credit is a real fact about the territory, just not a
@@ -167,13 +220,31 @@ class TestMustFilmIn:
         })
         assert hint.count("France") == 1
 
-    @pytest.mark.parametrize("sentinel", ["", "Open", "open to all", "N/A", "none"])
+    @pytest.mark.parametrize(
+        "sentinel",
+        ["", "Open", "open to all", "N/A", "none",
+         # The intake's "Not decided yet" submits this. It was treated as a place
+         # name: added to the analysed list, found to carry no programme, and
+         # reported back as a territory that could not be modelled.
+         "Undecided", "undecided", "Not decided yet", "TBD"],
+    )
     def test_a_non_answer_adds_nothing(self, sentinel):
         hint = self._resolve({
             "territories_considering": ["France"],
             "must_film_in": sentinel,
         })
         assert hint == ["France"]
+
+    def test_the_production_country_can_be_the_commitment(self):
+        """Shooting where the company is based is the most ordinary commitment a
+        production makes, and naming it must put it into the analysis without it
+        also having to be ticked as a territory under consideration."""
+        hint = self._resolve({
+            "territories_considering": ["France"],
+            "country": "United Kingdom",
+            "must_film_in": "United Kingdom",
+        })
+        assert hint == ["France", "United Kingdom"]
 
     def test_a_domestic_strategy_is_unaffected(self):
         """Domestic restricts to the home country by design; a must-film-in cannot

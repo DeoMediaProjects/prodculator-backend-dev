@@ -10,6 +10,7 @@ from sqlalchemy.exc import NoSuchTableError
 from app.core.config import get_settings
 from app.core.database_client import DatabaseClient
 from app.core.territories import (
+    producer_iso,
     resolve_territory,
     territory_to_iso as _build_territory_to_iso,
     iso_to_territory as _build_iso_to_territory,
@@ -30,6 +31,22 @@ logger = logging.getLogger(__name__)
 # Derived from the canonical Territory enum — single source of truth.
 _TERRITORY_TO_ISO: dict[str, str] = _build_territory_to_iso()
 _ISO_TO_TERRITORY: dict[str, str] = _build_iso_to_territory()
+
+# Answers to a territory question that name no territory. The intake sends
+# "Undecided" for "Not decided yet" on Must Film In; only the "open" variants
+# were recognised, so the word itself was resolved as a place name, added to the
+# analysed list, found to have no incentive programme, and reported back to the
+# producer as a territory that could not be modelled.
+_NON_TERRITORY_ANSWERS = frozenset({
+    "open to all", "open", "n/a", "none",
+    "undecided", "not decided", "not decided yet", "tbd",
+})
+
+
+def _is_territory_answer(value: str) -> bool:
+    """Whether *value* names a place rather than declining to name one."""
+    return bool(value) and value.strip().lower() not in _NON_TERRITORY_ANSWERS
+
 
 MAX_ERROR_MESSAGE_CHARS = 500
 MAX_STEP_CHARS = 80
@@ -731,10 +748,8 @@ class ReportService:
         country = request_metadata.get("country") or ""
         state_province = request_metadata.get("state_province") or ""
 
-        # Strip "open to all" sentinel values
-        strict_territories = [
-            t for t in raw_territories if t.lower() not in ("open to all", "open")
-        ]
+        # Strip sentinel values that name no territory
+        strict_territories = [t for t in raw_territories if _is_territory_answer(t)]
 
         if location_strategy == "domestic":
             # Domestic: only the home territory (+ state for state-level incentives)
@@ -753,7 +768,7 @@ class ReportService:
         # A territory the production is committed to has to be in the dataset before
         # anything can rank it.
         must_film_in = (request_metadata.get("must_film_in") or "").strip()
-        if must_film_in and must_film_in.lower() not in ("open to all", "open", "n/a", "none"):
+        if _is_territory_answer(must_film_in):
             resolved = resolve_territory(must_film_in)
             label = resolved.label if resolved else must_film_in
             if label not in hint:
@@ -917,9 +932,31 @@ class ReportService:
             if _script_days and int(_script_days) > 0:
                 datasets["_shoot_weeks"] = max(1, round(int(_script_days) / 5))
 
-        # Producer eligibility inputs
-        datasets["_producer_country"] = request_metadata.get("producer_country")
+        # Producer eligibility inputs.
+        #
+        # `producer_country` is the dedicated field and takes precedence, but no
+        # client has ever sent it, so the nationality gate that reads it could
+        # never fire — it took its "jurisdiction unknown" branch on every report
+        # ever generated and printed a note asking the reader to check for us.
+        # Intake has been collecting Production Country the whole time under
+        # `country`; that is the jurisdiction the production company sits in and
+        # it is what the requirement is about.
+        #
+        # Normalised to ISO here because the requirement lists are ISO codes
+        # (`["CA"]`, `["GB"]`, `["MT","EU"]`) while intake sends labels. Comparing
+        # the two directly, which is what the old gate did, meant "UNITED KINGDOM"
+        # never matched "GB" and the check would have failed even once wired up.
+        declared_producer = (
+            request_metadata.get("producer_country")
+            or request_metadata.get("country")
+        )
+        datasets["_producer_country"] = declared_producer
+        datasets["_producer_iso"] = producer_iso(declared_producer)
         datasets["_co_production_status"] = request_metadata.get("co_production_status")
+        # Whether a treaty route is open at all. "no" closes it; "undecided" and
+        # absence leave it open, which is the honest reading of a producer who has
+        # not chosen yet.
+        datasets["_co_production_intent"] = request_metadata.get("co_production_interest")
 
         # Visa requirements — load DB-backed entries for the user's base country
         # so the validator can replace AI-generated travelVisa fields with
@@ -953,11 +990,11 @@ class ReportService:
         # it, is answering a question the producer did not ask.
         must_film_in = (request_metadata.get("must_film_in") or "").strip()
         ordered_raw = list(raw_considering)
-        if must_film_in and must_film_in.lower() not in ("open to all", "open", "n/a", "none"):
+        if _is_territory_answer(must_film_in):
             ordered_raw.insert(0, must_film_in)
 
         for raw in ordered_raw:
-            if not raw or raw.lower() in ("open to all", "open"):
+            if not _is_territory_answer(raw):
                 continue
             t = resolve_territory(raw)
             label = t.label if t else raw
@@ -967,11 +1004,13 @@ class ReportService:
         datasets["_user_territories"] = user_territories
         # Kept separate so downstream sections can say "you told us you must film
         # here" rather than treating it as one option among several.
-        datasets["_must_film_in"] = (
-            resolve_territory(must_film_in).label
-            if must_film_in and resolve_territory(must_film_in)
-            else (must_film_in or None)
-        )
+        # None when the producer declined to name one, so downstream sections do
+        # not announce a commitment to a territory called "Undecided".
+        if not _is_territory_answer(must_film_in):
+            datasets["_must_film_in"] = None
+        else:
+            resolved_mfi = resolve_territory(must_film_in)
+            datasets["_must_film_in"] = resolved_mfi.label if resolved_mfi else must_film_in
 
         # v3: Production format (needed by validator for format harmonisation)
         datasets["_production_format"] = request_metadata.get("format")
@@ -1029,6 +1068,22 @@ class ReportService:
 
         # Pre-compute territory financials — authoritative monetary figures
         # that the AI should use verbatim instead of computing its own.
+        # One set of project facts, built once, read by every consumer.
+        #
+        # FIX-01. `best_incentive` ranks a programme partly on whether this
+        # production clears its stated gates, and it can only do that if it is
+        # given the production. Seven call sites in the builder passed these
+        # facts; the financials precompute and the validator did not, so for the
+        # United Kingdom the builder selected the Independent Film Tax Credit
+        # (39.75% net / 53% gross, whose budget ceiling this production clears)
+        # while the financials selected standard AVEC (25.5% / 34%, no gates to
+        # test). Same territory, same report, two rates -- the ranking card and
+        # the waterfall each quoting a different programme.
+        #
+        # Assembled here rather than at each call site, because a facts dict
+        # built per consumer is exactly how one of them ends up missing a field.
+        datasets["_project_facts"] = self._build_project_facts(datasets, request_metadata)
+
         self._pre_compute_territory_financials(datasets)
 
         # Load territory profiles for deterministic crew depth / infrastructure
@@ -1049,6 +1104,36 @@ class ReportService:
             row['territory']: row
             for row in territory_profile_rows
             if row.get('territory')
+        }
+
+    @staticmethod
+    def _build_project_facts(datasets: dict, request_metadata: dict) -> dict:
+        """The production, as the eligibility gates need to see it.
+
+        Every field here is one a gate tests against. Nothing is inferred: a fact
+        the platform does not hold stays absent, and the gate that needs it
+        reports untested rather than being settled against a guess.
+        """
+        budget_gbp_data = datasets.get("_budget_gbp")
+        budget_gbp = (
+            budget_gbp_data.get("converted")
+            if isinstance(budget_gbp_data, dict) else None
+        )
+        return {
+            "format": datasets.get("_production_format"),
+            "runtime_minutes": datasets.get("_runtime_minutes"),
+            "budget_gbp": budget_gbp,
+            "completion_date": (
+                datasets.get("_completion_date")
+                or request_metadata.get("completion_date")
+            ),
+            "filming_start_date": (
+                datasets.get("_filming_start_date")
+                or request_metadata.get("filming_start_date")
+            ),
+            "producer_iso": datasets.get("_producer_iso"),
+            "producer_country": datasets.get("_producer_country"),
+            "co_production_intent": datasets.get("_co_production_intent"),
         }
 
     def _pre_compute_territory_financials(self, datasets: dict) -> None:
@@ -1083,12 +1168,17 @@ class ReportService:
         budget_symbol = _currency_symbol(budget_currency)
 
         production_format: str | None = datasets.get("_production_format")
+        project_facts: dict = datasets.get("_project_facts") or {}
         territory_financials: dict[str, dict] = {}
 
         for territory, rows in territory_incentives.items():
             if not territory or not rows:
                 continue
-            best = _best_incentive(rows, production_format)
+            # Project facts included, so this selects the same programme row the
+            # builder's ranking does. Without them the budget-ceiling gate could
+            # not be tested, IFTC ranked below standard AVEC as unverifiable, and
+            # the waterfall quoted a different UK rate than the ranking card.
+            best = _best_incentive(rows, production_format, project_facts)
 
             # Resolve FX rate for rebate cap enforcement (e.g. South Africa R25M).
             #
@@ -1154,6 +1244,14 @@ class ReportService:
                 "runtime_minutes": datasets.get("_runtime_minutes"),
                 "completion_date": datasets.get("_completion_date"),
                 "filming_start_date": datasets.get("_filming_start_date"),
+                # The producer dimension has to travel with the rest. A facts dict
+                # assembled per call site is how one dimension goes missing from one
+                # section: without these, a programme the producer qualifies for
+                # outright would report here as unverified and its rebate would drop
+                # out of the net budget, while the ranking said it was fine.
+                "producer_iso": datasets.get("_producer_iso"),
+                "producer_country": datasets.get("_producer_country"),
+                "co_production_intent": datasets.get("_co_production_intent"),
             }
             eligibility = resolve_project_incentive(
                 best, project_facts, production_format=production_format,
@@ -1338,11 +1436,28 @@ class ReportService:
             "incentive_programs",
             lambda q: q.select("*"),
         )
-        # Filter to active + legacy (NULL status treated as active)
-        all_incentives = [
-            i for i in all_incentives
-            if (i.get("status") or "").lower() in ("active", "") or i.get("status") is None
-        ]
+        # Split rather than discard. Only active + legacy (NULL status treated as
+        # active) rows may be ranked or costed — that part is unchanged.
+        #
+        # What changed is that the rest are kept. Dropping them made a suspended
+        # programme indistinguishable from no programme at all, and the report said
+        # so out loud: a producer committed to South Africa was told "no active
+        # incentive programme is on record for this territory" when the DTIC rebate
+        # is on record, suspended since March 2024 with a documented backlog. The
+        # dataset itself draws the distinction — Nigeria's row reads "No incentive
+        # programme exists at all ... Distinct from South Africa which IS a
+        # programme that is suspended" — and the intake picker draws it too. Only
+        # the report collapsed the two.
+        def _is_rankable(row: dict) -> bool:
+            status = (row.get("status") or "").lower()
+            return status in ("active", "") or row.get("status") is None
+
+        # Returned under their own key, never merged into "incentives": nothing
+        # that ranks, scores or costs a programme may reach these rows. They exist
+        # so the report can say what is actually true about a territory it has no
+        # bankable rebate for.
+        inactive_incentives = [i for i in all_incentives if not _is_rankable(i)]
+        all_incentives = [i for i in all_incentives if _is_rankable(i)]
         if normalised_hint:
             hint_set = set(normalised_hint)
             # Also build ISO set for matching country-style dataset fields
@@ -1420,6 +1535,7 @@ class ReportService:
 
         return {
             "incentives": incentives,
+            "_inactive_incentives": inactive_incentives,
             "comparables": comparables,
             "grants": grants,
             "festivals": festivals,

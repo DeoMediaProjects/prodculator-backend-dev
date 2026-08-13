@@ -1964,7 +1964,14 @@ PARAGRAPH 3 — **Second Territory** (50-70 words): Territory + FRS + verdict. K
 PARAGRAPH 4 — **Third Territory** (50-70 words): Territory + FRS + verdict. Key financial figure. One sentence: when does this become the right choice? OMIT if fewer than 3 territories.
 PARAGRAPH 5 — **Production Complexity Snapshot** (40-60 words): 2-3 specific complexity flags from script analysis. Every point traceable to script — scene counts, languages, specialist requirements. No generic statements.
 PARAGRAPH 6 — **Strategic Recommendations** (40-60 words): 2-3 specific time-sensitive actions. At least one must be urgent/deadline-bound from actual report flags. Reference actual programme names, deadlines, or risks from this report.
-GUARDRAILS: Duration always in weeks — NEVER convert to days. NET rates only. UK AVEC always 25.5% net NOT 34% gross. FRS: use financialReturnScore and financialReturnVerdict from skeleton only. Financial figures: only values from skeleton. Bold headings on own line NOT inline.
+GUARDRAILS: Duration always in weeks — NEVER convert to days. NET rates only, and take the net rate verbatim from the skeleton's rebatePercent for that territory — never from memory of what a programme "usually" pays, because a territory can have several programmes at different rates and the skeleton names the one this production was costed under. FRS: use financialReturnScore and financialReturnVerdict from skeleton only. Financial figures: only values from skeleton. Bold headings on own line NOT inline.
+
+INCENTIVE AVAILABILITY — ABSOLUTE. Each territory in the skeleton carries an availability state. For any territory whose state is FORMAT_INELIGIBLE, or which carries hasNoBankableIncentive, or whose programme status is no_programme:
+- NEVER state a rebate percentage, a rate, or a monetary rebate amount for it. Not as an estimate, not as an illustration, not "up to", not "typically", not in parentheses.
+- Say instead that the programme is not available to this production, and why: the format is excluded, or the programme is suspended, or no programme exists.
+- Do not describe such a territory as having a "slow", "delayed" or "developing" incentive when there is no incentive — that is a different fact.
+- A territory in this state may still be discussed for locations, crew, infrastructure or currency. Those are not incentive claims.
+FORMAT_UNVERIFIED is NOT this state: quote its figure from the skeleton and label it as unconfirmed.
 
 nextSteps RULES: 4-6 items ordered by urgency (URGENT first). Each action must reference a specific territory, programme name, or flag. URGENT = deadline within 3 months or blocking contractual commitment. NEVER generate generic actions.
 

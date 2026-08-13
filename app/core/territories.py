@@ -472,3 +472,44 @@ def territory_to_iso() -> dict[str, str]:
 def iso_to_territory() -> dict[str, str]:
     """Return {iso -> label} for top-level countries only."""
     return {t.iso: t.label for t in Territory if t.is_country}
+
+
+# ── Producer nationality ────────────────────────────────────────────────
+
+# EU member states, as ISO 3166-1 alpha-2. Needed because programmes record
+# their nationality requirement as a list of codes and some of them name the
+# union rather than the country: Malta's is ``["MT","EU"]``, meaning a producer
+# established anywhere in the EU satisfies it. Without the membership list the
+# only way to read "EU" is as a country code matching nothing, which turns a
+# requirement half the continent meets into one nobody does.
+#
+# All 27 members, not only the ones this platform holds incentive data for: the
+# producer's own country is the input here, and it is not restricted to
+# territories we model.
+EU_MEMBER_ISOS: frozenset[str] = frozenset({
+    "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR",
+    "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL",
+    "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+})
+
+
+def producer_iso(value: str | None) -> str | None:
+    """Resolve a producer's stated home territory to a country ISO code.
+
+    Accepts what each surface actually holds: an ISO code ("GB"), a canonical
+    label ("United Kingdom"), an alias, or a sub-territory. A company registered
+    in California is a US company for every nationality requirement written, so
+    sub-territories resolve to their parent country rather than to their own ISO.
+    """
+    if not value:
+        return None
+    t = resolve_territory(value)
+    if t is None:
+        # Unrecognised, but a bare two-letter code is still usable as-is: the
+        # requirement lists are ISO codes, and refusing to compare a code we
+        # simply do not model would report a testable gate as untestable.
+        stripped = value.strip().upper()
+        return stripped if len(stripped) == 2 and stripped.isalpha() else None
+    if t.parent is not None:
+        t = t.parent
+    return t.iso
