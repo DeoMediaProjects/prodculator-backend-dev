@@ -38,7 +38,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from app.core.regions import (
+from app.core.regions import (
     AFRICA,
     ASIA,
     CENTRAL_ASIA,
@@ -52,6 +52,7 @@ from app.core.regions import (
     regions_for_territories,
     satisfies,
 )
+from app.core.formats import canonical_format
 from app.modules.reports.helpers import DEFAULT_SHOOT_DAYS_PER_WEEK
 
 logger = logging.getLogger(__name__)
@@ -177,7 +178,19 @@ def match_festivals(
         eligible_formats = fest.get("eligible_formats") or []
 
         # --- Hard gate: format eligibility ---
-        if production_format.lower() not in [f.lower() for f in eligible_formats]:
+        # The DATA side is canonicalised: a festival recording "Short Film" and a
+        # production declaring the token "short" are the same format, and the old
+        # raw-lowercase comparison excluded it. A hard gate failing closed on a
+        # spelling difference loses a real match, and looks identical to there
+        # being no match.
+        #
+        # The CALLER side is deliberately NOT canonicalised. Callers pass a
+        # canonical token, and test_the_raw_display_label_would_have_matched_nothing
+        # pins that contract: accepting raw labels here would let a caller that
+        # forgot to canonicalise keep working by accident, until the day its label
+        # is one this gate does not recognise.
+        allowed = {canonical_format(f) for f in eligible_formats}
+        if production_format.lower() not in {str(a).lower() for a in allowed if a}:
             continue  # excluded, not just deprioritized
 
         # --- Hard gate: timing — festival's own acceptance window must
@@ -291,6 +304,7 @@ def match_distributors(
     audience_segments: list[str] | None = None,
     audience_skew: str | None = None,
     production_territories: list[str] | None = None,
+    production_format: str | None = None,
 ) -> list[DistributorMatch]:
     target_audience = target_audience or []
     audience_segments = audience_segments or []
@@ -298,9 +312,30 @@ def match_distributors(
     declared_audience = {a.lower() for a in target_audience + audience_segments}
     _ = audience_skew  # banked for B2B / future matching — intentionally unused in scoring
 
+    wanted_format = canonical_format(production_format)
+
     matches: list[DistributorMatch] = []
 
     for dist in distributors:
+        # --- Hard gate: format focus ---
+        #
+        # Festivals and grants have gated on format from the start; distributors
+        # did not, and could not — format_focus had no column and lived as a line
+        # of prose inside notes. So a horror short was matched to A24, Neon and
+        # Dark Sky Films. All real distributors, all feature buyers, none of which
+        # will take a short, and the producer had no way to tell that from the
+        # page.
+        #
+        # Excluded, not deprioritised, matching the festival and grant gates: a
+        # buyer who does not handle this format is not a weaker option, it is not
+        # an option. A distributor that declares NO format focus is unknown rather
+        # than unsuitable and still competes, which keeps the 57 existing records
+        # behaving as before wherever the backfill found nothing to recover.
+        focus = [str(f).lower() for f in (dist.get("format_focus") or [])]
+        if wanted_format and focus and "all" not in focus:
+            if not any(canonical_format(f) == wanted_format for f in focus):
+                continue
+
         score = 0.0
         reasons: list[str] = []
 
@@ -403,19 +438,17 @@ def match_distributors(
 #   budget outside stated bounds. Badges: NATIONALITY RESTRICTION /
 #   CO-PRODUCTION REQUIRED / CLOSING SOON / LEGISLATIVE RISK.
 
+# Retained as a name other modules may import. It is now a view onto the single
+# taxonomy in app.core.formats rather than a second copy of it: two alias tables
+# for the same concept drift, and the one that drifts is always the one nobody
+# remembers to update.
 GRANT_FORMAT_MAP = {
-    "feature film": "feature",
-    "feature": "feature",
-    "short": "short",
-    "short film": "short",
-    "tv series": "tv_series",
-    "tv pilot": "tv_series",
-    "limited series": "tv_series",
-    "mini-series": "tv_series",
-    "documentary": "documentary",
-    "docuseries": "documentary",
-    "animated feature": "animation",
-    "animation series": "animation",
+    alias: canonical_format(alias)
+    for alias in (
+        "feature film", "feature", "short", "short film", "tv series", "tv pilot",
+        "limited series", "mini-series", "documentary", "docuseries",
+        "animated feature", "animation series",
+    )
 }
 
 STALE_EXCLUDE_MONTHS = 6
@@ -448,7 +481,7 @@ def match_grants(grants: list[dict], production: dict, today: date | None = None
     """production: format, genres[], budget_usd, home_country,
     ranked_territories[], script_origin. Returns (matches, admin_flags)."""
     today = today or date.today()
-    fmt = GRANT_FORMAT_MAP.get((production.get("format") or "").lower())
+    fmt = canonical_format(production.get("format"))
     genres = {g.lower() for g in production.get("genres", [])}
     ranked = {t.lower() for t in production.get("ranked_territories", [])}
     origin = (production.get("script_origin") or "").lower() or None
@@ -489,8 +522,12 @@ def match_grants(grants: list[dict], production: dict, today: date | None = None
         cont = g.get("continent") or ""
 
         # ---- G1 format ----
-        elig = [str(f).lower() for f in (g.get("eligible_formats") or [])]
-        if fmt and elig and fmt not in elig and "all" not in elig:
+        # Hard gate, and canonicalised on both sides so a fund recording
+        # "Short Film" is not excluded from a production declaring "Short".
+        raw_elig = [str(f).strip() for f in (g.get("eligible_formats") or []) if str(f).strip()]
+        elig = {canonical_format(f) for f in raw_elig}
+        states_all = any(f.lower() == "all" for f in raw_elig)
+        if fmt and elig and fmt not in elig and not states_all:
             continue
 
         # ---- G2 deadline ----

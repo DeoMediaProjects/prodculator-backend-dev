@@ -1068,6 +1068,22 @@ class ReportService:
 
         # Pre-compute territory financials — authoritative monetary figures
         # that the AI should use verbatim instead of computing its own.
+        # One set of project facts, built once, read by every consumer.
+        #
+        # FIX-01. `best_incentive` ranks a programme partly on whether this
+        # production clears its stated gates, and it can only do that if it is
+        # given the production. Seven call sites in the builder passed these
+        # facts; the financials precompute and the validator did not, so for the
+        # United Kingdom the builder selected the Independent Film Tax Credit
+        # (39.75% net / 53% gross, whose budget ceiling this production clears)
+        # while the financials selected standard AVEC (25.5% / 34%, no gates to
+        # test). Same territory, same report, two rates -- the ranking card and
+        # the waterfall each quoting a different programme.
+        #
+        # Assembled here rather than at each call site, because a facts dict
+        # built per consumer is exactly how one of them ends up missing a field.
+        datasets["_project_facts"] = self._build_project_facts(datasets, request_metadata)
+
         self._pre_compute_territory_financials(datasets)
 
         # Load territory profiles for deterministic crew depth / infrastructure
@@ -1088,6 +1104,36 @@ class ReportService:
             row['territory']: row
             for row in territory_profile_rows
             if row.get('territory')
+        }
+
+    @staticmethod
+    def _build_project_facts(datasets: dict, request_metadata: dict) -> dict:
+        """The production, as the eligibility gates need to see it.
+
+        Every field here is one a gate tests against. Nothing is inferred: a fact
+        the platform does not hold stays absent, and the gate that needs it
+        reports untested rather than being settled against a guess.
+        """
+        budget_gbp_data = datasets.get("_budget_gbp")
+        budget_gbp = (
+            budget_gbp_data.get("converted")
+            if isinstance(budget_gbp_data, dict) else None
+        )
+        return {
+            "format": datasets.get("_production_format"),
+            "runtime_minutes": datasets.get("_runtime_minutes"),
+            "budget_gbp": budget_gbp,
+            "completion_date": (
+                datasets.get("_completion_date")
+                or request_metadata.get("completion_date")
+            ),
+            "filming_start_date": (
+                datasets.get("_filming_start_date")
+                or request_metadata.get("filming_start_date")
+            ),
+            "producer_iso": datasets.get("_producer_iso"),
+            "producer_country": datasets.get("_producer_country"),
+            "co_production_intent": datasets.get("_co_production_intent"),
         }
 
     def _pre_compute_territory_financials(self, datasets: dict) -> None:
@@ -1122,12 +1168,17 @@ class ReportService:
         budget_symbol = _currency_symbol(budget_currency)
 
         production_format: str | None = datasets.get("_production_format")
+        project_facts: dict = datasets.get("_project_facts") or {}
         territory_financials: dict[str, dict] = {}
 
         for territory, rows in territory_incentives.items():
             if not territory or not rows:
                 continue
-            best = _best_incentive(rows, production_format)
+            # Project facts included, so this selects the same programme row the
+            # builder's ranking does. Without them the budget-ceiling gate could
+            # not be tested, IFTC ranked below standard AVEC as unverifiable, and
+            # the waterfall quoted a different UK rate than the ranking card.
+            best = _best_incentive(rows, production_format, project_facts)
 
             # Resolve FX rate for rebate cap enforcement (e.g. South Africa R25M).
             #

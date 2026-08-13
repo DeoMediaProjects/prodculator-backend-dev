@@ -82,6 +82,99 @@ def verdict_rank(verdict: str) -> int:
     return _VERDICT_RANK.get(verdict, 0)
 
 
+# ── Gate states ──────────────────────────────────────────────────────────────
+# The four verdicts above are what the logic distinguishes. The three states below
+# are what a surface renders: a badge, and a scoring rule. `needs_confirmation`
+# and `unverified` are different reasons for the same instruction — show the
+# figure, caveat it, do not bank it — so they present as one state.
+
+FORMAT_CONFIRMED = "FORMAT_CONFIRMED"
+FORMAT_INELIGIBLE = "FORMAT_INELIGIBLE"
+FORMAT_UNVERIFIED = "FORMAT_UNVERIFIED"
+
+_GATE_STATE: dict[str, str] = {
+    ELIGIBLE: FORMAT_CONFIRMED,
+    INELIGIBLE: FORMAT_INELIGIBLE,
+    NEEDS_CONFIRMATION: FORMAT_UNVERIFIED,
+    UNVERIFIED: FORMAT_UNVERIFIED,
+}
+
+#: Badge colour per state, so the PDF and the platform cannot disagree.
+GATE_BADGE: dict[str, str] = {
+    FORMAT_CONFIRMED: "green",
+    FORMAT_INELIGIBLE: "red",
+    FORMAT_UNVERIFIED: "neutral",
+}
+
+
+def gate_state(verdict: str | None) -> str:
+    """The renderable state for a verdict. Unknown verdicts are not confirmed."""
+    return _GATE_STATE.get(verdict or "", FORMAT_UNVERIFIED)
+
+
+def scores_zero(verdict: str | None) -> bool:
+    """Whether this verdict forces the incentive dimension to zero.
+
+    Only a verified exclusion does. An unverified programme keeps its computed
+    strength: "nobody has checked" is not evidence that the rebate is worthless,
+    and scoring it as though it were understates a territory as confidently as
+    quoting the rebate would overstate it. The caveat carries the uncertainty;
+    the score carries the programme.
+    """
+    return gate_state(verdict) == FORMAT_INELIGIBLE
+
+
+# ── Per-format eligibility ───────────────────────────────────────────────────
+
+#: The formats the report asks about. Kept in step with the migration
+#: n4o5p6q7r8s9, which writes the same keys.
+FORMAT_KEYS: tuple[str, ...] = (
+    "feature", "short", "documentary", "tv_series", "animation", "unscripted",
+)
+
+
+def parse_eligible_formats(value: Any) -> dict[str, bool | None]:
+    """The per-format tri-state map from the stored column.
+
+    Missing, unparseable, or a non-object all yield every key null — "not
+    researched" — because the alternative is to read a storage problem as a
+    finding. Only true and false are taken as answers; any other value for a key
+    is treated as unresearched rather than coerced.
+    """
+    empty: dict[str, bool | None] = {key: None for key in FORMAT_KEYS}
+    if value is None:
+        return empty
+    raw = value
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return empty
+        try:
+            raw = _json.loads(text)
+        except (ValueError, TypeError):
+            return empty
+    if not isinstance(raw, dict):
+        return empty
+    out = dict(empty)
+    for key in FORMAT_KEYS:
+        v = raw.get(key)
+        if v is True or v is False:
+            out[key] = v
+    return out
+
+
+def _format_key(production_format: str | None) -> str | None:
+    """The ``eligible_formats`` key for a production format, or None if unmapped.
+
+    ``canonical_format`` has already collapsed the aliases — "feature film",
+    "limited series", "mini-series" and the rest all arrive here as one of the
+    canonical tokens — so no second mapping table is needed, and adding one would
+    give the taxonomy a rival that could drift from it.
+    """
+    token = canonical_format(production_format)
+    return token if token in FORMAT_KEYS else None
+
+
 def is_confirmed(verdict: str) -> bool:
     return verdict == ELIGIBLE
 
@@ -218,6 +311,10 @@ def evaluate_format_eligibility(
     allowed = parse_applicable_formats(row.get("applicable_formats"))
     wanted = canonical_format(production_format)
 
+    per_format = parse_eligible_formats(row.get("eligible_formats"))
+    key = _format_key(production_format)
+    researched = per_format.get(key) if key else None
+
     provenance = {
         "status": status,
         "applicableFormats": allowed,
@@ -226,6 +323,10 @@ def evaluate_format_eligibility(
         "verifiedAt": (
             str(row["format_verified_at"])[:10] if row.get("format_verified_at") else None
         ),
+        "eligibleFormats": per_format,
+        "formatNotes": row.get("format_notes") or None,
+        "theatricalReleaseRequired": _tri_state(row.get("theatrical_release_required")),
+        "theatricalReleaseNote": row.get("theatrical_release_note") or None,
     }
 
     def result(verdict: str, explanation: str) -> dict[str, Any]:
@@ -234,8 +335,44 @@ def evaluate_format_eligibility(
             "verdict": verdict,
             "label": LABELS[verdict],
             "confirmed": is_confirmed(verdict),
+            "gateState": gate_state(verdict),
+            "badge": GATE_BADGE[gate_state(verdict)],
             "explanation": explanation,
         }
+
+    notes = row.get("format_notes") or None
+
+    def with_notes(text: str) -> str:
+        return f"{text} {notes}" if notes else text
+
+    # The researched answer wins, in both directions, because it is the only field
+    # that distinguishes "checked, and the answer is no" from "nobody checked".
+    # Null falls through to everything below unchanged, which is what keeps an
+    # all-null table behaving exactly as it did before this column existed.
+    if researched is False:
+        return result(
+            INELIGIBLE,
+            with_notes(f"This programme does not accept {_display(key)} projects."),
+        )
+    if researched is True:
+        # A theatrical requirement can still block a format the programme accepts.
+        # Recording it as `eligible_formats.short = false` would put the right
+        # answer under the wrong reason, and mislead whoever verifies it next.
+        theatrical = _tri_state(row.get("theatrical_release_required"))
+        if theatrical is True:
+            note = row.get("theatrical_release_note") or (
+                "This programme requires a theatrical release."
+            )
+            return result(
+                NEEDS_CONFIRMATION,
+                with_notes(
+                    f"This programme accepts {_display(key)} projects, but requires a "
+                    f"theatrical release. {note}"
+                ),
+            )
+        return result(
+            ELIGIBLE, with_notes(f"This programme accepts {_display(key)} projects."),
+        )
 
     # No declared format means no format-based judgement to make. The programme is
     # neither confirmed nor excluded on these grounds.
@@ -287,6 +424,15 @@ def evaluate_format_eligibility(
         UNVERIFIED,
         f"Whether this programme accepts {_display(wanted)} projects has not been verified.",
     )
+
+
+def _tri_state(value: Any) -> bool | None:
+    """True / False / None. Anything that is not a real boolean is unresearched.
+
+    Guards against a truthiness read turning a stray "" or 0 from the column into
+    a finding about a tax programme.
+    """
+    return value if value is True or value is False else None
 
 
 def _display(token: str) -> str:

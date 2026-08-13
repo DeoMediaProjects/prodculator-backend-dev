@@ -41,10 +41,14 @@ from app.modules.reports.helpers import (
     needs_format_eligibility_check,
 )
 from app.modules.reports.format_eligibility import (
+    FORMAT_INELIGIBLE,
+    FORMAT_UNVERIFIED,
     UNCONFIRMED_VERDICTS,
     UNVERIFIED,
     any_unverified_for_format,
     evaluate_format_eligibility,
+    gate_state as format_gate_state,
+    scores_zero as format_scores_zero,
 )
 from app.core.formats import canonical_format
 from app.modules.reports.programme_eligibility import (
@@ -112,6 +116,15 @@ _LONG_SHOOT_THRESHOLDS: dict[str, int] = {
     "Feature Film": 26, "Mini-Series": 20,
 }
 _LONG_SHOOT_DEFAULT = 26
+
+
+def _join(names: list[str]) -> str:
+    """"A", "A and B", "A, B and C" — for territory names inside a sentence."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 # HETV constants (must match validator)
 _HETV_TV_FORMATS = frozenset({"TV Series", "Limited Series", "Mini-Series", "Docuseries"})
@@ -208,7 +221,12 @@ class ReportBuilder:
         # and the gates need the scalar. Passing the dict made every budget-based
         # gate silently untestable, which is exactly the failure mode this whole
         # module is meant to remove.
-        self._project_facts: dict = {
+        # Prefer the canonical facts the service assembled, so the builder's
+        # programme selection and the financials precompute cannot disagree about
+        # which programme a territory is being costed under. The literal below is
+        # the fallback for callers that construct a builder directly (tests, and
+        # the sample report) and never went through the service.
+        self._project_facts: dict = datasets.get("_project_facts") or {
             "format": datasets.get("_production_format"),
             "runtime_minutes": datasets.get("_runtime_minutes"),
             "budget_gbp": self._budget_gbp,
@@ -300,6 +318,9 @@ class ReportBuilder:
             # at the top or bottom of a report does not travel with a number a
             # producer copies out of the middle of it.
             "shortFormatIncentiveNotice": self._short_format_incentive_notice(),
+            # Rendered before the recommendations on both surfaces. Built from the
+            # ranked territories, so it is computed after the ranking settles.
+            "shortFormatGateBanner": self._short_format_gate_banner(territories),
             "financialAnalysis": self._build_financial_analysis(territories),
             "executiveSummary": self._build_executive_summary(territories),
             "comparables": self._build_comparables(),
@@ -652,17 +673,29 @@ class ReportBuilder:
 
             # Compute deterministic scores.
             #
-            # Incentive strength measures the value of a rebate this production can
-            # actually access. When the project's eligibility for the programme is
-            # unresolved, that value is not zero and it is not the headline rate
-            # either — it is unknown, and scoring it either way states something we
-            # do not know. Set to None, which _weighted_score already treats as an
-            # unscored dimension worth a neutral 50, the same convention used for a
-            # territory with no sourced cost data.
+            # Incentive strength is scored on evidence, and the three format gate
+            # states are three different pieces of evidence:
             #
-            # The effect is the one that matters: a 30% programme nobody has
-            # confirmed this project can use no longer outranks a 20% programme on
-            # the strength of the larger number.
+            #   FORMAT_INELIGIBLE   researched, and this format is excluded. Zero.
+            #                       There is no rebate here to value.
+            #   FORMAT_CONFIRMED    researched, and it qualifies. Computed strength.
+            #   FORMAT_UNVERIFIED   nobody has checked. Computed strength, with the
+            #                       caveat carrying the uncertainty.
+            #
+            # That last one changed. Unverified used to score None, which
+            # _weighted_score reads as a neutral 50 — the reasoning being that an
+            # unchecked 30% programme should not outrank a confirmed 20% one. But
+            # "nobody checked" is not evidence the rebate is worthless, and pricing
+            # it at a flat 50 understated a territory exactly as confidently as
+            # quoting the rebate would have overstated it. The uncertainty belongs
+            # in the caveat and the badge, which the reader can act on; it does not
+            # belong in a number that silently reorders the ranking.
+            fmt_verdict = (
+                evaluate_format_eligibility(
+                    best, self._production_format, self._project_facts,
+                ).get("verdict")
+                if rows else None
+            )
             tf_for_rank = self._territory_financials.get(territory) or {}
             can_rank = tf_for_rank.get("incentive_can_affect_ranking")
             status_for_rank = tf_for_rank.get("incentive_eligibility_status")
@@ -670,10 +703,14 @@ class ReportBuilder:
                 # Zero, not neutral. There is no accessible rebate here and a
                 # neutral 50 would quietly credit the territory with half of one.
                 strength = 0
-            elif can_rank is False:
-                # A verified exclusion is a real answer: there is no accessible value
-                # here, and neutral would overstate it. Anything else is unknown.
-                strength = 0 if status_for_rank == "ineligible" else None
+            elif format_scores_zero(fmt_verdict):
+                # A researched exclusion. Distinct from every "unresolved" case
+                # below, and the only format state that zeroes the dimension.
+                strength = 0
+            elif can_rank is False and status_for_rank == "ineligible":
+                # A verified exclusion on non-format grounds — budget floor, ceiling,
+                # programme status. Also a real answer, also zero.
+                strength = 0
             else:
                 strength = self._compute_incentive_strength(best)
             reliability_score, bankability_label = self._compute_reliability(best, territory_profile)
@@ -1021,6 +1058,71 @@ class ReportBuilder:
             f"film commission before relying on it."
         )
 
+    def _short_format_gate_banner(self, territories: list[str]) -> dict | None:
+        """Banner shown before the recommendations on a short-format report.
+
+        Raised when at least two RANKED territories cannot confirm the programme
+        accepts a short — either researched-and-excluded, or never checked. One
+        such territory is a fact about that territory; two or more is a fact about
+        short films, and a producer reading a page of rebate figures deserves to
+        be told which of those they are looking at before they read any of it.
+
+        Counted over ranked territories rather than over programme rows, because
+        the reader is comparing territories: three unverified programmes inside
+        one territory is still one territory they cannot rely on.
+        """
+        if not needs_format_eligibility_check(self._production_format):
+            return None
+
+        ineligible: list[str] = []
+        unverified: list[str] = []
+        for territory in territories:
+            rows = self._territory_incentives.get(territory, [])
+            if not rows:
+                continue
+            best = best_incentive(rows, self._production_format, self._project_facts)
+            state = format_gate_state(
+                evaluate_format_eligibility(
+                    best, self._production_format, self._project_facts,
+                ).get("verdict")
+            )
+            if state == FORMAT_INELIGIBLE:
+                ineligible.append(territory)
+            elif state == FORMAT_UNVERIFIED:
+                unverified.append(territory)
+
+        affected = ineligible + unverified
+        if len(affected) < 2:
+            return None
+
+        label = (self._production_format or "short").strip().lower()
+        parts = [
+            f"Many production incentive programmes are written for features and "
+            f"scripted television, and exclude short films outright."
+        ]
+        if ineligible:
+            parts.append(
+                f"{_join(ineligible)} {'is' if len(ineligible) == 1 else 'are'} "
+                f"confirmed as not accepting a {label}, so no rebate is modelled "
+                f"for {'it' if len(ineligible) == 1 else 'them'}."
+            )
+        if unverified:
+            parts.append(
+                f"For {_join(unverified)}, we have not established whether the "
+                f"programme accepts a {label}. Any figure shown is illustrative, "
+                f"not an amount this production can count on."
+            )
+        parts.append(
+            "Confirm with the programme administrator or film commission before "
+            "building either into a finance plan."
+        )
+        return {
+            "title": f"Short-format eligibility affects {len(affected)} of your territories",
+            "body": " ".join(parts),
+            "ineligibleTerritories": ineligible,
+            "unverifiedTerritories": unverified,
+        }
+
     def _build_incentive_estimates(self, territories: list[str]) -> list[dict]:
         """Build fully deterministic incentiveEstimates from DB data."""
         estimates: list[dict] = []
@@ -1237,9 +1339,22 @@ class ReportBuilder:
                 if tf_for_money.get("show_potential_incentive")
                 else None
             )
-            # Ranked on what the production can actually rely on. A territory must
-            # never lead on the strength of a figure whose eligibility is unverified.
-            est["incentiveStrength"] = 0
+            # Same rule as the ranking row, so the two fields of this name on one
+            # territory cannot disagree — they did, and the estimate's flat 0 was
+            # the number the badge picked up.
+            #
+            # Zero only where there is a researched answer of "no rebate here":
+            # format excluded, budget below the floor or above the ceiling,
+            # programme suspended or absent. Unverified keeps its computed
+            # strength, because nobody having checked is not evidence of zero.
+            est["incentiveStrength"] = (
+                0
+                if (
+                    format_scores_zero(eligibility.get("verdict"))
+                    or tf_for_money.get("incentive_eligibility_status") == "ineligible"
+                )
+                else self._compute_incentive_strength(db_row)
+            )
         else:
             est["confirmedIncentive"] = est.get("estimatedRebate")
             est["potentialIncentive"] = None
@@ -2020,12 +2135,34 @@ class ReportBuilder:
             prod_genres_raw = [prod_genres_raw]
         prod_genres = {g.lower().strip() for g in prod_genres_raw if g}
 
+        # FIX-03 Stage 1. Format is a criterion, not a tiebreak.
+        #
+        # A micro-budget supernatural short was offered eight comparables, every
+        # one of them a feature, because selection scored territory and genre and
+        # never asked what the production was. Two rules:
+        #
+        #   recorded and different  -> discarded outright, before scoring, so no
+        #                              amount of territory or genre affinity can
+        #                              bring an out-of-format title back
+        #   not recorded            -> kept, marked unverified, and scored below
+        #                              any row whose format is confirmed
+        #
+        # The second rule is the stopgap part. Discarding nulls would empty the
+        # section on today's data, which tells a producer less than a labelled
+        # list does. It closes when the curated dataset lands in Stage 2.
+        wanted_format = canonical_format(self._production_format)
+
         scored: list[tuple[float, dict]] = []
         for row in comparables:
             if not isinstance(row, dict):
                 continue
             title = (row.get("title") or "").strip()
             if not title:
+                continue
+
+            comp_format = canonical_format(row.get("format"))
+            format_known = bool(comp_format)
+            if wanted_format and format_known and comp_format != wanted_format:
                 continue
 
             comp_territory = (row.get("primary_territory") or "").strip()
@@ -2040,6 +2177,13 @@ class ReportBuilder:
 
             # Relevance scoring
             score = 0.0
+
+            # Format (+4 confirmed match). Weighted above territory, because a
+            # feature shot in the same territory is a weaker comparable for a
+            # short than a short shot elsewhere — the section exists to show what
+            # productions like this one did.
+            if wanted_format and format_known:
+                score += 4.0
 
             # Territory match (+3)
             if comp_territory and comp_territory.lower() in territories_set:
@@ -2085,6 +2229,11 @@ class ReportBuilder:
                 "budgetRange": budget_range,
                 "genre": genre_display,
                 "source": comp_source,
+                "format": comp_format,
+                # Rendered beside the row. A comparable whose format nobody has
+                # recorded is not the same claim as one confirmed to match, and
+                # the reader is the one deciding how much weight to give it.
+                "formatVerified": format_known,
                 "relevanceDescription": None,  # AI fills
             }
 
@@ -2102,7 +2251,27 @@ class ReportBuilder:
 
         # Sort by relevance score descending, take top 10
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [comp for _, comp in scored[:10]]
+        selected = [comp for _, comp in scored[:10]]
+
+        # Second pass. The gate above runs inside the scoring loop, where a future
+        # edit could reorder or short-circuit past it; this one runs on the final
+        # list, immediately before it leaves the method, and answers one question
+        # about each row that survived. Cheap, and it is the assertion the
+        # acceptance criterion is actually written against.
+        if wanted_format:
+            kept: list[dict] = []
+            for comp in selected:
+                comp_fmt = canonical_format(comp.get("format"))
+                if comp_fmt and comp_fmt != wanted_format:
+                    logger.warning(
+                        "Dropped out-of-format comparable %r (%s) from a %s report",
+                        comp.get("title"), comp_fmt, wanted_format,
+                    )
+                    continue
+                kept.append(comp)
+            selected = kept
+
+        return selected
 
     # ── Weather Logistics ──────────────────────────────────────────────────
 
@@ -2605,6 +2774,7 @@ class ReportBuilder:
             audience_segments=declared["audience_segments"],
             audience_skew=declared["audience_skew"],
             production_territories=production_territories,
+            production_format=self._production_format,
         )
 
         recommended_names = {f["name"] for f in festival_recs}
