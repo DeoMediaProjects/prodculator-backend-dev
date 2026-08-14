@@ -43,6 +43,7 @@ from app.modules.reports.helpers import (
 from app.modules.reports.format_eligibility import (
     FORMAT_INELIGIBLE,
     FORMAT_UNVERIFIED,
+    INELIGIBLE as FORMAT_INELIGIBLE_VERDICT,
     UNCONFIRMED_VERDICTS,
     UNVERIFIED,
     any_unverified_for_format,
@@ -78,6 +79,15 @@ from app.modules.reports.scoring import (
     _incentive_rate_score,
     _incentive_stability_score,
 )
+from app.modules.reports.shoot_window import (
+    ADJACENT as SHOOT_WINDOW_ADJACENT,
+    INSIDE as SHOOT_WINDOW_INSIDE,
+    OUTSIDE as SHOOT_WINDOW_OUTSIDE,
+    UNKNOWN as SHOOT_WINDOW_UNKNOWN,
+    classify_shoot_window,
+    format_month_ranges,
+)
+from app.modules.reports.stacking import resolve_stacking
 
 logger = logging.getLogger(__name__)
 
@@ -292,12 +302,22 @@ class ReportBuilder:
         # estimates actually say rather than by the production format alone.
         self._built_incentive_estimates = self._build_incentive_estimates(territories)
 
+        # Complexity is scored from counted script inputs, not chosen by the model.
+        # It used to be a free pick from four labels in a later narrative call with no
+        # count fed into it, which is how one screenplay came back Medium on one run
+        # and High on the next. None here when no script was parsed, in which case the
+        # narrative value is still accepted.
+        computed_complexity = self._computed_complexity()
+
         report: dict = {
             # AI fills these top-level narrative fields
             "genre": None,
             "tone": None,
             "scale": None,
-            "complexity": None,
+            "complexity": computed_complexity,
+            # Read by _merge_ai_narratives: when the complexity above was scored from
+            # the parsed script, the model's label must not replace it.
+            "_complexityIsComputed": computed_complexity is not None,
             # Deterministic sections
             "locationRankings": location_rankings,
             "incentiveEstimates": self._built_incentive_estimates,
@@ -673,23 +693,39 @@ class ReportBuilder:
 
             # Compute deterministic scores.
             #
-            # Incentive strength is scored on evidence, and the three format gate
-            # states are three different pieces of evidence:
+            # ONE RULE, three states, and the middle one is the point:
             #
-            #   FORMAT_INELIGIBLE   researched, and this format is excluded. Zero.
-            #                       There is no rebate here to value.
-            #   FORMAT_CONFIRMED    researched, and it qualifies. Computed strength.
-            #   FORMAT_UNVERIFIED   nobody has checked. Computed strength, with the
-            #                       caveat carrying the uncertainty.
+            #   researched and excluded      0        There is no rebate here to value.
+            #   researched and it qualifies  computed A rebate this project can claim.
+            #   nobody has checked           None     Not scored. Neutral in the total.
             #
-            # That last one changed. Unverified used to score None, which
-            # _weighted_score reads as a neutral 50 — the reasoning being that an
-            # unchecked 30% programme should not outrank a confirmed 20% one. But
-            # "nobody checked" is not evidence the rebate is worthless, and pricing
-            # it at a flat 50 understated a territory exactly as confidently as
-            # quoting the rebate would have overstated it. The uncertainty belongs
-            # in the caveat and the badge, which the reader can act on; it does not
-            # belong in a number that silently reorders the ranking.
+            # The middle state is what this report got wrong. UK AVEC (Enhanced/IFTC)
+            # had unverified short-film eligibility, a confirmed incentive of £0, and a
+            # potential rebate marked illustrative — and still scored Incentive Value
+            # 88, carrying the territory to an overall 73 and first place. The report
+            # simultaneously told the reader not to rely on that rebate and ranked the
+            # territory first because of it.
+            #
+            # A previous pass argued the opposite: that "nobody checked" is not evidence
+            # the rebate is worthless, so scoring it neutral understates the territory
+            # as confidently as quoting it overstates it. That argument is sound about
+            # the PROGRAMME and wrong about the RANKING. The ranking answers "where
+            # should this production shoot", and a benefit it may not be able to claim
+            # cannot be evidence for an answer to that question. The illustrative figure
+            # still appears in the incentive section, where it is labelled; it just no
+            # longer moves the order.
+            #
+            # This also settles a three-way disagreement rather than adding a fourth
+            # position. project_incentive.resolve_project_incentive already publishes
+            # `canAffectRanking = False` for an unverified programme, and its docstring
+            # says an ineligible status may not "improve a ranking as realisable value";
+            # the PDF template already carries a "Not scored" branch explaining that an
+            # unverified dimension "neither raises nor lowers this territory's score";
+            # and tests/test_project_incentive_consistency.py already asserts the
+            # neutral-not-rewarded rule. All three were correct and all three were being
+            # bypassed here, because the guard below required `status == "ineligible"`
+            # in addition to `canAffectRanking is False`, and an unverified programme's
+            # status is "unverified". None is the value _weighted_score reads as neutral.
             fmt_verdict = (
                 evaluate_format_eligibility(
                     best, self._production_format, self._project_facts,
@@ -699,6 +735,30 @@ class ReportBuilder:
             tf_for_rank = self._territory_financials.get(territory) or {}
             can_rank = tf_for_rank.get("incentive_can_affect_ranking")
             status_for_rank = tf_for_rank.get("incentive_eligibility_status")
+            if can_rank is None and rows:
+                # No precomputed financials for this territory. The rule must not depend
+                # on which dict happened to be populated: with _territory_financials
+                # empty, can_rank was None, the guards below all fell through, and an
+                # unverified programme was rewarded with full strength again — the exact
+                # behaviour this rule exists to prevent, reachable through a different
+                # door.
+                #
+                # Derived exactly as resolve_project_incentive derives it, including the
+                # scoping that matters most here: format is a REQUIRED dimension only for
+                # formats whose eligibility genuinely diverges from what these programmes
+                # are written for. A feature is not held back by the absence of a record
+                # stating that features are accepted, which is true of every programme in
+                # the dataset. Without that scoping this fallback marked every territory
+                # unscored for every production, because eligible_formats is null on
+                # nearly every row — turning a fix for shorts into a gutted ranking for
+                # everyone.
+                format_required = needs_format_eligibility_check(self._production_format)
+                format_ok = (
+                    fmt_verdict not in UNCONFIRMED_VERDICTS if format_required else True
+                )
+                can_rank = format_ok and evaluate_programme_eligibility(
+                    best, self._project_facts,
+                )["available"]
             if no_incentive:
                 # Zero, not neutral. There is no accessible rebate here and a
                 # neutral 50 would quietly credit the territory with half of one.
@@ -711,6 +771,12 @@ class ReportBuilder:
                 # A verified exclusion on non-format grounds — budget floor, ceiling,
                 # programme status. Also a real answer, also zero.
                 strength = 0
+            elif can_rank is False:
+                # Unresolved, on format or on any other required dimension. Not scored,
+                # so the dimension is neutral in the weighted total and the territory
+                # neither gains nor loses position on a rebate nobody has confirmed
+                # this production can claim.
+                strength = None
             else:
                 strength = self._compute_incentive_strength(best)
             reliability_score, bankability_label = self._compute_reliability(best, territory_profile)
@@ -841,17 +907,41 @@ class ReportBuilder:
                         continue
                     key_risks.append(w)
 
-            # Long payment timeline
+            # Long payment timeline.
+            #
+            # This used to say "this incentive should not be treated as
+            # investor-bankable" on every programme paying out beyond 180 days —
+            # including ones this same report had just classified BANKABLE. New Mexico
+            # carried the badge and the denial of it on one page, because the badge
+            # comes from territory_profiles (cert 26w + payment 0w = 26 → BANKABLE) and
+            # this line comes from incentive_programs.payment_timeline_days_max (270),
+            # and nothing compared the two.
+            #
+            # A long payment window is a real cash-flow fact and worth stating. What it
+            # is not is a re-classification: bankability means a lender will advance
+            # against the receivable, which is a different question from when the cash
+            # lands. So the wording now follows the canonical label — it states the
+            # timing either way, and only contradicts bankability where the canonical
+            # field already does.
             pay_max = to_float(db_row.get("payment_timeline_days_max"))
             if pay_max is not None and pay_max > 180:
                 months_max = int(pay_max / 30)
                 pay_min = to_float(db_row.get("payment_timeline_days_min"))
                 months_min = int((pay_min or pay_max) / 30)
-                reliability_msg = (
-                    f"Payment timeline {months_min}-{months_max} months — "
-                    f"this incentive should not be treated as investor-bankable. "
-                    f"Budget cash flow independently."
-                )
+                label = (loc.get("bankabilityLabel") or "").upper()
+                if label == "BANKABLE":
+                    reliability_msg = (
+                        f"Payment timeline {months_min}-{months_max} months — the "
+                        f"programme is classified Bankable, but the production still "
+                        f"has to carry the cost until the rebate lands. Plan interim "
+                        f"cash flow for the full window."
+                    )
+                else:
+                    reliability_msg = (
+                        f"Payment timeline {months_min}-{months_max} months — this "
+                        f"incentive should not be treated as investor-bankable. "
+                        f"Budget cash flow independently."
+                    )
                 if not any("investor-bankable" in r.lower() or "payment timeline" in r.lower()
                            for r in key_risks if isinstance(r, str)):
                     key_risks.insert(0, reliability_msg)
@@ -1343,18 +1433,21 @@ class ReportBuilder:
             # territory cannot disagree — they did, and the estimate's flat 0 was
             # the number the badge picked up.
             #
-            # Zero only where there is a researched answer of "no rebate here":
-            # format excluded, budget below the floor or above the ceiling,
-            # programme suspended or absent. Unverified keeps its computed
-            # strength, because nobody having checked is not evidence of zero.
-            est["incentiveStrength"] = (
-                0
-                if (
-                    format_scores_zero(eligibility.get("verdict"))
-                    or tf_for_money.get("incentive_eligibility_status") == "ineligible"
-                )
-                else self._compute_incentive_strength(db_row)
-            )
+            # Three states, matching _build_location_rankings exactly:
+            #   0     a researched answer of "no rebate here" — format excluded,
+            #         budget below the floor or above the ceiling, programme suspended.
+            #   None  unresolved. Not scored, so it cannot lift the territory on a
+            #         benefit nobody has confirmed this production can claim.
+            #   int   confirmed eligible. The computed strength.
+            if (
+                format_scores_zero(eligibility.get("verdict"))
+                or tf_for_money.get("incentive_eligibility_status") == "ineligible"
+            ):
+                est["incentiveStrength"] = 0
+            elif tf_for_money.get("incentive_can_affect_ranking") is False:
+                est["incentiveStrength"] = None
+            else:
+                est["incentiveStrength"] = self._compute_incentive_strength(db_row)
         else:
             est["confirmedIncentive"] = est.get("estimatedRebate")
             est["potentialIncentive"] = None
@@ -1363,7 +1456,19 @@ class ReportBuilder:
             est["formatEligibility"] = eligibility
             # An unconfirmed programme must not present its rebate as an amount the
             # production can count on. The figure stays visible, labelled.
-            est["rebateIsConfirmed"] = eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+            #
+            # INELIGIBLE has to be excluded explicitly. UNCONFIRMED_VERDICTS holds only
+            # the two "unresolved" verdicts, so testing membership alone returned True
+            # for a verified exclusion — California, whose Program 4.0 record now
+            # carries a researched `eligible_formats.short = false`, was marked
+            # rebateIsConfirmed=True. A researched "no" is the strongest possible reason
+            # for the answer to be False, and it was producing the same value as a
+            # confirmed yes. Found by the cross-section validator on a real generated
+            # report, which is the check earning its place.
+            est["rebateIsConfirmed"] = (
+                eligibility["verdict"] not in UNCONFIRMED_VERDICTS
+                and eligibility["verdict"] != FORMAT_INELIGIBLE_VERDICT
+            )
         else:
             est["formatEligibility"] = None
             est["rebateIsConfirmed"] = True
@@ -1654,41 +1759,38 @@ class ReportBuilder:
                 rate_net = row.get("rate_net")
                 elig_notes = (row.get("eligibility_notes") or "").strip()
 
-                # Detect mutual exclusivity between this supplementary programme
-                # and the primary programme being used.  The DB stores constraints
-                # like "CANNOT be combined with IFTC" in eligibility_notes — extract
-                # them and check whether any exclusion token matches the primary name.
-                is_mutually_exclusive = False
-                if elig_notes and primary and primary != "the primary incentive":
-                    import re as _re_stacking
-                    exclusions = _re_stacking.findall(
-                        r"cannot be combined with ([^.;]+)",
-                        elig_notes,
-                        flags=_re_stacking.IGNORECASE,
-                    )
-                    primary_tokens = set(
-                        _re_stacking.findall(r'\b[A-Za-z]{3,}\b', primary)
-                    )
-                    for excl in exclusions:
-                        excl_tokens = set(_re_stacking.findall(r'\b[A-Za-z]{3,}\b', excl))
-                        if primary_tokens & excl_tokens:
-                            is_mutually_exclusive = True
-                            break
-
-                if is_mutually_exclusive:
-                    stacking_note = (
-                        f"MUTUAL EXCLUSIVITY: {prog} CANNOT be combined with {primary}. "
-                        f"These are alternative programmes — a production must choose one "
-                        f"or the other, not both. Model both paths to determine the better "
-                        f"outcome before committing."
-                    )
-                else:
-                    stacking_note = (
-                        f"SUPPLEMENTARY: {prog} stacks ON TOP of {primary}. "
-                        f"Applies only to qualifying specialist expenditure "
-                        f"(not total budget). Calculate on your estimated VFX/specialist "
-                        f"spend proportion to get combined territory benefit."
-                    )
+                # One canonical answer for whether these two programmes combine.
+                #
+                # The detector this replaces produced the report's flat contradiction:
+                # a generated note saying "UK VFX Expenditure Credit stacks ON TOP of
+                # AVEC (Enhanced/IFTC)" printed on the same page as the IFTC record's
+                # own text saying "Cannot be combined with the VFX uplift". It missed
+                # for two independent reasons, and both are worth naming because either
+                # alone would have been enough:
+                #
+                #   1. it read the exclusion off the SUPPLEMENTARY row, but the UK
+                #      exclusion is recorded on the PRIMARY row, which it never looked
+                #      at; and
+                #   2. it matched only the literal "cannot be combined with", while the
+                #      VFX row's own qs_basis says "Cannot combine with the IFTC
+                #      enhanced rate" — a phrasing outside the pattern.
+                #
+                # resolve_stacking reads every constraint-bearing field on BOTH rows.
+                # The correct answer for this pair is that they do NOT stack, so the DB
+                # prose was right and the generated note was wrong.
+                primary_row = next(
+                    (
+                        r for r in territory_rows.get(territory, [])
+                        if (r.get("program") or "").strip() == primary
+                    ),
+                    None,
+                )
+                stacking = resolve_stacking(
+                    primary_row, row,
+                    primary_name=primary if primary != "the primary incentive" else None,
+                    supplementary_name=prog,
+                )
+                stacking_note = stacking["note"]
 
                 stub: dict = {
                     "territory": territory,
@@ -1699,6 +1801,16 @@ class ReportBuilder:
                         "see stackingNote for calculation basis"
                     ),
                     "stackingNote": stacking_note,
+                    # The canonical relationship, carried beside the sentence composed
+                    # from it, so the cross-section validator can check the prose in
+                    # this territory against the resolved answer for THIS pair rather
+                    # than pattern-matching claims across the whole territory. That
+                    # distinction matters: the VFX uplift genuinely stacks with standard
+                    # AVEC and genuinely does not stack with AVEC (Enhanced/IFTC), so a
+                    # UK report can carry both statements truthfully and a check that
+                    # merely spotted both shapes would fail correct data.
+                    "stackingRelationship": stacking["relationship"],
+                    "stacksWith": stacking["primary"],
                     "bankabilityLabel": "INFORMATIONAL",
                     "paymentSpeed": row.get("payment_timeline_notes") or "See primary programme",
                     "dataSource": row.get("source_name") or "Prodculator admin database",
@@ -2313,6 +2425,7 @@ class ReportBuilder:
                         high_risk_count += 1
 
             # Determine best months — months with low rainfall and no storm risk
+            best_month_numbers: list[int] = []
             for m in range(1, 13):
                 w = weather_index.get((territory_lower, m))
                 if not w:
@@ -2320,9 +2433,45 @@ class ReportBuilder:
                 storm = str(w.get("storm_risk") or "").lower()
                 rainfall = float(w.get("avg_rainfall_mm") or 0)
                 if storm in ("none", "low", "") and rainfall < 80:
+                    best_month_numbers.append(m)
                     best_months.append(calendar.month_name[m])
 
-            entry["bestMonths"] = best_months[:4] if best_months else ["N/A"]
+            # No truncation. This used to end `best_months[:4]`, which is not "the four
+            # best months" — the loop above runs January→December, so it is "the
+            # earliest four acceptable months". For the UK, months 3-9 qualify and the
+            # slice printed March-June, cutting August (50mm rain, low storm risk,
+            # exterior score 85). South Africa was worse: qualifying months are 4-9 and
+            # August scores 93, the second-best month of its year, yet the slice printed
+            # April-July.
+            #
+            # That truncation is what produced the contradiction downstream. The
+            # narrative model was handed the shortened list and did what any reader
+            # would do with four consecutive month names — read them as a contiguous
+            # window and describe the August shoot against it. The model was faithfully
+            # describing a list that had been silently cut; fixing the prose alone
+            # would have left both territories' shoot windows understated in the data.
+            entry["bestMonths"] = best_months if best_months else ["N/A"]
+            entry["bestMonthNumbers"] = best_month_numbers
+
+            # Whether the shoot is inside that window is now decided here, not inferred
+            # from the rendered list by the narrative model. Every surface reads this
+            # one verdict, and the cross-section validator fails the report if the
+            # prose contradicts it.
+            window = classify_shoot_window(shoot_months, best_month_numbers)
+            entry["shootWindowVerdict"] = window["verdict"]
+            entry["shootWindowLabel"] = window["label"]
+            entry["optimalWindowDisplay"] = window["optimalWindowDisplay"]
+            entry["shootWindowMonthsInside"] = window["monthsInside"]
+            entry["shootWindowMonthsOutside"] = window["monthsOutside"]
+            entry["shootWindowPartialOverlap"] = window["partialOverlap"]
+            entry["shootWindowOverlap"] = window["verdict"] in (
+                SHOOT_WINDOW_OUTSIDE, SHOOT_WINDOW_ADJACENT,
+            )
+            # Stated deterministically, above the narrative sentence, so the reader
+            # gets the computed answer whether or not the prose agrees with it. This
+            # schema field existed and was never populated by any producer code, which
+            # is how the window claim came to live only in ungoverned prose.
+            entry["shootWindowRisk"] = self._shoot_window_sentence(territory, window)
 
             # Weather risk level
             if total_checked == 0:
@@ -2347,6 +2496,43 @@ class ReportBuilder:
             results.append(entry)
 
         return results
+
+    @staticmethod
+    def _shoot_window_sentence(territory: str, window: dict) -> str | None:
+        """The computed shoot-window verdict, in words.
+
+        Composed here from the classifier's own output so the sentence and the verdict
+        cannot drift apart. Returns None when there is nothing to state, rather than a
+        hedge — a sentence saying the window is unknown adds nothing the absent row
+        does not already say.
+        """
+        verdict = window.get("verdict")
+        optimal = window.get("optimalWindowDisplay")
+        shoot = window.get("shootMonthDisplay")
+        if verdict == SHOOT_WINDOW_UNKNOWN or not optimal or not shoot:
+            return None
+
+        if verdict == SHOOT_WINDOW_INSIDE:
+            return (
+                f"Your {shoot} shoot falls inside {territory}'s optimal window "
+                f"({optimal})."
+            )
+        if window.get("partialOverlap"):
+            inside = format_month_ranges(window.get("monthsInside"))
+            outside = format_month_ranges(window.get("monthsOutside"))
+            return (
+                f"Your {shoot} shoot straddles {territory}'s optimal window "
+                f"({optimal}): {inside} falls inside it, {outside} does not."
+            )
+        if verdict == SHOOT_WINDOW_ADJACENT:
+            return (
+                f"Your {shoot} shoot falls outside {territory}'s optimal window "
+                f"({optimal}), immediately either side of it."
+            )
+        return (
+            f"Your {shoot} shoot falls outside {territory}'s optimal window "
+            f"({optimal})."
+        )
 
     # ── Funding Opportunities ──────────────────────────────────────────────
 
@@ -2494,6 +2680,19 @@ class ReportBuilder:
 
     # ── Script Intelligence ────────────────────────────────────────────────
 
+    def _computed_complexity(self) -> str | None:
+        """Complexity scored from the parsed script, or None if it was not parsed.
+
+        Lives here rather than being read inline so there is one answer to "where does
+        complexity come from" — the parser when it read the file, the narrative model
+        only when it did not.
+        """
+        challenges = getattr(self.script_analysis, "challenges", None)
+        value = getattr(challenges, "deterministic_complexity", None)
+        if value in ("Low", "Medium", "High", "Very High"):
+            return value
+        return None
+
     def _build_script_intelligence(self) -> dict | None:
         """Deterministic parsed-script stats for the Script Intelligence page.
 
@@ -2509,15 +2708,33 @@ class ReportBuilder:
         def _get(obj: Any, attr: str) -> Any:
             return getattr(obj, attr, None) if obj is not None else None
 
-        total = _get(sa, "total_scenes")
-        day = _get(sa, "day_scenes")
-        night = _get(sa, "night_scenes") or _get(sa, "nightSceneCount")
+        challenges_obj = _get(sa, "challenges")
+
+        def _stat(attr: str) -> Any:
+            """A counted script field, from wherever it actually lives.
+
+            Every counted field on this page was read as ``sa.<attr>`` and every one of
+            them is declared on ``sa.challenges``, so all of them resolved to None:
+            scene count, the interior/exterior split, day/night, languages and named
+            locations were absent from the rendered page while the two fields that do
+            sit on ``sa`` directly (both from productionScale) rendered fine. That is
+            consistent with the EJE report's Script Intelligence page, which showed
+            estimated shooting days and principal cast and nothing else.
+            ``challenges`` is checked first and the top level second, so a flattened
+            object from another caller still resolves.
+            """
+            value = _get(challenges_obj, attr)
+            return value if value is not None else _get(sa, attr)
+
+        total = _stat("total_scenes")
+        day = _stat("day_scenes")
+        night = _stat("night_scenes") or _stat("nightSceneCount")
         other = None
         if total is not None and day is not None and night is not None:
             other = max(0, total - day - night)
 
         named_locations: list[dict] = []
-        raw_locations = _get(sa, "named_locations") or {}
+        raw_locations = _stat("named_locations") or {}
         if isinstance(raw_locations, dict) and raw_locations:
             ranked = sorted(raw_locations.items(), key=lambda kv: -(kv[1] or 0))
             for name, scenes in ranked[:5]:
@@ -2525,38 +2742,88 @@ class ReportBuilder:
                 named_locations.append({"name": name, "scenes": scenes, "pct": pct})
 
         production_scale = _get(sa, "productionScale")
-        challenges_obj = _get(sa, "challenges")
 
-        # Factual challenge lines derived from parsed counts/flags only
-        challenges: list[str] = []
+        # Challenge lines, each traceable to the parsed input that justifies it.
+        #
+        # FIX-06. Every line here is read as a finding about this screenplay, so a
+        # line may only say what its input actually establishes. One of these did
+        # not: "Special permits required — long lead times in every candidate
+        # territory" was emitted from a single script-level boolean, and asserted two
+        # things that boolean cannot support. "Long lead times" has no backing field
+        # anywhere in the schema. "In every candidate territory" is a claim about the
+        # ranked territories, and this method reads no territory data at all — it
+        # would have printed identically for a one-territory report and for a
+        # ten-territory one, and identically whether or not any of those territories
+        # had a recorded permitting regime.
+        #
+        # The counted lines below were already sound: a scene count is evidence for a
+        # statement about scene counts. The boolean-driven ones are now scoped to what
+        # a boolean can carry — that the script contains such material, and that it
+        # needs planning — with no territory-wide or lead-time assertion attached.
+        # Each is paired with its evidence so an unsupported line cannot be added
+        # without also naming what supports it.
+        challenge_specs: list[tuple[Any, str]] = []
+
         if night and night > 0:
-            challenges.append(
-                f"{night} night scenes — turnaround management and lighting "
-                f"budget in short-daylight territories"
-            )
-        music_scenes = _get(sa, "music_performance_scenes")
+            challenge_specs.append((
+                night,
+                f"{night} night scenes — turnaround management and lighting budget",
+            ))
+        music_scenes = _stat("music_performance_scenes")
         if music_scenes and music_scenes > 0:
-            challenges.append(
+            challenge_specs.append((
+                music_scenes,
                 f"{music_scenes} live music performance scenes — clearance and "
-                f"licensing counsel needed before pre-production"
-            )
-        crowd = _get(sa, "crowd_scenes")
+                f"licensing counsel needed before pre-production",
+            ))
+        crowd = _stat("crowd_scenes")
         if crowd and crowd > 0:
-            challenges.append(
-                f"{crowd} large-crowd scenes — extras logistics and security planning"
-            )
-        stunts = _get(sa, "stunt_sequences")
+            challenge_specs.append((
+                crowd,
+                f"{crowd} large-crowd scenes — extras logistics and security planning",
+            ))
+        stunts = _stat("stunt_sequences")
         if stunts and stunts > 0:
-            challenges.append(f"{stunts} stunt sequences — stunt coordination and insurance")
+            challenge_specs.append((
+                stunts,
+                f"{stunts} stunt sequences — stunt coordination and insurance",
+            ))
         if _get(challenges_obj, "waterWork"):
-            challenges.append("Water work — marine safety and specialist equipment")
+            challenge_specs.append((
+                True, "Water work — safety supervision and specialist equipment",
+            ))
         if _get(challenges_obj, "specialPermits"):
-            challenges.append("Special permits required — long lead times in every candidate territory")
+            # Scoped to the script evidence. Which permits, and what they cost in
+            # lead time, is a territory question this section cannot answer.
+            challenge_specs.append((
+                True,
+                "Scenes set in locations that typically require permits — confirm "
+                "the permitting route with each territory's film office",
+            ))
         if _get(challenges_obj, "animalWrangling"):
-            challenges.append("Animal wrangling — welfare compliance and specialist handlers")
+            challenge_specs.append((
+                True, "Animal work — welfare compliance and specialist handlers",
+            ))
+        languages = _stat("languages")
+        if isinstance(languages, list) and len(languages) > 1:
+            challenge_specs.append((
+                languages,
+                f"Dialogue in {len(languages)} languages "
+                f"({', '.join(str(x) for x in languages[:4])}) — specialist casting "
+                f"and translation review before principal photography",
+            ))
+        vfx_scenes = _stat("vfxHeavySceneCount")
+        if vfx_scenes and vfx_scenes > 0:
+            challenge_specs.append((
+                vfx_scenes,
+                f"{vfx_scenes} VFX-heavy scenes — on-set supervision matched to "
+                f"post-production compositing",
+            ))
 
-        interior_pct = _get(sa, "interior_pct")
-        exterior_pct = _get(sa, "exterior_pct")
+        challenges = [text for evidence, text in challenge_specs if evidence]
+
+        interior_pct = _stat("interior_pct")
+        exterior_pct = _stat("exterior_pct")
 
         return {
             "sceneCount": total,
@@ -2570,9 +2837,20 @@ class ReportBuilder:
             "supportingCast": _get(production_scale, "supportingCast"),
             "crowdScenes": crowd,
             "musicPerformanceScenes": music_scenes,
-            "languages": _get(sa, "languages"),
+            "languages": languages,
             "namedLocations": named_locations,
             "productionChallenges": challenges,
+            # Provenance. "parsed" means the counts above were read from the screenplay
+            # text; "model_estimate" means no scene heading could be parsed and they are
+            # the aggregated LLM values. Two reports from one screenplay previously
+            # disagreed with nothing on the page indicating which was which, because
+            # neither was a parse.
+            "metricsSource": _stat("metrics_source"),
+            "parserVersion": _stat("parser_version"),
+            "mixedScenes": _stat("mixed_scenes"),
+            "continuationHeadings": _stat("continuation_headings"),
+            "distinctLocations": _stat("distinct_locations"),
+            "complexityDrivers": _stat("complexity_drivers"),
         }
 
     # ── Festival & Distributor Recommendations ─────────────────────────────
@@ -2981,12 +3259,25 @@ class ReportBuilder:
                 "All figures are estimates — verify with qualified professionals."
             ),
             "location_strategy": (
-                f"How we score territories: Each territory is rated 0–100 across six "
+                f"How we score territories: Each territory is rated 0-100 across six "
                 f"dimensions (Cost Efficiency, Crew Depth, Infrastructure, Incentive "
                 f"Strength, Currency Advantage, Incentive Reliability), weighted by your "
                 f"stated production priority. Your budget currency ({budget_currency}) is "
                 f"compared against each territory's local currency to calculate "
-                f"purchasing power advantage."
+                f"purchasing power advantage. "
+                # The rule, stated in the report rather than only in the code. A reader
+                # who is told not to rely on a rebate and then sees the territory ranked
+                # first because of it has no way to know which the report meant.
+                f"Incentive Strength has three states. Where this project is confirmed "
+                f"eligible, the dimension carries the programme's computed strength. "
+                f"Where it is confirmed ineligible — a format exclusion, or a budget "
+                f"below the programme's floor — the dimension scores zero, because "
+                f"there is no rebate to value. Where eligibility is unresolved, the "
+                f"dimension is not scored and is treated as neutral in the weighted "
+                f"total: an incentive this production has not been confirmed able to "
+                f"claim neither raises nor lowers where the territory ranks. Any such "
+                f"rebate still appears in the incentive section, labelled as "
+                f"illustrative."
             ),
             "financial_analysis": (
                 "How we calculate rebates: We apply the qualifying spend rule "

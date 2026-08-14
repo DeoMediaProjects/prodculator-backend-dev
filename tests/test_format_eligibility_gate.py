@@ -190,23 +190,51 @@ class TestIncentiveStrengthReflectsTheGate:
         s = self._strength([row("California", eligible_formats='{"short": false}')], ["California"])
         assert s["California"] == 0
 
-    def test_an_unverified_programme_keeps_its_computed_strength(self):
-        """The behaviour change FIX-02 asks for. This used to be None, which the
-        weighted score reads as a neutral 50 — understating the territory as
-        confidently as quoting the rebate would have overstated it."""
+    def test_an_unverified_programme_is_not_scored(self):
+        """DELIBERATELY INVERTED. This previously asserted that an unverified
+        programme keeps its full computed strength, on the reasoning that "nobody
+        checked" is not evidence the rebate is worthless.
+
+        That reasoning is sound about the PROGRAMME and wrong about the RANKING, and
+        the EJE report showed why: UK AVEC (Enhanced/IFTC) had unverified short-film
+        eligibility and a confirmed incentive of £0, scored Incentive Value 88, and
+        took first place on the strength of a rebate the same page called
+        illustrative. The report told the reader not to rely on it and ranked the
+        territory first because of it.
+
+        None is "not scored", which _weighted_score treats as neutral. That is
+        distinct from 0, which means a researched exclusion — no rebate to value.
+        The illustrative figure still appears in the incentive section, labelled.
+        """
         s = self._strength([row("New Mexico")], ["New Mexico"])
-        assert s["New Mexico"] not in (0, None)
-        assert s["New Mexico"] > 0
+        assert s["New Mexico"] is None
 
     def test_a_confirmed_programme_keeps_its_computed_strength(self):
         s = self._strength([row("United Kingdom", eligible_formats='{"short": true}')], ["United Kingdom"])
         assert s["United Kingdom"] > 0
 
-    def test_confirmed_and_unverified_score_the_same_on_identical_rows(self):
-        """Eligibility state changes the caveat and the badge, not the arithmetic."""
-        a = self._strength([row("A", rate=30, eligible_formats='{"short": true}')], ["A"])["A"]
-        b = self._strength([row("B", rate=30)], ["B"])["B"]
-        assert a == b
+    def test_confirmed_and_unverified_do_not_score_the_same(self):
+        """DELIBERATELY INVERTED, same reason as above.
+
+        Eligibility state now changes the arithmetic as well as the caveat, because a
+        benefit this production has not been confirmed able to claim cannot be
+        evidence for where it should shoot.
+        """
+        confirmed = self._strength(
+            [row("A", rate=30, eligible_formats='{"short": true}')], ["A"],
+        )["A"]
+        unverified = self._strength([row("B", rate=30)], ["B"])["B"]
+        assert confirmed > 0
+        assert unverified is None
+
+    def test_a_verified_exclusion_and_an_unresolved_one_are_different_values(self):
+        """Zero and not-scored are two different statements and must not collapse."""
+        excluded = self._strength(
+            [row("California", eligible_formats='{"short": false}')], ["California"],
+        )["California"]
+        unresolved = self._strength([row("New Mexico")], ["New Mexico"])["New Mexico"]
+        assert excluded == 0
+        assert unresolved is None
 
 
 class TestShortFormatBanner:

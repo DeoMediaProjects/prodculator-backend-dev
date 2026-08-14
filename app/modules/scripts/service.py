@@ -13,6 +13,7 @@ from openai import OpenAI
 
 from app.core.config import Settings
 from app.modules.reports.validator import ReportValidator
+from app.modules.scripts.screenplay_metrics import compute_metrics as compute_screenplay_metrics
 from app.modules.scripts.schemas import (
     BudgetEstimate,
     Challenges,
@@ -683,6 +684,11 @@ class ScriptAnalysisService:
             generated_chunks=chunk_stats.get("generatedChunks", len(chunks)),
             stop_reasons=dict(stop_reason_counts),
         )
+        # Countable metrics come from the text, not from the model. Applied after
+        # aggregation so the LLM's values survive as the fallback for a file this
+        # parser cannot read, and so nothing above this line had to change.
+        aggregated = self._apply_deterministic_metrics(aggregated, script_content, script_title)
+
         if failed_chunks:
             logger.warning(
                 "Chunked script analysis had partial failures: title=%s failed_chunks=%s/%s failed_indices=%s",
@@ -700,6 +706,94 @@ class ScriptAnalysisService:
             len(aggregated.locations),
             aggregated.budgetEstimate.range,  # AI-estimated range from script content
             int((perf_counter() - started) * 1000),
+        )
+        return aggregated
+
+    def _apply_deterministic_metrics(
+        self,
+        aggregated: ScriptAnalysisResult,
+        script_content: str,
+        script_title: str,
+    ) -> ScriptAnalysisResult:
+        """Replace the model's countable metrics with parsed ones.
+
+        Scene counts, the interior/exterior split, day/night counts, named locations,
+        complexity and shooting days were all model output summed across chunks. Two
+        runs of one screenplay therefore disagreed — 45 scenes vs 29, 80% interior vs
+        72%, Medium vs High — with nothing in the report indicating which was the
+        parse, because neither was.
+
+        Everything this parser can count now wins. Everything it cannot — genre, tone,
+        budget tier, the qualitative challenge flags — is untouched, because those are
+        readings of a script rather than counts in it. When the parser finds no scene
+        heading at all (an unreadable extraction, a treatment rather than a
+        screenplay) the model's values are left exactly as they were: a zero from a
+        failed parse must never outrank a real estimate.
+        """
+        try:
+            metrics = compute_screenplay_metrics(
+                script_content,
+                flags={
+                    "stunts": aggregated.challenges.stunts,
+                    "waterWork": aggregated.challenges.waterWork,
+                    "animalWrangling": aggregated.challenges.animalWrangling,
+                    "weatherDependent": aggregated.challenges.weatherDependent,
+                    "historicalPeriod": aggregated.challenges.historicalPeriod,
+                    "vfxHeavySceneCount": aggregated.challenges.vfxHeavySceneCount,
+                    "languages": aggregated.challenges.languages,
+                },
+            )
+        except Exception as exc:  # pragma: no cover - parser must never fail a report
+            logger.warning(
+                "Deterministic screenplay parse failed, keeping model metrics: title=%s error=%s",
+                script_title, exc,
+            )
+            return aggregated
+
+        ch = aggregated.challenges
+        ch.parser_version = metrics.get("parserVersion")
+        ch.script_sha256 = metrics.get("scriptSha256")
+
+        if not metrics.get("parsed"):
+            ch.metrics_source = "model_estimate"
+            logger.warning(
+                "No scene headings parsed, script metrics remain model estimates: title=%s",
+                script_title,
+            )
+            return aggregated
+
+        ch.metrics_source = "parsed"
+        ch.total_scenes = metrics["totalScenes"]
+        ch.interior_scenes = metrics["interiorScenes"]
+        ch.exterior_scenes = metrics["exteriorScenes"]
+        ch.mixed_scenes = metrics["mixedScenes"]
+        ch.interior_pct = metrics["interiorPct"]
+        ch.exterior_pct = metrics["exteriorPct"]
+        ch.day_scenes = metrics["dayScenes"]
+        ch.night_scenes = metrics["nightScenes"]
+        ch.nightSceneCount = metrics["nightScenes"]
+        ch.continuation_headings = metrics["continuationHeadings"]
+        ch.distinct_locations = metrics["distinctLocations"]
+        ch.named_locations = metrics["namedLocations"]
+        ch.primary_location = metrics["primaryLocation"]
+        ch.deterministic_complexity = metrics["complexity"]
+        ch.complexity_drivers = metrics["complexityDrivers"]
+        if metrics["totalScenes"]:
+            ch.extIntRatio = round(
+                (metrics["exteriorScenes"] + metrics["mixedScenes"])
+                / metrics["totalScenes"],
+                4,
+            )
+
+        aggregated.productionScale.estimatedShootingDays = metrics["estimatedShootingDays"]
+
+        logger.info(
+            "Deterministic screenplay metrics applied: title=%s parser=%s scenes=%s "
+            "interior_pct=%s night=%s locations=%s complexity=%s shoot_days=%s",
+            script_title, metrics["parserVersion"], metrics["totalScenes"],
+            metrics["interiorPct"], metrics["nightScenes"],
+            metrics["distinctLocations"], metrics["complexity"],
+            metrics["estimatedShootingDays"],
         )
         return aggregated
 
@@ -2206,10 +2300,17 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
         skeleton["tone"] = ai.get("tone") or skeleton.get("tone") or "Unknown"
         skeleton["scale"] = ai.get("scale") or skeleton.get("scale") or "Unknown"
 
-        complexity = ai.get("complexity", "Medium")
-        if complexity not in ("Low", "Medium", "High", "Very High"):
-            complexity = "Medium"
-        skeleton["complexity"] = complexity
+        # Complexity is scored from counted script inputs when a script was parsed, and
+        # the model must not overwrite it. It used to be a free pick from these four
+        # labels with no count fed into it, so the same screenplay came back Medium on
+        # one run and High on the next with nothing in the report explaining either.
+        if skeleton.pop("_complexityIsComputed", False) and skeleton.get("complexity"):
+            pass  # keep the computed label
+        else:
+            complexity = ai.get("complexity", "Medium")
+            if complexity not in ("Low", "Medium", "High", "Very High"):
+                complexity = "Medium"
+            skeleton["complexity"] = complexity
 
         skeleton["alternativeStrategy"] = (
             ai.get("alternativeStrategy")
@@ -2363,6 +2464,10 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
         for loc in skeleton.get("locationRankings", []):
             if isinstance(loc, dict):
                 loc.pop("_costEfficiencyAnchor", None)
+        # Internal flag telling this merge whether complexity was scored from the
+        # parsed script. Consumed above; popped here as well so it cannot reach a
+        # renderer by any path, including the ones that skip the merge entirely.
+        skeleton.pop("_complexityIsComputed", None)
 
         # Add scoring methodology
         skeleton["scoringMethodology"] = ScriptAnalysisService._default_scoring_methodology(
@@ -2383,6 +2488,10 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
             skeleton["tone"] = "Unknown"
         if not skeleton.get("scale"):
             skeleton["scale"] = "Unknown"
+        # Internal flag, never rendered. This is the AI-unavailable path, so the
+        # computed complexity below is kept as-is and only defaulted when no script
+        # was parsed either.
+        skeleton.pop("_complexityIsComputed", None)
         if not skeleton.get("complexity"):
             skeleton["complexity"] = "Medium"
         if not skeleton.get("alternativeStrategy"):
