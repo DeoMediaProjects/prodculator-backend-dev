@@ -1059,7 +1059,11 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="fcard-top">
       <div>
         <h4>{{ w.territory }}</h4>
-        <div class="meta">Best months: {{ w.bestMonths | join(', ') }}{% if w.avgTempRange %} · {{ w.avgTempRange }}{% endif %}</div>
+        {#- optimalWindowDisplay collapses contiguous runs ("March to September")
+            rather than listing every month. The list used to be sliced to the first
+            four to keep this line short, which is what made an in-window August shoot
+            appear to contradict its own window. -#}
+        <div class="meta">Best months: {{ w.optimalWindowDisplay or (w.bestMonths | join(', ')) }}{% if w.avgTempRange %} · {{ w.avgTempRange }}{% endif %}</div>
       </div>
       <span class="chip {{ 'bank' if w.weatherRisk == 'Low' else ('verify' if w.weatherRisk == 'Medium' else 'notbank') }}">{{ w.weatherRisk }} risk</span>
     </div>

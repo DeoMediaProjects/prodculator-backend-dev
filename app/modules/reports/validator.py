@@ -36,6 +36,7 @@ from app.modules.reports.helpers import (  # noqa: F401 — re-exported for back
     parse_money_string as _parse_money_string,
     DEFAULT_SHOOT_DAYS_PER_WEEK,
 )
+from app.modules.reports.cross_section import validate_cross_section
 from app.modules.reports.fabrication_guard import scrub_report
 from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
@@ -175,6 +176,23 @@ class ReportValidator:
         # engine. Must run after every other mutation above, including the
         # section explainers, so nothing is injected past it.
         cls._strip_leaked_audit_text(report, warnings)
+
+        # Cross-section consistency, last of all and deliberately so.
+        #
+        # Every assertion above checks one section against its own inputs, and every
+        # defect the last review round found passed all of them: each section was
+        # correct on its own terms and contradicted a neighbour. An unverified
+        # programme ranked first on a rebate the same page called illustrative; a
+        # BANKABLE badge above a sentence denying bankability; an August shoot placed
+        # inside a March-June window; one programme pair described as both stacking and
+        # mutually exclusive.
+        #
+        # This runs on the fully assembled report — after the AI merge, after the
+        # re-sort, after every injection — because a contradiction between a computed
+        # field and a sentence can only be seen once both are final. Findings are
+        # warnings, not exceptions: one bad sentence in one territory should surface
+        # loudly, not destroy an otherwise sound report the producer has paid for.
+        warnings.extend(validate_cross_section(report, datasets))
 
         if warnings:
             logger.info(

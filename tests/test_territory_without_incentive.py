@@ -196,4 +196,23 @@ class TestNothingBankableLeaksIn:
         )
         uk = next(r for r in rankings if r["name"] == "United Kingdom")
         assert uk.get("hasNoBankableIncentive") is None
+        assert uk["rebatePercent"] != "N/A"
+        # This fixture is a SHORT against a programme with no recorded format
+        # eligibility, so the dimension is correctly not scored — None, meaning
+        # neutral in the weighted total. What matters for this test is that it is not
+        # 0: zero is reserved for a researched "no rebate here", which is exactly the
+        # treatment an active territory must not receive.
+        assert uk["incentiveStrength"] != 0
+
+    def test_a_feature_against_an_active_territory_still_scores(self):
+        """The not-scored rule is scoped to formats whose eligibility genuinely
+        diverges from what these programmes are written for. A feature is not held
+        back by the absence of a record stating features are accepted."""
+        b = builder(["United Kingdom"], active=[row("United Kingdom", 34)])
+        b._production_format = "Feature Film"
+        b._project_facts = {"budget_gbp": 45_730, "format": "Feature Film"}
+        rankings = ReportBuilder._build_location_rankings(
+            b, ReportBuilder._select_territories(b),
+        )
+        uk = next(r for r in rankings if r["name"] == "United Kingdom")
         assert uk["incentiveStrength"] > 0

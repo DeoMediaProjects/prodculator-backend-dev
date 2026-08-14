@@ -164,7 +164,11 @@ class LocationRanking(BaseModel):
     costEfficiency: int  # 0-100
     crewDepth: int  # 0-100
     infrastructure: int  # 0-100
-    incentiveStrength: int  # 0-100
+    # None means "not scored": the project's eligibility for this territory's
+    # programme is unresolved, so the dimension is neutral in the weighted total
+    # rather than crediting the territory with a rebate nobody has confirmed it can
+    # claim. Zero is a different statement — a researched exclusion, no rebate here.
+    incentiveStrength: int | None  # 0-100, or None when not scored
     currencyAdvantage: int  # 0-100
     reasoning: list[str]  # 3-5 bullet points
     isAssessmentOnly: bool | None = None

@@ -69,6 +69,21 @@ class Challenges(BaseModel):
     irresolution: bool | None = None        # true if primary conflict unresolved
     stunt_sequences: int | None = None      # scenes with explicit stunt directions
     crowd_scenes: int | None = None         # scenes requiring 20+ background artists
+    # ── Deterministic parser output (app.modules.scripts.screenplay_metrics) ──
+    # Scene counts, the int/ext split, day/night and complexity were model output
+    # summed across chunks, so the same screenplay produced different numbers on
+    # different runs. These carry the parsed values and the provenance needed to
+    # tell a parse from an estimate — ``metrics_source`` is "parsed" when the fields
+    # above were counted from the text and "model_estimate" when no scene heading
+    # could be read and the model's values were left in place.
+    metrics_source: str | None = None
+    parser_version: str | None = None
+    script_sha256: str | None = None
+    mixed_scenes: int | None = None          # INT./EXT. and I/E headings
+    continuation_headings: int | None = None  # CONT'D / CONTINUOUS, excluded from count
+    distinct_locations: int | None = None
+    deterministic_complexity: str | None = None  # rule-scored from counted inputs
+    complexity_drivers: list[str] | None = None  # what drove the complexity score
 
 
 class ScriptAnalysisResult(BaseModel):
