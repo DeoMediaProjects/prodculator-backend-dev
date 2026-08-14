@@ -1056,9 +1056,31 @@ class ReportService:
                 tc = TERRITORY_CURRENCY.get(t)
                 if tc and tc != budget_currency:
                     target_currencies.add(tc)
+            # FIX-07. budget_gbp (above) was resolved via budget_currency→GBP.
+            # This used to resolve budget_currency→territory_currency as an
+            # entirely separate pair lookup (its own cache entry / live call /
+            # fallback cross-rate), which is not guaranteed to agree with the
+            # GBP leg — e.g. one hitting a live rate and the other a stale
+            # cache entry, or the two landing on different fallback tables.
+            # Confirmed live: the same GBP budget produced a materially
+            # different "Total budget" figure in the waterfall (this path) than
+            # in the funding-eligibility gate and readiness's comparable-cost
+            # anchor (both of which multiply budget_gbp by a fixed GBP→USD
+            # constant). Composing through the *same* budget→GBP rate already
+            # used for budget_gbp — budget→tc = budget→GBP × GBP→tc — makes
+            # every "budget in tc" figure in the report derive from one shared
+            # conversion chain instead of two independently-sourced ones.
+            budget_to_gbp_rate = budget_data.get("rate")
             fx_rates: dict[str, dict] = {}
             for tc in target_currencies:
-                rate, rate_date = fx_service.get_rate(budget_currency, tc)
+                if budget_to_gbp_rate:
+                    gbp_to_tc_rate, rate_date = fx_service.get_rate("GBP", tc)
+                    rate = budget_to_gbp_rate * gbp_to_tc_rate
+                else:
+                    # No resolved budget→GBP rate to compose through (should not
+                    # happen given the budget_amount>0 guard above, but fall
+                    # back to the direct pair rather than raise).
+                    rate, rate_date = fx_service.get_rate(budget_currency, tc)
                 fx_rates[tc] = {
                     "rate": rate,
                     "rate_date": rate_date.isoformat(),
@@ -1273,9 +1295,25 @@ class ReportService:
 
             atl_str = None
             atl_amount = corrected.get("atl_deduction_amount", 0)
+            atl_deduction_note = corrected.get("atl_deduction_note")
             if atl_amount > 0:
                 d_atl, _, _ = _disp(atl_amount)
                 atl_str = f"{sym}{d_atl:,.0f}"
+                # FIX-07 companion. `_compute_corrected_rebate` builds its ATL
+                # caption from the raw GBP amount (atl_est) labelled with a GBP
+                # symbol, because that is genuinely the currency it computed in.
+                # For a non-GBP territory (e.g. New Mexico/California, USD) that
+                # caption would show the correct number under the wrong symbol
+                # if left as-is. Replace the leading "(<amount>)" parenthetical
+                # with the properly currency-converted figure so the caption
+                # matches the ATL line item shown elsewhere in the same
+                # waterfall exactly, instead of merely being self-consistent in
+                # GBP. Any trailing sentence (e.g. a per-person fee cap warning)
+                # is left untouched.
+                if atl_deduction_note:
+                    atl_deduction_note = re.sub(
+                        r"\([^)]*\)", f"({sym}{d_atl:,.0f})", atl_deduction_note, count=1,
+                    )
 
             rate_str = _format_rate(corrected["rate_gross"], corrected["rate_net"])
             qs_pct = corrected["qualifying_spend_pct"]
@@ -1324,7 +1362,7 @@ class ReportService:
                 "headline_net_budget": f"approximately {sym}{d_net_budget:,.0f}",
                 "programme": programme_name,
                 "programme_note": corrected.get("programme_note"),
-                "atl_deduction_note": corrected.get("atl_deduction_note"),
+                "atl_deduction_note": atl_deduction_note,
                 "rebate_cap_note": corrected.get("rebate_cap_note"),
                 "qualifying_spend_note": corrected.get("qualifying_spend_note"),
                 "fx_note": fx_note,

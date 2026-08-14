@@ -806,13 +806,28 @@ class ReportValidator:
             atl_est = budget_gbp * _DEFAULT_ATL_PCT
             atl_deduction_amount = atl_est
             qualifying_spend = max(0, qualifying_spend - atl_est)
-            currency_label = active_row.get("currency") or "GBP"
-            symbol = _currency_symbol(currency_label)
+            # PROD-FIX-007b (FIX-07 companion). atl_est is computed from
+            # budget_gbp, i.e. it IS a GBP amount. This used to be labelled with
+            # the programme's own currency symbol (e.g. "$") instead of GBP's
+            # ("£"), so a report for a USD-denominated territory stated
+            # "ATL deduction estimated at 15% of budget ($6,884)" when 6,884 was
+            # actually the GBP figure with a $ sign swapped in — the exact
+            # currency-mislabelling bug the FIX-07 review found live. The caller
+            # (ReportService._pre_compute_territory_financials) separately
+            # re-derives the correctly-converted display-currency amount and
+            # substitutes it into this note; the GBP figure below is only ever
+            # shown as-is for a GBP-currency territory, where it was already
+            # correct.
+            symbol = _currency_symbol("GBP")
             atl_deduction_note = (
                 f"ATL deduction estimated at {_DEFAULT_ATL_PCT:.0%} of budget "
                 f"({symbol}{atl_est:,.0f})"
             )
             if cap_per_person is not None and cap_per_person > 0:
+                # cap_per_person_currency is the fallback for this addendum only;
+                # it is unrelated to the GBP amount above, so it must still be
+                # derived from the programme's own currency, not GBP.
+                currency_label = active_row.get("currency") or "GBP"
                 cap_currency = active_row.get("cap_per_person_currency") or currency_label
                 atl_deduction_note += (
                     f". Per-person ATL fee cap of "
