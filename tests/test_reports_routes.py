@@ -253,24 +253,35 @@ def test_free_tier_report_data_redacts_financial_and_action_detail():
 
     assert result["previewUrgentActionCount"] == 1
     assert result["previewComplexityFactorCount"] == 2
-    assert result["nextSteps"] == []
+    # Next Steps is an Explorer section (owner decision, 2026-08-19). It used to
+    # be blanked to []; the actions and their priorities are the least financial
+    # part of the report, so they are carried with any figure inside redacted.
+    assert result["nextSteps"] == [
+        {"priority": "URGENT", "action": "Apply for BFI cultural test", "reason": "Blocking"}
+    ]
     assert "scriptIntelligence" not in result
     assert "alternativeStrategy" not in result
     assert "dimensionVerdicts" not in result
 
+    # Production Location Strategy is an Explorer section (owner decision,
+    # 2026-08-19): all three ranked territories are named and explained. The
+    # "Territory #2 / Locked" placeholders are gone, and the reasoning that used
+    # to be stripped from #1 is kept — with figures inside it redacted.
     top = result["locationRankings"][0]
     assert top["name"] == "United Kingdom"
-    assert "reasoning" not in top
+    assert top["reasoning"]
+    assert "£" not in top["reasoning"]
     assert "rebatePercent" not in top
-    assert result["locationRankings"][1]["lockedPreview"] is True
-    assert result["locationRankings"][1]["name"] == "Territory #2"
+    assert "rebateAmount" not in top
+    for ranked in result["locationRankings"]:
+        assert not ranked.get("lockedPreview")
+        assert ranked["name"] != "Territory #2"
 
+    # Tax Incentive Analysis and Financial Analysis stay paid — labels only.
     incentive = result["incentiveEstimates"][0]
     assert incentive == {"territory": "United Kingdom", "program": "IFTC"}
     scenario = result["financialAnalysis"]["budgetScenarios"][0]
     assert scenario == {"territory": "United Kingdom", "programme": "IFTC"}
-    assert "comparables" not in result
-    assert "fundingOpportunities" not in result
 
 
 def test_report_create_triggers_background_and_status_transitions(client, auth_user, monkeypatch):

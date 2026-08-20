@@ -1041,11 +1041,49 @@ class TestBuilderWiring:
         ).build()
         assert report["sectionExplainers"]["financial_readiness"]
 
-    def test_free_tier_filter_strips_the_section(self):
+    def test_free_tier_filter_keeps_the_verdict_and_drops_the_figures(self):
+        """Explorer now receives this section (owner decision, 2026-08-19).
+
+        It used to be removed outright, on the reasoning that every figure in it
+        is monetary. The figures are; the verdict, component statuses, checks and
+        flags are not, and those are the part a producer acts on. So the section
+        is carried with ``figures`` removed rather than dropped.
+        """
         from app.modules.reports.router import _build_free_tier_report_data
 
         filtered = _build_free_tier_report_data({
-            "financialReadiness": {"verdict": "READY", "score": 90},
+            "financialReadiness": {
+                "verdict": "READY",
+                "score": 90,
+                "components": [{
+                    "key": "budget_vs_cost_base",
+                    "status": "ready",
+                    "headline": "Budget of £1,000,000 covers the cost base.",
+                    "figures": [{"label": "Budget", "value": "£1,000,000", "basis": "submitted"}],
+                    "checks": [],
+                }],
+                "flags": [],
+            },
             "locationRankings": [],
         })
-        assert "financialReadiness" not in filtered
+        readiness = filtered["financialReadiness"]
+        assert readiness["verdict"] == "READY"
+        assert readiness["score"] == 90
+        assert readiness["components"][0]["status"] == "ready"
+        # The monetary detail does not survive.
+        assert "figures" not in readiness["components"][0]
+        assert "£1,000,000" not in readiness["components"][0]["headline"]
+
+    def test_builder_still_omits_the_section_for_the_anonymous_preview(self):
+        """The pre-signup preview has no script, so there is nothing to assess.
+
+        This is a different gate from the Explorer filter above: an Explorer
+        account's report is built in full (is_preview=False) and filtered on read.
+        """
+        report = ReportBuilder(
+            self._builder_datasets(),
+            {"country": "United Kingdom"},
+            script_analysis=None,
+            is_preview=True,
+        ).build()
+        assert "financialReadiness" not in report

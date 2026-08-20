@@ -22,6 +22,19 @@ COPY app ./app
 # by hand from the Railway console, so they must exist inside the image — being
 # in the repo is not enough.
 COPY scripts ./scripts
+# Migrations, for the same reason as scripts above: `alembic upgrade head` needs
+# the version files and the config, not just the alembic package from
+# requirements.txt. Without these the Railway console could not migrate at all,
+# so a production migration meant pointing a local shell at DATABASE_PUBLIC_URL
+# and hand-feeding the URL in — easy to aim at the wrong database, and it bypasses
+# the one environment that already has the right DB_URL.
+#
+# alembic.ini uses `script_location = alembic` and `prepend_sys_path = .`, both
+# relative, so both paths must land in WORKDIR. Its `sqlalchemy.url` is a sqlite
+# placeholder and is overridden by env.py from settings.DB_URL.
+#
+# The version files import from app.alembic_utils, app.core.{audit_notes,config,
+# territories} and app.models.sql_models — all inside `app`, copied above.
 COPY .env.example ./.env.example
 COPY README.md ./README.md
 

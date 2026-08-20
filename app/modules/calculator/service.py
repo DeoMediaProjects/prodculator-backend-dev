@@ -25,11 +25,14 @@ from app.modules.reports.helpers import (
     index_incentives_by_territory,
     format_rate,
     format_cap,
+    format_qualifying_spend_cap,
+    is_vacuous_cap_label,
     to_float,
     currency_symbol,
     budget_to_display,
     is_zero_rate,
 )
+from app.modules.reports.stacking import resolve_stacking
 from app.modules.reports.validator import ReportValidator
 
 logger = logging.getLogger(__name__)
@@ -249,6 +252,8 @@ class CalculatorService:
         vfx_uplift_value: float | None = None
         vfx_uplift_display: str | None = None
 
+        vfx_stacking_note: str | None = None
+
         if request.vfx_pct > 0:
             vfx_spend_gbp = budget_gbp * (request.vfx_pct / 100.0)
             supplementary_rows = [
@@ -262,7 +267,26 @@ class CalculatorService:
                     key=lambda r: to_float(r.get("rate_gross")) or to_float(r.get("rate_net")) or 0,
                 )
                 supp_rate = to_float(supp.get("rate_gross")) or to_float(supp.get("rate_net")) or 0
-                if supp_rate > 0:
+
+                # This path added the uplift to net saving unconditionally. The UK
+                # VFX row states "Cannot combine with the IFTC enhanced rate", and
+                # the reports path honours it through resolve_stacking while this
+                # one did not import stacking at all — so the calculator and the
+                # report disagreed about the same pair, and the calculator was the
+                # one overstating. Same resolver, same answer.
+                #
+                # `best` is the programme actually modelled above, which is what the
+                # exclusion is written against; after a cap-driven programme switch
+                # that is the replacement, not the ruled-out row.
+                stacking = resolve_stacking(
+                    best,
+                    supp,
+                    primary_name=final_programme,
+                    supplementary_name=supp.get("program_name") or supp.get("program"),
+                )
+                vfx_stacking_note = stacking.get("note")
+
+                if supp_rate > 0 and stacking.get("stacks"):
                     vfx_uplift_rate = supp_rate
                     vfx_uplift_programme = supp.get("program_name") or supp.get("program") or ""
                     vfx_rebate_gbp = vfx_spend_gbp * (supp_rate / 100.0)
@@ -292,12 +316,21 @@ class CalculatorService:
                 cap_display = f"{cap_display} per project"
         if not cap_display:
             db_cap = (best.get("cap") or "").strip()
-            if db_cap and "no formal cap" not in db_cap.lower():
+            # Same filter as ReportBuilder — the two cap chains must not disagree.
+            if not is_vacuous_cap_label(db_cap):
                 cap_display = db_cap
         if not cap_display:
             cap_amount = best.get("cap_amount")
             cap_currency = best.get("cap_currency") or "GBP"
             cap_display = format_cap(cap_amount, cap_currency)
+        if not cap_display:
+            cap_display = format_qualifying_spend_cap(
+                best.get("qualifying_spend_cap_pct"),
+                best.get("qualifying_spend_cap_amount"),
+                best.get("qualifying_spend_cap_currency")
+                or best.get("currency")
+                or "GBP",
+            ) or "No cap stated"
 
         # ── Min spend ──────────────────────────────────────────────────────
         qs_min = to_float(best.get("qualifying_spend_min"))
@@ -375,6 +408,7 @@ class CalculatorService:
             vfx_uplift_programme=vfx_uplift_programme,
             vfx_uplift_value=vfx_uplift_value,
             vfx_uplift_display=vfx_uplift_display,
+            vfx_stacking_note=vfx_stacking_note,
             bankability_label=bankability_label,
             financial_return_score=frs,
             financial_return_verdict=frs_verdict,

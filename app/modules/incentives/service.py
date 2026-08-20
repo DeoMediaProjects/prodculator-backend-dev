@@ -29,6 +29,8 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "capPerPersonCurrency": "cap_per_person_currency",
     "qualifyingSpendMin": "qualifying_spend_min",
     "qualifyingSpendCapPct": "qualifying_spend_cap_pct",
+    "qualifyingSpendCapAmount": "qualifying_spend_cap_amount",
+    "qualifyingSpendCapCurrency": "qualifying_spend_cap_currency",
     "qualifyingSpendCurrency": "qualifying_spend_currency",
     "paymentTimelineDaysMin": "payment_timeline_days_min",
     "paymentTimelineDaysMax": "payment_timeline_days_max",

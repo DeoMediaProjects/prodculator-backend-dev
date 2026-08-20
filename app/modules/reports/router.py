@@ -737,6 +737,133 @@ async def download_pdf(
     )
 
 
+#: Sections an Explorer (free) report carries, by ``report_data`` key.
+#:
+#: Explorer was gated down to roughly three usable sections, which read as a
+#: locked document rather than a preview. It now carries eight of the thirteen:
+#:
+#:   01 Executive Summary          executiveSummary
+#:   03 Production Location Strategy  locationRankings
+#:   06 Financial Readiness        financialReadiness
+#:   07 Weather & Logistics        weatherLogistics
+#:   09 Grant & Funding            fundingOpportunities
+#:   10 Comparable Productions     comparables
+#:   12 Distributors               distributorRecommendations
+#:   13 Next Steps                 nextSteps
+#:
+#: The five that stay paid — Script Intelligence, Territory Analysis, Financial
+#: Analysis, Tax Incentive Analysis, Festival Recommendations — remain as locked
+#: teasers so the upgrade path is still visible.
+#:
+#: Monetary values stay behind the paywall in every section, including the ones
+#: newly opened up. This list decides what a section IS; the strippers below
+#: decide what it may SAY.
+_EXPLORER_SECTIONS = frozenset({
+    "executiveSummary",
+    "locationRankings",
+    "financialReadiness",
+    "weatherLogistics",
+    "fundingOpportunities",
+    "comparables",
+    "distributorRecommendations",
+    "nextSteps",
+})
+
+#: Sections removed outright for Explorer. Kept explicit rather than derived as
+#: "everything not in _EXPLORER_SECTIONS", because report_data also carries
+#: non-section keys (scoringMethodology, attributions, sectionExplainers, the
+#: preview counters) that must survive.
+_EXPLORER_WITHHELD_SECTIONS = (
+    "scriptIntelligence",
+    "scriptStats",
+    "territoryDeepDives",
+    "investorSummary",
+    "festivalRecommendations",
+    "alternativeStrategy",
+    "dimensionVerdicts",
+    "scriptOriginCallout",
+    # Only on legacy stored reports; the section was removed platform-wide 2026-07.
+    "crewInsights",
+)
+
+#: Money-bearing fields dropped from sections Explorer can otherwise read in
+#: full. Grouped by the section key they belong to so the intent stays legible.
+_EXPLORER_FINANCIAL_FIELDS: dict[str, tuple[str, ...]] = {
+    "comparables": ("budgetRange", "budgetUSD"),
+    "locationRankings": (
+        "rebatePercent",
+        "rebateAmount",
+        "estimatedRebate",
+        "financialReturnScore",
+        "financialReturnVerdict",
+        "costEfficiencyWeatherPenalty",
+    ),
+}
+
+
+def _strip_readiness_financials(readiness: object) -> dict | None:
+    """Financial Readiness with its verdicts intact and its figures removed.
+
+    This section used to be dropped entirely, on the reasoning that "every figure
+    in it is a monetary value or a ratio of two, so there is nothing left to show".
+    That is true of ``figures`` and false of everything else: the verdict, the
+    per-component statuses, the checks that passed or failed and the flags naming
+    unverified inputs are all qualitative, and they are the part a producer acts
+    on. The figures go; the judgement stays.
+    """
+    if not isinstance(readiness, dict):
+        return None
+
+    stripped = dict(readiness)
+
+    # The headline verdict and its reasoning are qualitative, but the reason text
+    # quotes the numbers behind it, so it is redacted rather than dropped.
+    for key in ("verdictReason", "methodology"):
+        if isinstance(stripped.get(key), str):
+            stripped[key] = _redact_preview_financial_text(stripped[key])
+
+    components = []
+    for component in stripped.get("components") or []:
+        if not isinstance(component, dict):
+            continue
+        slim = dict(component)
+        # `figures` is label/value/basis triples and is money end to end.
+        slim.pop("figures", None)
+        if isinstance(slim.get("headline"), str):
+            slim["headline"] = _redact_preview_financial_text(slim["headline"])
+        if isinstance(slim.get("note"), str):
+            slim["note"] = _redact_preview_financial_text(slim["note"])
+        checks = []
+        for check in slim.get("checks") or []:
+            if not isinstance(check, dict):
+                continue
+            slim_check = dict(check)
+            if isinstance(slim_check.get("detail"), str):
+                slim_check["detail"] = _redact_preview_financial_text(
+                    slim_check["detail"]
+                )
+            checks.append(slim_check)
+        slim["checks"] = checks
+        components.append(slim)
+    stripped["components"] = components
+
+    flags = []
+    for flag in stripped.get("flags") or []:
+        if not isinstance(flag, dict):
+            continue
+        slim_flag = dict(flag)
+        for key in ("detail", "action"):
+            if isinstance(slim_flag.get(key), str):
+                slim_flag[key] = _redact_preview_financial_text(slim_flag[key])
+        flags.append(slim_flag)
+    stripped["flags"] = flags
+
+    # A currency symbol with nothing to denominate invites the renderer to print
+    # a bare "£" beside a redaction placeholder.
+    stripped.pop("currencySymbol", None)
+    return stripped
+
+
 def _build_free_tier_report_data(report_data: dict) -> dict:
     """Return a filtered copy of report_data for the free-tier preview PDF.
 
@@ -772,57 +899,108 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
         ):
             summary.pop(key, None)
 
-    data.pop("alternativeStrategy", None)
-    data.pop("scriptIntelligence", None)
-    data.pop("scriptStats", None)
-    data.pop("dimensionVerdicts", None)
-    data["nextSteps"] = []
+    for withheld in _EXPLORER_WITHHELD_SECTIONS:
+        data.pop(withheld, None)
 
-    # Remove completely — no useful structural preview for free users.
-    # financialReadiness is a paid section (handoff §4.1): every figure in it is
-    # a monetary value or a ratio of two, so there is nothing left to show once
-    # the free tier's financial stripping has run.
-    data.pop("financialReadiness", None)
-    data.pop("investorSummary", None)
-    data.pop("territoryDeepDives", None)
-    data.pop("comparables", None)
-    data.pop("fundingOpportunities", None)
-    data.pop("festivalRecommendations", None)
-    data.pop("distributorRecommendations", None)
-    data.pop("scriptOriginCallout", None)
+    # ── Next Steps ───────────────────────────────────────────────────────────
+    # Was blanked to []. The actions and deadlines are the least financial part
+    # of the report and the most immediately useful, so they stay; only figures
+    # quoted inside an action are redacted.
+    next_steps = []
+    for step in dict_rows(data.get("nextSteps")):
+        slim = dict(step)
+        # Every free-text field on a step, not just the action: `reason` and
+        # `detail` also quote figures on real reports.
+        for key in ("action", "deadline", "reason", "detail", "note"):
+            if isinstance(slim.get(key), str):
+                slim[key] = _redact_preview_financial_text(slim[key])
+        next_steps.append(slim)
+    data["nextSteps"] = next_steps
 
-    # locationRankings: show the top territory details; show locked placeholders
-    # for additional ranked territories without leaking their names or scores.
+    # ── Financial Readiness ──────────────────────────────────────────────────
+    readiness = _strip_readiness_financials(data.get("financialReadiness"))
+    if readiness is not None:
+        data["financialReadiness"] = readiness
+    else:
+        data.pop("financialReadiness", None)
+
+    # ── Comparable Productions ───────────────────────────────────────────────
+    # Kept in full apart from the budget columns, which are the paid part.
+    comparables = dict_rows(data.get("comparables"))
+    if comparables:
+        data["comparables"] = [
+            {
+                k: v for k, v in comp.items()
+                if k not in _EXPLORER_FINANCIAL_FIELDS["comparables"]
+            }
+            for comp in comparables
+        ]
+    else:
+        data.pop("comparables", None)
+
+    # ── Grant & Funding Opportunities ────────────────────────────────────────
+    # Fund names, types, genres, deadlines and websites carry no monetary value;
+    # `notes` sometimes quotes an award size, so only that is redacted.
+    # This list mixes type="Fund" with type="Festival". Grant & Funding is an
+    # Explorer section; Festival Recommendations is not, so the festival-typed
+    # entries are dropped here rather than left for the frontend to hide — a
+    # festival name is a paid value wherever it appears.
+    funding = dict_rows(data.get("fundingOpportunities"))
+    if funding:
+        opportunities = []
+        for opp in funding:
+            if str(opp.get("type") or "").strip().lower() == "festival":
+                continue
+            slim = dict(opp)
+            if isinstance(slim.get("notes"), str):
+                slim["notes"] = _redact_preview_financial_text(slim["notes"])
+            opportunities.append(slim)
+        if opportunities:
+            data["fundingOpportunities"] = opportunities
+        else:
+            data.pop("fundingOpportunities", None)
+    else:
+        data.pop("fundingOpportunities", None)
+
+    # ── Weather & Logistics, Distributors ────────────────────────────────────
+    # Both are carried through untouched: neither schema has a monetary field.
+    # Deliberately NOT passed through _redact_preview_financial_text, which
+    # rewrites any percentage — it would turn WeatherLogistic.exteriorExposure
+    # ("High (72% exterior scenes)") into an upgrade prompt about a rate.
+
+    # ── Production Location Strategy ─────────────────────────────────────────
+    # All three ranked territories are named, scored and explained. Previously
+    # only #1 appeared and #2/#3 were "Territory #2 / Locked" placeholders with
+    # the reasoning, advantages and risks stripped from #1 as well, which left
+    # the section with almost nothing to read.
+    #
+    # The three-territory cap still applies (_TERRITORY_LIMITS), so Professional's
+    # five and Producer's unlimited remain worth paying for — the difference is
+    # now breadth of coverage rather than whether the section works at all.
+    #
+    # Money stays paid: rebate percentages and amounts, and the derived financial
+    # scores, are removed. `isAssessmentOnly` still marks these as an assessment
+    # rather than a costed recommendation.
     if "locationRankings" in data:
         stripped = []
-        for idx, loc in enumerate(rankings_raw[:3]):
-            if idx > 0:
-                stripped.append({
-                    "name": f"Territory #{idx + 1}",
-                    "country": "Locked",
-                    "score": None,
-                    "lockedPreview": True,
-                    "isAssessmentOnly": True,
-                })
-                continue
+        for loc in rankings_raw[:3]:
             loc_copy = dict(loc)
             loc_copy["isAssessmentOnly"] = True
-            for key in (
-                "reasoning",
-                "keyAdvantages",
-                "keyRisks",
-                "rebatePercent",
-                "rebateAmount",
-                "paymentSpeed",
-                "culturalTestLikelihood",
-                "adminComplexity",
-                "financialReturnScore",
-                "financialReturnVerdict",
-                "scheduleViabilityScore",
-                "contingencyDaysEstimate",
-                "costEfficiencyWeatherPenalty",
-            ):
+            for key in _EXPLORER_FINANCIAL_FIELDS["locationRankings"]:
                 loc_copy.pop(key, None)
+            # Qualitative narrative is kept, with any figure inside it redacted.
+            if isinstance(loc_copy.get("reasoning"), str):
+                loc_copy["reasoning"] = _redact_preview_financial_text(
+                    loc_copy["reasoning"]
+                )
+            for list_key in ("keyAdvantages", "keyRisks"):
+                items = loc_copy.get(list_key)
+                if isinstance(items, list):
+                    loc_copy[list_key] = [
+                        _redact_preview_financial_text(item)
+                        if isinstance(item, str) else item
+                        for item in items
+                    ]
             stripped.append(loc_copy)
         data["locationRankings"] = stripped
 
@@ -849,11 +1027,11 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
     else:
         data.pop("financialAnalysis", None)
 
-    # Premium operational sections are removed entirely for free-tier users.
-    # (crewInsights only exists on legacy stored reports — the section was
-    # removed platform-wide 2026-07; the pop stays as defence for old data.)
-    data.pop("crewInsights", None)
-    data.pop("weatherLogistics", None)
+    # weatherLogistics used to be popped here alongside crewInsights (the latter
+    # is now handled with the other withheld sections above). It is an Explorer
+    # section as of this change and must survive to the response — this is the
+    # line that would silently undo that, so it is called out rather than deleted
+    # without trace.
 
     return data
 

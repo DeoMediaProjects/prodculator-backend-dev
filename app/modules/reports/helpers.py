@@ -12,8 +12,13 @@ from typing import Any
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-# Data freshness threshold — flag incentives older than this many days
-STALE_DAYS = 365
+# Data freshness threshold — flag incentives older than this many days.
+#
+# Was 365, which is longer than the interval between fiscal events that change
+# these rates: UK data verified 2026-03-27 would not have flagged until March
+# 2027, so a rate could go stale for a full year with the report saying nothing.
+# 180 days is roughly two budget cycles and is the threshold the owner chose.
+STALE_DAYS = 180
 
 # Default ATL (above-the-line) deduction percentage.  Tax credit programmes
 # exclude above-the-line costs from qualifying spend — 15% of total budget
@@ -296,6 +301,64 @@ def format_rate(rate_gross: Any, rate_net: Any) -> str | None:
     if gross is not None and gross > 0:
         return f"{gross:g}% gross"
     return None
+
+
+#: Cap labels that assert an absence rather than describing a ceiling. These come
+#: straight from the v4 source rows ("No cap", "No cap identified", "No flat cap
+#: identified — interim payments available once ..."), and a display chain that
+#: passes them through states something the engine cannot stand behind: UK AVEC
+#: showed "No cap" while the 80% core-expenditure restriction was being applied
+#: to its qualifying spend. Only "no formal cap" was filtered before.
+#:
+#: Matched as a prefix on the normalised string so trailing qualifications are
+#: caught too. A row whose only cap information is one of these yields no cap
+#: label at all, which lets the qualifying-spend cap below be stated instead.
+_VACUOUS_CAP_PREFIXES = (
+    "no cap",
+    "no formal cap",
+    "no flat cap",
+    "no per-project cap",
+    "none",
+    "n/a",
+    "uncapped",
+    "not stated",
+    "no ceiling",
+)
+
+
+def is_vacuous_cap_label(text: Any) -> bool:
+    """True when a DB cap label asserts no cap rather than describing one."""
+    if not text:
+        return True
+    normalised = str(text).strip().lower()
+    if not normalised:
+        return True
+    return normalised.startswith(_VACUOUS_CAP_PREFIXES)
+
+
+def format_qualifying_spend_cap(
+    cap_pct: Any,
+    cap_amount: Any = None,
+    cap_currency: str = "GBP",
+) -> str | None:
+    """Describe a qualifying-spend restriction for display.
+
+    ``qualifying_spend_cap_pct`` was applied to the money in exactly one place and
+    rendered in none, so an 80% reduction reached the producer's waterfall with no
+    statement anywhere that it had happened. This is the canonical label for it.
+    """
+    pct = to_float(cap_pct)
+    parts: list[str] = []
+    if pct is not None and 0 < pct < 100:
+        parts.append(f"{pct:g}% of core expenditure qualifies")
+    amount = to_float(cap_amount)
+    if amount is not None and amount > 0:
+        formatted = format_cap(amount, cap_currency)
+        if formatted:
+            parts.append(f"qualifying spend capped at {formatted}")
+    if not parts:
+        return None
+    return ", ".join(parts)
 
 
 def format_cap(cap_amount: Any, cap_currency: str) -> str | None:

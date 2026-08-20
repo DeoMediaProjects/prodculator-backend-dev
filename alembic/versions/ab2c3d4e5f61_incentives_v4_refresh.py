@@ -73,14 +73,70 @@ _SUPPLEMENTARY_PROGRAMMES = {
     ("United Kingdom", "UK VFX Expenditure Credit (Uplift)"),
 }
 
+#: Corrections to the v4 source's ``qsType``, applied after parsing so the source
+#: rows below stay verbatim.
+#:
+#: BC PSTC is a labour credit — its own qsBasis reads "36% of accredited BC labour
+#: expenditure" and its rateType is ``labour_credit`` — but the source typed it
+#: ``local_spend`` with a 100% cap, so the engine applied 36% to the whole budget
+#: less the standard ATL estimate. On a £20M production that is a £17M base where
+#: the real one is BC labour only, roughly 2.8x too high, in a figure that goes
+#: into investor documents.
+#:
+#: ``labour`` is the honest type. It requires a SOURCED
+#: ``qualifying_spend_labour_pct`` to compute anything, which the v4 source does
+#: not carry, so BC will present without a computed rebate until a share is
+#: sourced. That is this codebase's existing rule for labour-only credits
+#: (ReportValidator._qualifying_spend_for) and the deliberate choice: no figure
+#: beats a confidently wrong one.
+_QS_TYPE_CORRECTIONS = {
+    ("British Columbia", "BC Production Services Tax Credit (PSTC) — provincial"): "labour",
+}
+
+
+def _corrected_qs_type(territory: str, program: str, qs_type):
+    """qsType with documented per-row corrections applied.
+
+    Matched on the programme name's leading text so an em-dash/hyphen variant in
+    the source does not silently miss — a name-match miss is how several earlier
+    fixes in this table became no-ops.
+    """
+    for (terr, prog), corrected in _QS_TYPE_CORRECTIONS.items():
+        if territory != terr:
+            continue
+        stem = prog.split("—")[0].strip().lower()
+        if program.strip().lower().startswith(stem):
+            return corrected
+    return qs_type
+
 _MONEY_RE = re.compile(r"^([A-Z]{3})\s+([\d,]+)$")
 _MONEY_PREFIX_RE = re.compile(r"^([A-Z]{3})\s+([\d,]+)")
 _FIRST_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)")
+_MONEY_ANYWHERE_RE = re.compile(r"\b([A-Z]{3})\s+([\d,]{4,})")
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 _DAYS_RANGE_RE = re.compile(r"^(\d+)\s*[\u2013\u2014-]\s*(\d+)\s*days")
 
 
 def _is_none_str(v) -> bool:
     return v is None or (isinstance(v, str) and v.strip().lower() in _NONE_STRINGS)
+
+
+#: Cap strings that state an absence. Kept in step with
+#: ``helpers._VACUOUS_CAP_PREFIXES``, which filters the same phrasings at display
+#: time; this copy decides whether an unparsable cap is worth a warning.
+_NO_CAP_PREFIXES = (
+    "no cap",
+    "no formal cap",
+    "no flat cap",
+    "no per-project cap",
+    "uncapped",
+    "not stated",
+    "no ceiling",
+)
+
+
+def _asserts_no_cap(v) -> bool:
+    return str(v or "").strip().lower().startswith(_NO_CAP_PREFIXES)
 
 
 def _first_number(v) -> float | None:
@@ -98,6 +154,52 @@ def _money(v, *, prefix: bool = False) -> tuple[str, float] | None:
     if not m:
         return None
     return m.group(1), float(m.group(2).replace(",", ""))
+
+
+def _embedded_money(v) -> tuple[str, float] | None:
+    """First 'CCY 1,234,567' appearing anywhere in a sentence.
+
+    ``_money`` anchors at the start of the string, so any cap stated with a
+    qualification around it parsed to None and was dropped in silence:
+    Belgium's "EUR 7,250,000 (~USD 8,000,000) maximum amount that can be
+    sheltered per project" and Mexico's "MXN 40,000,000 per production/
+    beneficiary; MXN 400,000,000 total programme limit" both reached the engine
+    as uncapped programmes. This keeps the leading (per-project) figure, which
+    is the binding one in every affected row.
+    """
+    if _is_none_str(v):
+        return None
+    m = _MONEY_ANYWHERE_RE.search(str(v))
+    if not m:
+        return None
+    return m.group(1), float(m.group(2).replace(",", ""))
+
+
+def _qualifying_spend_cap(v) -> tuple[float | None, float | None, str | None]:
+    """Split a qualifying-spend cap string into (pct, absolute amount, currency).
+
+    ``_first_number`` was used here, which keeps the leading percentage and
+    discards everything after it. The UK IFTC row reads
+
+        "80% of core expenditure, capped at GBP 12,000,000 qualifying
+         expenditure regardless of budget size within eligibility"
+
+    and stored 80.0 alone. The £12M ceiling is the operative constraint above a
+    £15M budget — without it the engine scaled qualifying spend with the budget
+    and overstated it by up to £6.4M, so both halves are now returned.
+    """
+    if _is_none_str(v):
+        return None, None, None
+    text = str(v)
+    pct = None
+    pct_match = _PCT_RE.search(text)
+    if pct_match:
+        pct = float(pct_match.group(1))
+    amount = currency = None
+    parsed = _embedded_money(text)
+    if parsed:
+        currency, amount = parsed
+    return pct, amount, currency
 
 
 def _build_row(src: dict, now: str) -> dict:
@@ -121,10 +223,16 @@ def _build_row(src: dict, now: str) -> dict:
     # Rebate cap — numeric only when the cap really is an output (rebate)
     # ceiling and the string is a pure amount.
     rebate_cap_amount = rebate_cap_ccy = None
+    rebate_cap_raw = src.get("rebateCap")
     if src.get("capType") == "output":
-        parsed = _money(src.get("rebateCap"))
+        parsed = _money(rebate_cap_raw) or _embedded_money(rebate_cap_raw)
         if parsed:
             rebate_cap_ccy, rebate_cap_amount = parsed
+        elif not _is_none_str(rebate_cap_raw) and not _asserts_no_cap(rebate_cap_raw):
+            # Never drop a stated ceiling in silence. If it cannot be reduced to a
+            # number it still has to reach the reader as prose, the same way a
+            # nuanced qsMin does above.
+            warnings.append(f"Rebate cap: {rebate_cap_raw}")
 
     per_person_amount = per_person_ccy = None
     parsed = _money(src.get("perPersonCap"))
@@ -166,9 +274,9 @@ def _build_row(src: dict, now: str) -> dict:
     except (TypeError, ValueError):
         pass
 
-    qs_cap_pct = None
-    if not _is_none_str(src.get("qsCapPct")):
-        qs_cap_pct = _first_number(src["qsCapPct"])
+    qs_cap_pct, qs_cap_amount, qs_cap_ccy = _qualifying_spend_cap(src.get("qsCapPct"))
+    if qs_cap_amount is not None and qs_cap_ccy is None:
+        qs_cap_ccy = "GBP"
 
     last_verified = src.get("lastVerified")
 
@@ -216,8 +324,12 @@ def _build_row(src: dict, now: str) -> dict:
         "net_rate_pct": _first_number(src.get("rateNet")),
         "rate_gross_display": src.get("rateGross"),
         "rate_net_display": src.get("rateNet"),
-        "qualifying_spend_type": src.get("qsType"),
+        "qualifying_spend_type": _corrected_qs_type(
+            territory, program, src.get("qsType"),
+        ),
         "qualifying_spend_cap_pct": qs_cap_pct,
+        "qualifying_spend_cap_amount": qs_cap_amount,
+        "qualifying_spend_cap_currency": qs_cap_ccy,
         "qualifying_spend_min": qs_min_amount,
         "qualifying_spend_currency": qs_min_ccy,
         "qs_basis": clean_fields["qs_basis"],
@@ -275,6 +387,21 @@ def upgrade() -> None:
     # it is not, and the extracted audit fragments would have nowhere to go.
     # Create it here if missing so the data team keeps the annotations either
     # way. g7b8c9d0e1f2 tolerates the column already existing.
+    # Same forward-compatibility pattern for the qualifying-spend cap columns,
+    # formally added by migration u1v2w3x4y5z6. A fresh build runs this loader
+    # first and must have somewhere to put the absolute ceiling it now parses.
+    _existing = {c["name"] for c in sa.inspect(conn).get_columns("incentive_programs")}
+    if "qualifying_spend_cap_amount" not in _existing:
+        op.add_column(
+            "incentive_programs",
+            sa.Column("qualifying_spend_cap_amount", sa.Float(), nullable=True),
+        )
+    if "qualifying_spend_cap_currency" not in _existing:
+        op.add_column(
+            "incentive_programs",
+            sa.Column("qualifying_spend_cap_currency", sa.String(3), nullable=True),
+        )
+
     if not any(
         c["name"] == "internal_audit_notes"
         for c in sa.inspect(conn).get_columns("incentive_programs")

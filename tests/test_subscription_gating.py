@@ -301,7 +301,14 @@ class TestReportDataFiltering:
         response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
         assert len(response.json()["analysis"]["locationRankings"]) == 6
 
-    def test_free_user_gets_no_premium_sections(self, client):
+    def test_free_user_gets_the_explorer_section_set(self, client):
+        """Explorer carries 8 of the 13 sections (owner decision, 2026-08-19).
+
+        Comparables, Weather & Logistics and Grant & Funding used to be removed
+        here; they are Explorer sections now. Script Intelligence, Territory
+        Analysis, Financial Analysis, Tax Incentive Analysis and Festivals stay
+        paid, and Investor Summary stays Producer+.
+        """
         free_user = _make_user(plan="free")
         db = FakeSupabase({"reports": [_FREE_REPORT]})
         client.app.dependency_overrides[get_current_user] = lambda: free_user
@@ -309,12 +316,21 @@ class TestReportDataFiltering:
 
         response = client.get("/api/reports/report-1", headers={"Authorization": "Bearer token"})
         analysis = response.json()["analysis"]
-        assert "financialAnalysis" not in analysis
-        assert "crewInsights" not in analysis
-        assert "comparables" not in analysis
-        assert "weatherLogistics" not in analysis
-        assert "fundingOpportunities" not in analysis
-        assert "investorSummary" not in analysis
+
+        # Withheld outright.
+        for withheld in (
+            "crewInsights",
+            "investorSummary",
+            "scriptIntelligence",
+            "territoryDeepDives",
+            "festivalRecommendations",
+        ):
+            assert withheld not in analysis, f"{withheld} should stay paid"
+
+        # financialAnalysis survives only as a locked teaser: territory and
+        # programme labels, never a figure.
+        for scenario in (analysis.get("financialAnalysis") or {}).get("budgetScenarios", []):
+            assert set(scenario) <= {"territory", "programme"}, scenario
 
     def test_professional_user_gets_full_report_but_no_investor_summary(self, client):
         pro_user = _make_user(plan="professional")
