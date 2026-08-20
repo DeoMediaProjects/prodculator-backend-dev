@@ -246,7 +246,14 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {%- endmacro %}
 
 {% macro dimbar(label, value) -%}
-{% if value is not none %}
+{#
+  `value is not none` does not catch a MISSING key: loc.someScore on a dict
+  without it yields Jinja Undefined, which is not none, so the guard passed and
+  `[value, 100] | min` raised UndefinedError — a 500 on PDF generation. Harmless
+  while only full reports reached this macro; Explorer reports do now, and their
+  rows have had fields removed by the tier filter.
+#}
+{% if value is not none and value is not undefined %}
 <div class="dim">
   <div class="dk"><span>{{ label }}</span><span>{{ value }}</span></div>
   <div class="dt"><div class="df" style="width:{{ [value, 100] | min }}%"></div></div>
@@ -373,18 +380,34 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
    omits it for previews and the free-tier filter strips it, so its presence
    here is the tier gate. #}
 {% set readiness = report.financialReadiness %}
+{#
+  Explorer (free) carries 8 of the 13 sections. `is_preview` used to gate all of
+  them at once, which is why the free PDF read as a locked contents page.
+
+  These five stay paid. Everything else renders for real, with monetary values
+  already removed upstream by _build_free_tier_report_data — the API is the
+  authority on what a figure may say; this template only decides what appears.
+
+  Keep in step with router._EXPLORER_SECTIONS and ReportViewer's
+  LOCKED_FOR_EXPLORER.
+#}
+{% set lock_script_intel   = is_preview %}
+{% set lock_territory      = is_preview %}
+{% set lock_financial      = is_preview %}
+{% set lock_incentives     = is_preview %}
+{% set lock_festivals      = is_preview %}
 {% set secs = [] %}
 {% set _ = secs.append({'id': 'exec', 'title': 'Executive Summary', 'locked': false}) %}
-{% if report.scriptStats or report.genre %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': false}) %}{% endif %}
-{% set _ = secs.append({'id': 'strategy', 'title': 'Production Location Strategy', 'locked': is_preview}) %}
-{% if report.territoryDeepDives %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': true}) %}{% endif %}
-{% if scenarios and not is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': true}) %}{% endif %}
-{% if readiness and not is_preview %}{% set _ = secs.append({'id': 'readiness', 'title': 'Financial Readiness', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'readiness', 'title': 'Financial Readiness', 'locked': true}) %}{% endif %}
-{% if report.weatherLogistics and not is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': true}) %}{% endif %}
-{% if report.incentiveEstimates and not is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': true}) %}{% endif %}
-{% if grants_only and not is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': true}) %}{% endif %}
-{% if report.comparables and not is_preview %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': true}) %}{% endif %}
-{% if report.festivalRecommendations %}{% set _ = secs.append({'id': 'festivals', 'title': 'Where Your Film Could Be Seen — Festival Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'festivals', 'title': 'Festival Recommendations', 'locked': true}) %}{% endif %}
+{% if (report.scriptStats or report.genre) and not lock_script_intel %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': false}) %}{% elif lock_script_intel %}{% set _ = secs.append({'id': 'script', 'title': 'Script Intelligence', 'locked': true}) %}{% endif %}
+{% set _ = secs.append({'id': 'strategy', 'title': 'Production Location Strategy', 'locked': false}) %}
+{% if report.territoryDeepDives and not lock_territory %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': false}) %}{% elif lock_territory %}{% set _ = secs.append({'id': 'deepdives', 'title': 'Territory Analysis', 'locked': true}) %}{% endif %}
+{% if scenarios and not lock_financial %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': false}) %}{% elif lock_financial %}{% set _ = secs.append({'id': 'financial', 'title': 'Financial Analysis', 'locked': true}) %}{% endif %}
+{% if readiness %}{% set _ = secs.append({'id': 'readiness', 'title': 'Financial Readiness', 'locked': false}) %}{% endif %}
+{% if report.weatherLogistics %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% endif %}
+{% if report.incentiveEstimates and not lock_incentives %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': false}) %}{% elif lock_incentives %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': true}) %}{% endif %}
+{% if grants_only %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% endif %}
+{% if report.comparables %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': false}) %}{% endif %}
+{% if report.festivalRecommendations and not lock_festivals %}{% set _ = secs.append({'id': 'festivals', 'title': 'Where Your Film Could Be Seen — Festival Recommendations', 'locked': false}) %}{% elif lock_festivals %}{% set _ = secs.append({'id': 'festivals', 'title': 'Festival Recommendations', 'locked': true}) %}{% endif %}
 {% if report.distributorRecommendations %}{% set _ = secs.append({'id': 'distributors', 'title': 'Who Could Buy Your Film — Distributor Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'distributors', 'title': 'Distributor Recommendations', 'locked': true}) %}{% endif %}
 {% set _ = secs.append({'id': 'next', 'title': 'Next Steps & Disclaimers', 'locked': false}) %}
 {% set num_map = {} %}
@@ -632,7 +655,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ PRODUCTION LOCATION STRATEGY ═══════════════ -->
-{% if not is_preview and rankings %}
+{% if rankings %}
 <div class="page" id="sec-strategy">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['strategy'] }} — Production Location Strategy</div>
@@ -750,7 +773,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ TERRITORY DEEP DIVES ═══════════════ -->
-{% if not is_preview and report.territoryDeepDives %}
+{% if not lock_territory and report.territoryDeepDives %}
 <div class="page" id="sec-deepdives">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['deepdives'] }} — Territory Analysis</div>
@@ -809,7 +832,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ FINANCIAL ANALYSIS ═══════════════ -->
-{% if not is_preview and scenarios %}
+{% if not lock_financial and scenarios %}
 <div class="page" id="sec-financial">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['financial'] }} — Financial Analysis</div>
@@ -933,7 +956,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 <!-- ═══════════════ FINANCIAL READINESS ═══════════════ -->
 {# Every figure on this page is computed by reports/readiness.py and carries the
    input it came from. Nothing here is AI-generated, so nothing here is hedged. #}
-{% if not is_preview and readiness %}
+{% if readiness %}
 {% set vclass = {'READY': 'vready', 'CONDITIONAL': 'vcond', 'NOT READY': 'vfail', 'INSUFFICIENT DATA': 'vnodata'} %}
 {% set schip = {'ready': 'chip bank', 'conditional': 'chip verify', 'not_ready': 'chip notbank', 'insufficient_data': 'sev sev-info'} %}
 {% set sword = {'ready': 'Ready', 'conditional': 'Conditional', 'not_ready': 'Not ready', 'insufficient_data': 'No data'} %}
@@ -1044,7 +1067,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ WEATHER & LOGISTICS ═══════════════ -->
-{% if not is_preview and report.weatherLogistics %}
+{% if report.weatherLogistics %}
 <div class="page" id="sec-weather">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['weather'] }} — Weather &amp; Logistics</div>
@@ -1080,7 +1103,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ TAX INCENTIVE ANALYSIS ═══════════════ -->
-{% if not is_preview and report.incentiveEstimates %}
+{% if not lock_incentives and report.incentiveEstimates %}
 <div class="page" id="sec-incentives">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['incentives'] }} — Tax Incentive Analysis</div>
@@ -1224,7 +1247,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ GRANTS ═══════════════ -->
-{% if not is_preview and grants_only %}
+{% if grants_only %}
 <div class="page" id="sec-grants">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['grants'] }} — Grant &amp; Funding Opportunities</div>
@@ -1256,7 +1279,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ COMPARABLES ═══════════════ -->
-{% if not is_preview and report.comparables %}
+{% if report.comparables %}
 <div class="page" id="sec-comparables">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['comparables'] }} — Comparable Productions</div>

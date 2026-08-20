@@ -607,16 +607,56 @@ class ReportValidator:
         else:
             # 'total' or 'local_spend' — apply qualifying_spend_cap_pct if set
             qs_cap_pct = _to_float(db_row.get("qualifying_spend_cap_pct"))
-            if qs_cap_pct is not None and 0 < qs_cap_pct <= 100:
+            capped_note: str | None = None
+            if qs_cap_pct is not None and 0 < qs_cap_pct < 100:
                 qualifying_spend = budget_gbp * (qs_cap_pct / 100.0)
+                capped_note = (
+                    f"Qualifying spend is capped at {qs_cap_pct:g}% of core expenditure "
+                    f"by this programme's rules — the rate applies to "
+                    f"{_currency_symbol('GBP')}{qualifying_spend:,.0f}, not the full budget."
+                )
             else:
                 qualifying_spend = budget_gbp
+
+            # An absolute ceiling on qualifying expenditure, which does NOT rise with
+            # the budget. The UK IFTC is the case this exists for: qualifying spend is
+            # MIN(80% of core expenditure, £12M), where £12M is 80% of a fixed £15M
+            # reference amount. Only the percentage survived ingest before, so
+            # qualifying spend scaled with the budget and was overstated by up to
+            # £6.4M on projects between £15M and the £23.5M eligibility ceiling.
+            qs_cap_amount = _to_float(db_row.get("qualifying_spend_cap_amount"))
+            if qs_cap_amount is not None and qs_cap_amount > 0:
+                cap_ccy = (db_row.get("qualifying_spend_cap_currency") or "GBP").upper()
+                cap_in_gbp = qs_cap_amount
+                if cap_ccy != "GBP":
+                    fx = cls._REBATE_CAP_STATIC_FX.get(cap_ccy)
+                    cap_in_gbp = (qs_cap_amount / fx) if fx else None
+                if cap_in_gbp is not None and qualifying_spend > cap_in_gbp:
+                    qualifying_spend = cap_in_gbp
+                    capped_note = (
+                        f"Qualifying spend is capped at "
+                        f"{_currency_symbol(cap_ccy)}{qs_cap_amount:,.0f} {cap_ccy} by this "
+                        f"programme's rules — a fixed ceiling that does not rise with the "
+                        f"budget. The rate applies to that amount, not the full budget."
+                    )
+
             qualifying_spend_pct = (qualifying_spend / budget_gbp * 100) if budget_gbp > 0 else 100
             if qs_type == "local_spend":
                 qualifying_spend_note = (
                     "Local-spend credit: rate applies to qualifying in-territory expenditure "
                     "only, not the total production budget. The figure shown assumes the full "
                     "qualifying spend is incurred in this territory."
+                )
+            # The percentage/absolute cap was applied to the money and rendered
+            # nowhere: UK AVEC reduced qualifying spend by 20% and reported
+            # "No cap". Every other branch of this method explains itself; this
+            # one now does too, and the note is appended rather than replacing
+            # the local-spend explanation, which is a separate fact.
+            if capped_note:
+                qualifying_spend_note = (
+                    f"{qualifying_spend_note} {capped_note}"
+                    if qualifying_spend_note
+                    else capped_note
                 )
 
         return qs_type, qualifying_spend, qualifying_spend_pct, qualifying_spend_note
@@ -906,8 +946,22 @@ class ReportValidator:
                     f"calculated rebate exceeds this ceiling and has been reduced to "
                     f"the programme maximum"
                 )
+                # rebate_cap_amount is a ceiling on the GROSS credit. Assigning it
+                # to net_rebate as well overstated the investor-facing figure by
+                # the whole gross-to-net haircut: the UK IFTC ceiling is £6.36M
+                # gross, whose net value is £4.77M (× 39.75/53), and every capped
+                # project reported £6.36M net — 33% high on the one number the
+                # AVEC row's own ai_rule says must never be overstated.
+                #
+                # The cap binds on gross; net is then the same proportion of the
+                # capped gross that the programme's own rates describe. With no
+                # usable rate pair there is no defensible ratio, so net follows
+                # gross rather than inventing one.
+                if effective_rate_gross > 0 and effective_rate_net > 0:
+                    net_rebate = cap_gbp * (effective_rate_net / effective_rate_gross)
+                else:
+                    net_rebate = cap_gbp
                 gross_rebate = cap_gbp
-                net_rebate = cap_gbp
 
         result: dict = {
             "qualifying_spend": qualifying_spend,

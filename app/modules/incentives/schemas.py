@@ -30,6 +30,8 @@ class IncentiveProgram(BaseModel):
     capPerPersonCurrency: str | None = None
     qualifyingSpendMin: float | None = None
     qualifyingSpendCapPct: float | None = None
+    qualifyingSpendCapAmount: float | None = None
+    qualifyingSpendCapCurrency: str | None = None
     qualifyingSpendCurrency: str | None = None
     paymentTimelineDaysMin: int | None = None
     paymentTimelineDaysMax: int | None = None

@@ -32,6 +32,8 @@ from app.modules.reports.helpers import (
     is_zero_rate,
     format_rate,
     format_cap,
+    format_qualifying_spend_cap,
+    is_vacuous_cap_label,
     format_money,
     currency_symbol,
     parse_money_string,
@@ -1366,8 +1368,11 @@ class ReportBuilder:
                 est["cap"] = f"{formatted_rebate_cap} per project"
         if "cap" not in est:
             db_cap_label = (cap_row.get("cap") or "").strip()
-            # Skip vague/outdated labels like "No formal cap"
-            if db_cap_label and "no formal cap" not in db_cap_label.lower():
+            # Skip labels that assert an absence rather than describing a ceiling.
+            # `cap` is populated from the v4 source's `rebateCap`, so UK AVEC's
+            # "No cap" was being printed verbatim as this programme's cap while
+            # its 80% qualifying-spend restriction went unstated entirely.
+            if not is_vacuous_cap_label(db_cap_label):
                 est["cap"] = db_cap_label
         if "cap" not in est:
             cap_amount = cap_row.get("cap_amount")
@@ -1375,6 +1380,17 @@ class ReportBuilder:
             canonical_cap = format_cap(cap_amount, cap_currency)
             if canonical_cap is not None:
                 est["cap"] = canonical_cap
+        if "cap" not in est:
+            # A programme with no rebate ceiling and no budget threshold may still
+            # restrict what counts as qualifying spend. That restriction changes the
+            # money, so it is the cap the producer needs to read.
+            est["cap"] = format_qualifying_spend_cap(
+                cap_row.get("qualifying_spend_cap_pct"),
+                cap_row.get("qualifying_spend_cap_amount"),
+                cap_row.get("qualifying_spend_cap_currency")
+                or cap_row.get("currency")
+                or "GBP",
+            ) or "No cap stated"
 
         # Payment timeline, from the one canonical resolver.
         est["paymentTiming"] = resolve_payment_timing(
