@@ -35,6 +35,8 @@ from app.modules.reports.helpers import (  # noqa: F401 — re-exported for back
     budget_to_display as _budget_to_display,
     parse_money_string as _parse_money_string,
     DEFAULT_SHOOT_DAYS_PER_WEEK,
+    non_entitlement_mechanism,
+    mechanism_no_figure_reason,
 )
 from app.modules.reports.cross_section import validate_cross_section
 from app.modules.reports.fabrication_guard import scrub_report
@@ -524,6 +526,12 @@ class ReportValidator:
         All logic is driven by dataset fields — no territory names are
         referenced.
         """
+        # Mechanism gate, ahead of any arithmetic. A programme whose statutory
+        # mechanism is not an entitlement must never produce a rebate figure, and
+        # its headline rate is not a rate this production can claim.
+        if non_entitlement_mechanism(db_row):
+            return None
+
         rate_gross = _to_float(db_row.get("rate_gross"))
         rate_net = _to_float(db_row.get("rate_net"))
         if (rate_gross is None or rate_gross == 0) and (rate_net is None or rate_net == 0):

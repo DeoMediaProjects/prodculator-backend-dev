@@ -89,6 +89,33 @@ _SUPPLEMENTARY_PROGRAMMES = {
 #: sourced. That is this codebase's existing rule for labour-only credits
 #: (ReportValidator._qualifying_spend_for) and the deliberate choice: no figure
 #: beats a confidently wrong one.
+#: Statutory mechanism per programme, for records whose mechanism is not an
+#: entitlement. Set here as well as in migration w3x4y5z6a7b8 because this loader
+#: deletes and reinserts every row, so a fresh build would otherwise come up with
+#: the classification missing and these programmes would resume emitting a rebate
+#: figure they must never produce.
+#:
+#: Matched on the leading text of the programme name, before any dash, so a
+#: punctuation variant in the source does not silently miss.
+_MECHANISM_BY_PROGRAMME = {
+    ("Belgium", "Belgian Film Tax Shelter"): "INVESTOR_TAX_SHELTER",
+    ("Mexico", "EFICINE"): "INVESTOR_TAX_SHELTER",
+    ("Singapore", "IMDA Location Incentive"): "COMPETITIVE_GRANT",
+    ("Japan", "VIPO Japan Location Incentive"): "COMPETITIVE_GRANT",
+    ("Brazil", "ANCINE/FSA Film Incentive"): "NO_PROGRAMME",
+    ("Nigeria", "No Formal International Production Rebate"): "NO_PROGRAMME",
+}
+
+
+def _mechanism_engine(territory: str, program: str):
+    """qs_engine_type for a non-entitlement mechanism, or None if not one."""
+    prog = program.strip().lower()
+    for (terr, stem), engine in _MECHANISM_BY_PROGRAMME.items():
+        if territory == terr and prog.startswith(stem.strip().lower()):
+            return engine
+    return None
+
+
 _QS_TYPE_CORRECTIONS = {
     ("British Columbia", "BC Production Services Tax Credit (PSTC) — provincial"): "labour",
 }
@@ -327,6 +354,10 @@ def _build_row(src: dict, now: str) -> dict:
         "qualifying_spend_type": _corrected_qs_type(
             territory, program, src.get("qsType"),
         ),
+        # v2 statutory engine. Only the non-entitlement mechanisms are set here;
+        # the remaining engines arrive with their verified rules in the migration
+        # waves, and NULL keeps a record on its pre-v2 behaviour until then.
+        "qs_engine_type": _mechanism_engine(territory, program),
         "qualifying_spend_cap_pct": qs_cap_pct,
         "qualifying_spend_cap_amount": qs_cap_amount,
         "qualifying_spend_cap_currency": qs_cap_ccy,
@@ -395,6 +426,11 @@ def upgrade() -> None:
         op.add_column(
             "incentive_programs",
             sa.Column("qualifying_spend_cap_amount", sa.Float(), nullable=True),
+        )
+    if "qs_engine_type" not in _existing:
+        op.add_column(
+            "incentive_programs",
+            sa.Column("qs_engine_type", sa.String(32), nullable=True),
         )
     if "qualifying_spend_cap_currency" not in _existing:
         op.add_column(

@@ -178,7 +178,7 @@ class AuthService:
             raise ValueError("User profile not found")
 
         self.supabase.table("users").update(
-            {"last_active": datetime.now(timezone.utc).isoformat()}
+            {"last_active": datetime.now(timezone.utc)}
         ).eq("id", auth_response.user.id).execute()
 
         user = AuthUser(
@@ -355,7 +355,7 @@ class AuthService:
         user_id = auth_response.user.id
 
         self.supabase.table("users").update(
-            {"last_active": datetime.now(timezone.utc).isoformat()}
+            {"last_active": datetime.now(timezone.utc)}
         ).eq("id", user_id).execute()
 
         result = (

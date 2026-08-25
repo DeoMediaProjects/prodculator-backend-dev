@@ -29,6 +29,7 @@ class IncentiveProgram(BaseModel):
     capPerPerson: float | None = None
     capPerPersonCurrency: str | None = None
     qualifyingSpendMin: float | None = None
+    qsEngineType: str | None = None
     qualifyingSpendCapPct: float | None = None
     qualifyingSpendCapAmount: float | None = None
     qualifyingSpendCapCurrency: str | None = None

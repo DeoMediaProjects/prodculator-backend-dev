@@ -12,6 +12,85 @@ from typing import Any
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+#: Statutory qualifying-spend engines, from the Incentive Engine v2 specification.
+#: Stored on the programme record as ``qs_engine_type``. NULL means the record has
+#: not been migrated to a v2 engine yet and keeps its pre-v2 behaviour, so this
+#: field can be populated programme by programme without a flag day.
+QS_ENGINE_TYPES = frozenset({
+    "CORE_LOWER_OF",
+    "ELIGIBLE_LOCAL_SPEND",
+    "QUALIFIED_LABOUR",
+    "MULTI_BUCKET",
+    "QAPE",
+    "QNZPE",
+    "VFX_ONLY",
+    "PDV_ONLY",
+    "TIERED_SPEND",
+    "INVESTOR_TAX_SHELTER",
+    "COMPETITIVE_GRANT",
+    "NO_PROGRAMME",
+})
+
+#: Mechanisms that are not an entitlement, and therefore must never produce a
+#: rebate figure.
+#:
+#: An investor tax shelter returns value to a third-party investor through the tax
+#: system; a competitive grant is awarded at a committee's discretion; a
+#: no-programme record exists to record the absence of one. None of the three is
+#: a percentage a production can claim against its spend, yet each carried a
+#: headline rate that the engine was multiplying out: Belgium 42%, Singapore 40%
+#: and Mexico EFICINE 10% were being presented with the same authority as a UK
+#: statutory credit.
+#:
+#: A potential award may still be modelled for these mechanisms, but only from
+#: their own official rules and never as a rate applied to production spend. That
+#: is the v2 result contract's job; until it exists, no figure is the honest
+#: output.
+NON_ENTITLEMENT_ENGINES = frozenset({
+    "INVESTOR_TAX_SHELTER",
+    "COMPETITIVE_GRANT",
+    "NO_PROGRAMME",
+})
+
+#: Why no figure is shown, keyed by engine. Surfaced to the reader so a missing
+#: number reads as a statement about the mechanism rather than missing data.
+MECHANISM_NO_FIGURE_REASON: dict[str, str] = {
+    "INVESTOR_TAX_SHELTER": (
+        "This programme is an investor tax shelter, not a production rebate. The "
+        "benefit is delivered to an investor through the tax system, so the "
+        "headline percentage is not a rate this production can claim against its "
+        "spend. Model the investment structure with a tax adviser."
+    ),
+    "COMPETITIVE_GRANT": (
+        "This programme is a competitive award decided by the awarding body, not "
+        "an entitlement. No amount can be calculated from production spend, and "
+        "any published maximum is a ceiling on what could be granted rather than "
+        "a figure to budget against."
+    ),
+    "NO_PROGRAMME": (
+        "No claimable production incentive programme is recorded for this "
+        "territory. The record exists to state that absence rather than to imply "
+        "an unverified opportunity."
+    ),
+}
+
+
+def non_entitlement_mechanism(row: Any) -> bool:
+    """True when this programme's mechanism forbids a calculated rebate figure."""
+    if not isinstance(row, dict):
+        return False
+    engine = str(row.get("qs_engine_type") or "").strip().upper()
+    return engine in NON_ENTITLEMENT_ENGINES
+
+
+def mechanism_no_figure_reason(row: Any) -> str | None:
+    """The reader-facing explanation for a suppressed figure, or None."""
+    if not isinstance(row, dict):
+        return None
+    engine = str(row.get("qs_engine_type") or "").strip().upper()
+    return MECHANISM_NO_FIGURE_REASON.get(engine)
+
+
 # Data freshness threshold — flag incentives older than this many days.
 #
 # Was 365, which is longer than the interval between fiscal events that change

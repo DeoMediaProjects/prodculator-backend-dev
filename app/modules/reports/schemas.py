@@ -1,11 +1,151 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.core.territories import resolve_territory
+from app.modules.incentives.v2_contracts import (
+    CANONICAL_INPUTS,
+    is_comparison_mode,
+    reconcile_allocations,
+)
+from app.modules.incentives.v2_jurisdictions import (
+    UnknownJurisdiction,
+    resolve_jurisdiction,
+)
 
 
 # --- Input Schemas ---
+
+
+class ScenarioCalculationInput(BaseModel):
+    """One producer-supplied statutory cost base, with its provenance.
+
+    ``amount`` is deliberately optional and nullable. Null means the producer has
+    not supplied it; zero means they have told us it is nil. The two lead to
+    different calculation statuses, so collapsing them would defeat the rule the
+    v2 rebuild turns on.
+    """
+
+    input_key: str
+    amount: float | None = None
+    currency: str | None = None
+    input_status: Literal["known", "planning_assumption", "unknown"] = "unknown"
+    input_source: Literal[
+        "user_entered", "imported_budget", "verified_cost_report"
+    ] | None = None
+    programme_id: str | None = None
+    notes: str | None = None
+
+    @field_validator("input_key")
+    @classmethod
+    def known_canonical_key(cls, v: str) -> str:
+        """Reject an unknown input key.
+
+        The registry is deliberately generic so a new programme reuses an existing
+        key. Accepting an arbitrary key would let a caller invent a statutory base
+        the engine has no rule for, which is a silent no-op rather than an error.
+        """
+        if v not in CANONICAL_INPUTS:
+            raise ValueError(
+                f"{v!r} is not a canonical statutory input. Permitted keys: "
+                + ", ".join(sorted(CANONICAL_INPUTS))
+            )
+        return v
+
+    @field_validator("amount")
+    @classmethod
+    def not_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("A statutory cost base cannot be negative")
+        return v
+
+    @model_validator(mode="after")
+    def provenance_matches_the_amount(self) -> "ScenarioCalculationInput":
+        """An amount without provenance, or provenance without an amount, is a
+        contract error rather than something to guess at."""
+        if self.amount is None and self.input_status != "unknown":
+            raise ValueError(
+                "input_status must be 'unknown' when no amount is supplied; a "
+                "status of known or planning_assumption asserts a figure exists"
+            )
+        if self.amount is not None and self.input_status == "unknown":
+            raise ValueError(
+                "An amount was supplied with input_status 'unknown'. Say whether "
+                "it is 'known' or a 'planning_assumption', because the difference "
+                "decides whether the result is estimated or conditional"
+            )
+        return self
+
+
+class TerritoryScenario(BaseModel):
+    """One alternative territory the producer wants compared.
+
+    Scenarios are alternatives, not allocations. They are not summed and do not
+    need to total the production budget, which is why ``scenario_spend`` is
+    validated against nothing but itself.
+    """
+
+    scenario_id: str | None = None
+    #: Accepts a label, an ISO code or a subdivision code; normalised on write.
+    territory: str
+    territory_id: str | None = None
+    subdivision_id: str | None = None
+    #: Nullable on purpose. A territory selected with no spend entered yet is a
+    #: real state, and defaulting it to zero or to the budget is the substitution
+    #: this rebuild exists to remove.
+    scenario_spend: float | None = None
+    scenario_currency: str | None = None
+    scenario_spend_source: Literal[
+        "user_entered", "imported_budget", "unknown"
+    ] = "unknown"
+    #: Co-production only. The agreed share of the production this partner
+    #: represents. Meaningless in comparison mode, where territories are
+    #: alternatives rather than partners, so it is rejected there.
+    participation_percent: float | None = None
+    #: Co-production only. Neither value implies competent-authority approval,
+    #: which the treaty layer tracks separately.
+    partner_status: Literal["candidate", "confirmed"] | None = None
+    calculation_inputs: list[ScenarioCalculationInput] = []
+
+    @field_validator("scenario_spend")
+    @classmethod
+    def not_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("scenario_spend cannot be negative")
+        return v
+
+    @model_validator(mode="after")
+    def canonical_jurisdiction(self) -> "TerritoryScenario":
+        """Resolve to canonical IDs, rejecting anything unrecognised.
+
+        The existing country validator passes unrecognised input through as free
+        text. That is safe for prose and unsafe here: once the key selects a
+        financial formula, a typo becomes a scenario that matches no programme and
+        the report shows a territory with no analysis and no explanation.
+        """
+        try:
+            jurisdiction = resolve_jurisdiction(self.territory)
+        except UnknownJurisdiction as exc:
+            raise ValueError(str(exc)) from None
+        object.__setattr__(self, "territory_id", jurisdiction.territory_id)
+        object.__setattr__(self, "subdivision_id", jurisdiction.subdivision_id)
+
+        if self.participation_percent is not None and not (
+            0 <= self.participation_percent <= 100
+        ):
+            raise ValueError(
+                "participation_percent is a share of one production and must be "
+                "between 0 and 100"
+            )
+
+        keys = [i.input_key for i in self.calculation_inputs]
+        duplicates = {k for k in keys if keys.count(k) > 1}
+        if duplicates:
+            raise ValueError(
+                "A scenario cannot supply the same statutory input twice: "
+                + ", ".join(sorted(duplicates))
+            )
+        return self
 
 
 class CreateReportRequest(BaseModel):
@@ -68,6 +208,37 @@ class CreateReportRequest(BaseModel):
     # Expected completion date (intake contract: drives the festival matcher's
     # timing window; also stored as the signal's completion_window month).
     completion_date: str | None = None
+    #: v2 scenario ingestion. One alternative territory per compared jurisdiction,
+    #: each with its own expected spend and any statutory cost bases the producer
+    #: chose to supply. Authoritative for v2 calculations;
+    #: ``territories_considering`` remains read-only legacy compatibility.
+    #:
+    #: Empty is valid. A report generates without scenarios; what changes is that
+    #: no scenario-driven calculation can run, which downgrades a status rather
+    #: than blocking the wider report.
+    territory_scenarios: list[TerritoryScenario] = []
+
+    #: How the selected territories relate to one another. Not presentation: it
+    #: changes whether spends are alternatives or allocations, whether they
+    #: reconcile to the budget, and whether the report may rank them against each
+    #: other. Defaults to comparison, which is the existing behaviour.
+    production_structure_mode: Literal[
+        "comparison", "coproduction", "undecided"
+    ] = "comparison"
+    #: Co-production only. Spend belonging to the structure but not attributed to
+    #: a partner territory, so allocations can reconcile without forcing the
+    #: producer to invent a territory for the remainder.
+    unallocated_spend: float | None = None
+    #: Co-production only, and declared rather than determined. A route named here
+    #: is the producer's intent; whether a treaty applies is the treaty layer's
+    #: answer and competent-authority approval is a further step again.
+    co_production_route: str | None = None
+    #: Co-production only. Whether to surface selective supranational support.
+    #: Never a rebate and never committed finance.
+    supranational_support_interest: Literal[
+        "show_opportunity", "not_considering", "application_planned"
+    ] | None = None
+
     # Hard territory constraint declared by the producer ("Must Film In").
     must_film_in: str | None = None
     # Treaty co-production openness (yes/no/undecided per the intake contract).
@@ -144,7 +315,13 @@ class CreateReportRequest(BaseModel):
     @field_validator("territories_considering", mode="before")
     @classmethod
     def normalise_territories(cls, v: list[str] | None) -> list[str] | None:
-        """Normalise each territory string to the canonical label."""
+        """Normalise each territory string to the canonical label.
+
+        Left permissive deliberately. From v2 this field is legacy compatibility
+        only and is not authoritative for a calculation, so an unrecognised entry
+        may still travel through for creative and location analysis. The
+        authoritative path is ``territory_scenarios``, which rejects it.
+        """
         if not v:
             return v
         result: list[str] = []
@@ -152,6 +329,77 @@ class CreateReportRequest(BaseModel):
             t = resolve_territory(raw)
             result.append(t.label if t else raw)
         return result
+
+    @model_validator(mode="after")
+    def structure_mode_matches_the_scenarios(self) -> "CreateReportRequest":
+        """Reject co-production fields in comparison mode, and vice versa.
+
+        The two modes mean different things by the same number. In comparison
+        mode ``scenario_spend`` is one alternative and a participation share is
+        meaningless; in co-production mode it is an allocation within a single
+        structure. Accepting a participation share alongside alternatives would
+        leave a report that cannot say which reading applies.
+        """
+        comparison = is_comparison_mode(self.production_structure_mode)
+        if comparison:
+            offenders = [
+                s.territory for s in self.territory_scenarios
+                if s.participation_percent is not None or s.partner_status is not None
+            ]
+            if offenders:
+                raise ValueError(
+                    "participation_percent and partner_status describe partners in "
+                    "one production. In "
+                    f"{self.production_structure_mode} mode the territories are "
+                    "alternatives, so they do not apply to: "
+                    + ", ".join(offenders)
+                )
+            for field in ("unallocated_spend", "co_production_route",
+                          "supranational_support_interest"):
+                if getattr(self, field) is not None:
+                    raise ValueError(
+                        f"{field} belongs to a co-production structure and has no "
+                        f"meaning in {self.production_structure_mode} mode"
+                    )
+        if self.unallocated_spend is not None and self.unallocated_spend < 0:
+            raise ValueError("unallocated_spend cannot be negative")
+        return self
+
+    @property
+    def allocation_reconciliation(self) -> tuple[str, float | None]:
+        """Whether co-production allocations account for the budget.
+
+        Reported rather than enforced. A producer part-way through entering a
+        structure is legitimately under-allocated, and an over-allocation may be a
+        currency difference. Blocking either would stop them working.
+        """
+        if is_comparison_mode(self.production_structure_mode):
+            return "not_assessable", None
+        return reconcile_allocations(
+            self.budget_amount,
+            [s.scenario_spend for s in self.territory_scenarios],
+            self.unallocated_spend,
+        )
+
+    @model_validator(mode="after")
+    def scenarios_are_unique_per_jurisdiction(self) -> "CreateReportRequest":
+        """One scenario per jurisdiction.
+
+        Two scenarios for the same territory would give one project two competing
+        answers for the same programme, with nothing to choose between them.
+        """
+        if not self.territory_scenarios:
+            return self
+        keys = [
+            s.subdivision_id or s.territory_id for s in self.territory_scenarios
+        ]
+        duplicates = {k for k in keys if keys.count(k) > 1}
+        if duplicates:
+            raise ValueError(
+                "Each jurisdiction may appear once in territory_scenarios. "
+                "Duplicated: " + ", ".join(sorted(str(d) for d in duplicates))
+            )
+        return self
 
 
 # --- Output Schemas (ScriptAnalysis interface) ---

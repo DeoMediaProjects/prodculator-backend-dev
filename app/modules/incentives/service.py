@@ -3,6 +3,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.database_client import DatabaseClient
+from app.modules.reports.helpers import mechanism_no_figure_reason
 
 _TABLE = "incentive_programs"
 _SYNC_SETTINGS_TABLE = "sync_settings"
@@ -28,6 +29,7 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "capPerPerson": "cap_per_person",
     "capPerPersonCurrency": "cap_per_person_currency",
     "qualifyingSpendMin": "qualifying_spend_min",
+    "qsEngineType": "qs_engine_type",
     "qualifyingSpendCapPct": "qualifying_spend_cap_pct",
     "qualifyingSpendCapAmount": "qualifying_spend_cap_amount",
     "qualifyingSpendCapCurrency": "qualifying_spend_cap_currency",
@@ -225,15 +227,29 @@ class IncentivesService:
             "qsBasis": row.get("qs_basis"),
             "calcFormula": row.get("calc_formula"),
         }
+        base["qsEngineType"] = row.get("qs_engine_type")
+
         if status != "active":
             reason = {
                 "suspended": "Programme is SUSPENDED — no claim can be modelled.",
                 "no_programme": "No formal incentive programme — nothing to claim.",
+                "blocked": (
+                    "Programme is BLOCKED — official rate materials conflict, so no "
+                    "figure can be modelled until they are reconciled."
+                ),
                 "admin_verify_required": (
                     "Programme requires admin verification before figures can be relied on."
                 ),
             }.get(status, f"Programme status is '{status}' — not modelled.")
             return {**base, "available": False, "refusalReason": reason}
+
+        # Mechanism gate (Incentive Engine v2, phase 00). An active programme
+        # whose mechanism is not an entitlement has a headline rate that is not
+        # claimable against production spend, so it is refused here for the same
+        # reason a suspended programme is: there is no number to model.
+        mechanism_reason = mechanism_no_figure_reason(row)
+        if mechanism_reason:
+            return {**base, "available": False, "refusalReason": mechanism_reason}
 
         # ── Budget → GBP (validator computes in GBP). Live FX with static fallback.
         ccy = (budget_currency or "GBP").upper()
