@@ -1106,6 +1106,15 @@ class ReportService:
         # built per consumer is exactly how one of them ends up missing a field.
         datasets["_project_facts"] = self._build_project_facts(datasets, request_metadata)
 
+        # The producer's per-territory figures, keyed by territory label so the
+        # builder can find the scenario for the programme it is costing. Keyed by
+        # label rather than by ISO code because that is what the incentive rows
+        # and the builder both use; the canonical IDs travel inside the entry for
+        # anything that needs them.
+        datasets["_territory_scenarios"] = self._index_territory_scenarios(
+            request_metadata
+        )
+
         self._pre_compute_territory_financials(datasets)
 
         # Load territory profiles for deterministic crew depth / infrastructure
@@ -1571,9 +1580,27 @@ class ReportService:
             len(weather_data),
         )
 
+        # Which statutory figures each programme calculates from, loaded once per
+        # report rather than once per programme. The report needs these to say
+        # whether a figure could be calculated at all, which is the difference
+        # between "no rebate here" and "we were never given the cost base".
+        declared_inputs: dict[str, list[str]] = {}
+        for row in self._safe_query(
+            "programme_required_inputs",
+            lambda q: q.select("programme_id, input_key, required_for_exact"),
+        ):
+            programme_id = row.get("programme_id")
+            key = row.get("input_key")
+            # Only the inputs the exact formula cannot run without. An optional
+            # input is a refinement, and treating it as required would report a
+            # cost breakdown as missing when the calculation was already possible.
+            if programme_id and key and row.get("required_for_exact") is not False:
+                declared_inputs.setdefault(programme_id, []).append(key)
+
         return {
             "incentives": incentives,
             "_inactive_incentives": inactive_incentives,
+            "_programme_required_inputs": declared_inputs,
             "comparables": comparables,
             "grants": grants,
             "festivals": festivals,
@@ -1581,6 +1608,32 @@ class ReportService:
             "weather": weather_data,
             "stacking_map": stacking_map,
         }
+
+    @staticmethod
+    def _index_territory_scenarios(request_metadata: dict) -> dict:
+        """Producer-supplied scenario figures, keyed by territory label.
+
+        Returns an empty mapping when the request carries none, which is the
+        normal state for a report created before the wizard collected them. An
+        absent scenario must read as "not supplied" rather than as zero, so
+        nothing here invents an entry for a territory the producer skipped.
+        """
+        raw = request_metadata.get("territory_scenarios") or []
+        indexed: dict[str, dict] = {}
+        for entry in raw:
+            scenario = (
+                entry if isinstance(entry, dict)
+                else entry.model_dump() if hasattr(entry, "model_dump")
+                else None
+            )
+            if not scenario:
+                continue
+            label = scenario.get("territory")
+            if not label:
+                continue
+            resolved = resolve_territory(label)
+            indexed[resolved.label if resolved else label] = scenario
+        return indexed
 
     @staticmethod
     def _parse_iso_date(value: object) -> date | None:

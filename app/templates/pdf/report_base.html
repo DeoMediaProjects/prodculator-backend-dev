@@ -194,6 +194,10 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 
 /* ============ GENERIC LIST TABLES ============ */
 .rowtable{width:100%;border-collapse:collapse;border-top:2px solid var(--ink);margin-bottom:20px}
+.partnertbl{width:100%;border-collapse:collapse;border-top:2px solid var(--ink);margin-top:12px;font-size:10.5px}
+.partnertbl th{text-align:left;padding:7px 4px;border-bottom:1px solid var(--ink);font-size:8.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+.partnertbl td{padding:8px 4px;border-bottom:1px solid var(--hairline);font-weight:500}
+.partnertbl .figure{text-align:right;font-variant-numeric:tabular-nums}
 .rowtable th{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--grey);text-align:left;padding:9px 8px;border-bottom:1px solid var(--hairline)}
 .rowtable td{font-size:11px;padding:9px 8px;border-bottom:1px solid var(--hairline);vertical-align:top;line-height:1.5}
 .notebox{border:1px solid var(--hairline);background:#FBFAF6;padding:13px 16px;margin-bottom:20px;font-size:11px;line-height:1.6;color:#3A382F}
@@ -405,6 +409,9 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% if readiness %}{% set _ = secs.append({'id': 'readiness', 'title': 'Financial Readiness', 'locked': false}) %}{% endif %}
 {% if report.weatherLogistics %}{% set _ = secs.append({'id': 'weather', 'title': 'Weather & Logistics', 'locked': false}) %}{% endif %}
 {% if report.incentiveEstimates and not lock_incentives %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': false}) %}{% elif lock_incentives %}{% set _ = secs.append({'id': 'incentives', 'title': 'Tax Incentive Analysis', 'locked': true}) %}{% endif %}
+{# Only for a co-production. A comparison has no structure to reconcile, and an
+   empty section reads as something gone missing. #}
+{% if report.coProductionStructure and not lock_incentives %}{% set _ = secs.append({'id': 'coproduction', 'title': 'Co-Production Structure', 'locked': false}) %}{% endif %}
 {% if grants_only %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% endif %}
 {% if report.comparables %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': false}) %}{% endif %}
 {% if report.festivalRecommendations and not lock_festivals %}{% set _ = secs.append({'id': 'festivals', 'title': 'Where Your Film Could Be Seen — Festival Recommendations', 'locked': false}) %}{% elif lock_festivals %}{% set _ = secs.append({'id': 'festivals', 'title': 'Festival Recommendations', 'locked': true}) %}{% endif %}
@@ -426,6 +433,7 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
   'financial': {'what': "A rebate waterfall chart for each ranked territory, showing exactly how total budget becomes net budget through qualifying spend, gross rebate and, where applicable, tax treatment, plus payment-timing data for when the cash actually lands.", 'why': "Incentive headlines are frequently quoted on gross rates that overstate the real cash benefit; this section shows the true, traceable net position instead of a marketing number."},
   'readiness': {'what': "A computed verdict on whether the production can be financed as planned: budget against the recommended territory's cost base and its programme's minimum spend, how much of the modelled incentive is confirmed rather than estimated, matched soft money as a share of budget, and whether the completion date survives the shoot schedule, the incentive payment window and the festival calendar. Every figure names the input it came from, and every input that is missing, stale or unverified is listed rather than estimated around.", 'why': "It is the difference between a report that models a financing plan and one that says whether the plan holds. Financiers discount an incentive that is merely estimated; this section states which of yours are confirmed and which are not, and what has to be fixed before financial close."},
   'incentives': {'what': "Programme-by-programme detail on rates, caps, qualifying requirements, warnings and stacking rules for every relevant tax incentive.", 'why': "Incentive eligibility is won or lost on the fine print, caps and exclusions, not the headline percentage."},
+  'coproduction': {'what': "The partner territories in this structure, what each is allocated, and whether the shares reconcile against the production budget.", 'why': "Partners in one production are not alternatives to one another, so they need reconciling rather than ranking."},
   'grants': {'what': "Grants and funds whose territory and format criteria this production actually meets, with amounts, deadlines and match reasoning.", 'why': "Grant funding stacks on top of tax incentives and is easy to miss when only looking at rebate programmes."},
   'comparables': {'what': "Real productions matched on genre, budget tier and territory, used as reference points for scale and precedent.", 'why': "Comparables give financiers and department heads a concrete frame of reference instead of an abstract projection."},
   'festivals': {'what': "Festivals matched on format, timing, genre and territory, each with the specific reason it fits this production.", 'why': "A festival strategy decided this early can shape delivery deadlines, formats and even casting choices."},
@@ -1103,12 +1111,103 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 {% endif %}
 
 <!-- ═══════════════ TAX INCENTIVE ANALYSIS ═══════════════ -->
+{% set cps = report.coProductionStructure %}
+{% if not lock_incentives and cps %}
+<div class="page" id="sec-coproduction">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['coproduction'] }} — Co-Production Structure</div>
+  <div class="sectitle">{{ cps.partnerCount }} partner territor{{ 'y' if cps.partnerCount == 1 else 'ies' }} in one production</div>
+  {# Said plainly and first, because every other territory table in this report
+     ranks and a reader arrives expecting this one to as well. Partners are not
+     competing for the production; each holds a share of it. #}
+  <p class="secsub">These partners are not ranked against one another. Each holds a share of the
+  same production, so the section reconciles the shares against the budget rather than ordering them.</p>
+
+  {% if descriptions_only %}
+  {{ section_desc('coproduction') }}
+  {% else %}
+
+  <div class="fcard">
+    <div class="fcard-top">
+      <div>
+        <h4>Allocation against budget</h4>
+        <div class="meta">
+          {%- if cps.route %}{{ cps.route }}{% else %}Treaty route not yet chosen{% endif -%}
+          {%- if cps.unallocatedSpend %} · {{ '{:,.0f}'.format(cps.unallocatedSpend) }} {{ cps.currency or '' }} allocated to no partner{% endif -%}
+        </div>
+      </div>
+      <span style="font-size:7.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;
+        {%- if cps.reconciliationStatus == 'reconciled' %}background:#E6F0E8;color:#2C5F3A
+        {%- elif cps.reconciliationStatus == 'over_allocated' %}background:#F7E6E3;color:#8E3323
+        {%- else %}background:#FBF1DE;color:#8A5A12{% endif %}">{{ cps.reconciliationLabel }}</span>
+    </div>
+    <p style="font-size:10.5px;line-height:1.55;color:#3A382F;font-weight:500;margin:8px 0 0">
+      {{ cps.reconciliationExplanation }}
+      {%- if cps.reconciliationRemaining %}
+      Difference: {{ '{:,.0f}'.format(cps.reconciliationRemaining | abs) }} {{ cps.currency or '' }}.
+      {%- endif %}
+    </p>
+  </div>
+
+  <table class="partnertbl">
+    <thead><tr>
+      <th>Partner</th><th>Status</th><th class="figure">Allocated spend</th>
+      <th class="figure">Share</th><th>Programme</th><th>Incentive</th>
+    </tr></thead>
+    <tbody>
+      {% for p in cps.partners %}
+      <tr>
+        <td><b>{{ p.territory }}</b></td>
+        <td>{{ p.partnerStatus | capitalize }}</td>
+        {# An unknown allocation is stated as unknown. A dash would read as nil,
+           and nil against a partner is a different claim entirely. #}
+        <td class="figure">{% if p.allocatedSpend is not none %}{{ '{:,.0f}'.format(p.allocatedSpend) }}{% else %}Not supplied{% endif %}</td>
+        <td class="figure">{% if p.participationPercent is not none %}{{ p.participationPercent }}%{% else %}—{% endif %}</td>
+        <td>{{ p.programme or 'No programme recorded' }}</td>
+        <td>{% if p.incentive %}{{ p.incentive }}{% else %}{{ p.calculationStatusLabel or 'Not calculated' }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# The sum is withheld on purpose and the reason is printed, because an
+     omission with no explanation reads as an oversight the reader should fill in
+     themselves. #}
+  {% if cps.combinedIncentiveWithheld %}
+  <div style="margin-top:10px;font-size:10px;line-height:1.55;color:#3A382F;font-weight:500;border-left:2px solid #B87A1F;padding-left:8px">
+    <b>Combined incentive not stated.</b> {{ cps.combinedIncentiveReason }}
+  </div>
+  {% endif %}
+
+  {% if cps.structureNotes %}
+  <ul class="challenges" style="margin-top:10px">
+    {% for note in cps.structureNotes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if cps.supranationalInterest and cps.supranationalInterest != 'not_considering' %}
+  <p class="secsub" style="margin-top:10px">Selective support such as Eurimages is competitive and awarded
+  per project, so no amount is modelled for it anywhere in this report.</p>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endif %}
+
 {% if not lock_incentives and report.incentiveEstimates %}
 <div class="page" id="sec-incentives">
   {{ runhead(rh) }}
   <div class="eyebrow">{{ num_map['incentives'] }} — Tax Incentive Analysis</div>
   <div class="sectitle">Programme rates, caps and requirements</div>
   <p class="secsub">Verified programme data; low-confidence records are flagged, never presented as certainties.</p>
+  {# Stated once for the section rather than chipped onto all forty cards. Source
+     verification and calculation approval are separate gates, and the pack says so
+     twice because it expects them to be confused: a verified source means the
+     rates below are what the statute says, not that the formula applying them has
+     cleared internal review. #}
+  <p class="secsub" style="margin-top:-4px">Each programme carries a status saying whether its figure
+  can be relied on, and why not where it cannot. Rates and caps are taken from official sources;
+  the formulas applying them are reviewed separately and each programme records its own approval state.</p>
 
   {% if descriptions_only %}
   {{ section_desc('incentives') }}
@@ -1125,6 +1224,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
            questions: can this production use the programme at all, and can a lender
            advance against it. Rendered from inc.formatEligibility, the same object
            the web report reads, so the two cannot disagree. #}
+{# Calculation status leads the row. Availability and format eligibility each
+           answer one question; this is the conclusion drawn from all of them, and
+           it is the one that says whether the figure beside it may be relied on.
+           Only shown where it qualifies the figure: a plain "Calculated" chip on
+           every card would be decoration. #}
+        {% if inc.calculationStatus and inc.calculationStatus != 'ESTIMATED' %}
+        <span style="font-size:7.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;
+          {%- if inc.calculationCarriesFigure %}background:#FBF1DE;color:#8A5A12
+          {%- else %}background:#EFEDE7;color:#5B5750{% endif %}">{{ inc.calculationStatusLabel }}</span>
+        {% endif %}
         {# Availability comes first: it answers the blunter question of whether
            this production can use the programme at all, and it is the one that
            withdraws the figure rather than annotating it. #}
@@ -1153,7 +1262,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
           and rendering the labelled box anyway produced an empty "Potential
           incentive, eligibility unverified" card beside "not available at this
           budget". An empty promise is worse than no card. -#}
-      {% if inc.potentialIncentive %}
+{#- A status that may not carry a figure is stated in place of the figure.
+          Leaving the row empty reads as an oversight, and the producer cannot tell
+          "we have no cost base for this" from "this programme pays nothing". -#}
+      {% if inc.calculationCarriesFigure is defined and inc.calculationCarriesFigure is false
+            and not (pe and pe.available is false) %}
+      <span>
+        <b>{{ inc.calculationStatusLabel }}.</b>
+        {% if inc.calculationStatusReasons %}{{ inc.calculationStatusReasons | join(' ') }}{% endif %}
+      </span>
+      {% elif inc.potentialIncentive %}
       <span style="display:inline-block;border:1px dashed #B87A1F;background:#FBF6EC;padding:4px 8px;border-radius:4px">
         <b style="color:#8A5A12;font-size:7.5px;letter-spacing:.1em;text-transform:uppercase">Potential incentive, eligibility unverified</b>
         <span style="color:#8A5A12;font-weight:700"> {{ inc.potentialIncentive }}</span>
@@ -1194,6 +1312,13 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
        that programme, not raised as a warning over the whole report. #}
     {# The threshold that rules this production out, with the arithmetic, so the
        producer can check the exclusion rather than take it on trust. #}
+{#- What would change the answer. Only for a status the producer can act on
+        or wait out, so a terminal answer is not dressed up as a to-do. -#}
+    {% if inc.calculationStatusNextStep %}
+    <div style="margin-top:8px;font-size:10px;line-height:1.5;color:#3A382F;font-weight:500;border-left:2px solid #B87A1F;padding-left:8px">
+      <b>To firm this up:</b> {{ inc.calculationStatusNextStep }}
+    </div>
+    {% endif %}
     {% if pe and pe.available is false and pe.explanation %}
     <div style="margin-top:8px;font-size:10px;line-height:1.5;color:#3A382F;font-weight:500;border-left:2px solid #8E3323;padding-left:8px">
       <b>Availability:</b> {{ pe.explanation }}

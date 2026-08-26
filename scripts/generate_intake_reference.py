@@ -336,9 +336,6 @@ def options_html(source: str) -> str:
         ("Genre", "GENRE_OPTIONS", "Multi select. At least one required."),
         ("Format", "FORMAT_OPTIONS", "Single select. Required."),
         ("Camera equipment", "CAMERA_OPTIONS", "Multi select. At least one required."),
-        ("United States state", "USA_STATES", "Shown when the production country is the United States."),
-        ("Canada province", "CANADA_PROVINCES", "Shown when the production country is Canada."),
-        ("Australia state", "AUSTRALIA_STATES", "Shown when the production country is Australia."),
         ("Continent grouping", "CONTINENT_ORDER", "Groups the territory picker. Not submitted."),
     ]
     blocks = []
@@ -350,6 +347,22 @@ def options_html(source: str) -> str:
             f"{len(values)} options, from <code>{esc(const)}</code>.</p>"
             f"<ul class='cols'>{chips}</ul>"
         )
+
+    # State and province are no longer a literal list in the form. They were three
+    # hardcoded arrays naming every state a producer might shoot in, which offered
+    # jurisdictions we hold no incentive record for as though each were a modelled
+    # regime. The field now reads the registry, so the options are whatever
+    # carries a programme on the day the form is opened and cannot be printed here
+    # as a fixed set.
+    blocks.append(
+        "<h2>State or province</h2><p class='note'>Single select, optional. "
+        "Shown only for a production country that has sub territories carrying "
+        "their own incentive programme, and the options are read from the "
+        "incentive registry at the time the form is opened rather than from a "
+        "list held in the form. A region with no programme on record is not "
+        "offered, so this field cannot name a jurisdiction the analysis has "
+        "nothing to say about.</p>"
+    )
 
     for title, const, note in (
         ("Budget currency", "CURRENCY_OPTIONS", "Single select. Required. Defaults from the production country."),

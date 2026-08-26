@@ -208,11 +208,23 @@ class TestDocument:
     def test_every_option_list_is_rendered(self, doc):
         doc = _html.unescape(doc)
         source = gen._wizard_source()
-        for const in ("GENRE_OPTIONS", "FORMAT_OPTIONS", "CAMERA_OPTIONS",
-                      "USA_STATES", "CANADA_PROVINCES", "AUSTRALIA_STATES"):
+        # State and province are absent on purpose: the field reads the incentive
+        # registry rather than a literal list, so there is no fixed set of options
+        # for the document to print. That it says so is asserted below.
+        for const in ("GENRE_OPTIONS", "FORMAT_OPTIONS", "CAMERA_OPTIONS"):
             values = gen.string_array(const, source)
             missing = [v for v in values if v not in doc]
             assert not missing, f"{const} values missing from the document: {missing}"
+
+    def test_the_state_field_says_where_its_options_come_from(self, doc):
+        """It used to print three hardcoded lists naming states we hold no
+        incentive record for. A document that still listed them would describe a
+        form that no longer exists."""
+        doc = _html.unescape(doc)
+        assert "State or province" in doc
+        assert "read from the incentive registry" in doc
+        for gone in ("Texas", "Nevada", "Tasmania"):
+            assert gone not in doc
 
     def test_the_divergence_check_actually_compares(self, doc):
         """The section must state a verdict, not merely list the two sets."""

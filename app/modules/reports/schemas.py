@@ -511,6 +511,30 @@ class IncentiveEstimate(BaseModel):
     # v3 bankability
     bankabilityLabel: Literal["BANKABLE", "VERIFY FIRST", "NOT BANKABLE"] | None = None
 
+    # ── v2 calculation status ────────────────────────────────────────────────
+    #: The single conclusion about this figure, from ``resolve_calculation_status``.
+    #: Derived from the verdicts above rather than a second opinion on them.
+    calculationStatus: str | None = None
+    calculationStatusLabel: str | None = None
+    #: What the status means, from the contract, so no surface writes its own gloss.
+    calculationStatusMeaning: str | None = None
+    #: Why this status, in the producer's terms. One entry per failed gate or
+    #: missing input, so a refusal can be checked rather than merely asserted.
+    calculationStatusReasons: list[str] | None = None
+    #: What would move it off this status, absent where there is no next step.
+    calculationStatusNextStep: str | None = None
+    #: Whether this status permits a figure at all. Read this rather than testing
+    #: for the presence of an amount: an illustrative figure and a relied-upon one
+    #: look identical once rendered.
+    calculationCarriesFigure: bool | None = None
+    #: Whether this programme may enter financial ranking and totals.
+    calculationInRanking: bool | None = None
+    #: The governance gate, deliberately separate from the status above. A green
+    #: source badge must never imply the formula is approved for use.
+    calculationVerification: str | None = None
+    calculationVerificationLabel: str | None = None
+    calculationIsApproved: bool | None = None
+
 
 class Attribution(BaseModel):
     territory: str
@@ -794,6 +818,57 @@ class TerritoryDeepDive(BaseModel):
     estimatedRebate: str
 
 
+class CoProductionPartner(BaseModel):
+    territory: str | None = None
+    territoryId: str | None = None
+    subdivisionId: str | None = None
+    #: Null means the producer has not told us. Never coerced to zero, which would
+    #: report a shortfall against the budget that may not exist.
+    allocatedSpend: float | None = None
+    currency: str | None = None
+    participationPercent: float | None = None
+    partnerStatus: str = "candidate"
+    programme: str | None = None
+    incentive: str | None = None
+    #: Copied from the incentive estimate rather than recomputed, so a partner
+    #: whose figure is withheld shows as withheld here too.
+    calculationStatus: str | None = None
+    calculationStatusLabel: str | None = None
+
+
+class CoProductionStructure(BaseModel):
+    """Partners in one production, reconciled rather than ranked.
+
+    A co-production's partners are not competing for the production; each holds a
+    share of it. Ordering them best-first would state something false about the
+    structure, which is why ``partnersAreRanked`` is on the object and read by
+    every surface instead of each deciding for itself.
+    """
+
+    mode: str
+    partners: list[CoProductionPartner] = []
+    partnerCount: int = 0
+    currency: str | None = None
+    budget: float | None = None
+    unallocatedSpend: float | None = None
+    reconciliationStatus: Literal[
+        "reconciled", "under_allocated", "over_allocated", "not_assessable"
+    ]
+    reconciliationLabel: str
+    reconciliationExplanation: str
+    #: Positive is under-allocated, negative is over-allocated, null when the
+    #: shares cannot be assessed at all.
+    reconciliationRemaining: float | None = None
+    route: str | None = None
+    supranationalInterest: str | None = None
+    structureNotes: list[str] = []
+    partnersAreRanked: bool = False
+    #: The partner incentives are never summed. Cumulation ceilings and public
+    #: support intensity limits bite on the total, and none has been assessed.
+    combinedIncentiveWithheld: bool = True
+    combinedIncentiveReason: str
+
+
 class ScriptAnalysis(BaseModel):
     genre: str
     tone: str
@@ -830,6 +905,10 @@ class ScriptAnalysis(BaseModel):
     festivalRecommendations: list[FestivalRecommendation] | None = None
     distributorRecommendations: list[DistributorRecommendation] | None = None
     scriptOriginCallout: dict | None = None
+    #: Present only for a co-production. None for a comparison, rather than an
+    #: empty structure: a section that renders with nothing in it invites the
+    #: reader to wonder what went missing.
+    coProductionStructure: CoProductionStructure | None = None
 
 
 class ProductionIntelligence(BaseModel):
