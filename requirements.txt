@@ -15,7 +15,14 @@ passlib>=1.7.4
 argon2-cffi>=23.1.0
 python-multipart>=0.0.9
 httpx>=0.27.0
-anthropic>=0.69.0
+# Pinned exact, not a floor. Production hit "Messages.stream() got an
+# unexpected keyword argument 'temperature'" — this floor (>=0.69.0) let
+# pip resolve an older release whose streaming helper had a narrower
+# signature than .create(). 0.123.0 is verified (inspect.signature) to
+# accept `temperature` on both .create() and .stream(); pin it so a
+# rebuild can't silently drift back to an incompatible version without a
+# lock file.
+anthropic==0.123.0
 openai>=1.50.0
 stripe>=8.0.0
 Jinja2>=3.1.3
