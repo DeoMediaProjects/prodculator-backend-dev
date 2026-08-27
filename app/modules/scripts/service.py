@@ -1471,11 +1471,45 @@ class ScriptAnalysisService:
                 # failure). Streaming resets the read timeout per chunk. We keep
                 # the plain create() path for schema-constrained stages that pass
                 # output_config, which are short and already reliable.
-                if output_config:
-                    result = client.messages.create(**request_payload)
-                else:
-                    with client.messages.stream(**request_payload) as stream:
-                        result = stream.get_final_message()
+                try:
+                    if output_config:
+                        result = client.messages.create(**request_payload)
+                    else:
+                        with client.messages.stream(**request_payload) as stream:
+                            result = stream.get_final_message()
+                except TypeError as sdk_exc:
+                    # Defence against SDK/version drift (requirements.txt pins
+                    # anthropic exactly for this reason, but a stale image or a
+                    # future bump can still resurface it). A TypeError naming an
+                    # "unexpected keyword argument" means the installed SDK's
+                    # method signature dropped a param this payload sends — not a
+                    # transient failure, and not one the rate-limit/timeout retry
+                    # path below handles. Without this, every stage silently fell
+                    # back to placeholder content while the job still reported
+                    # success (see PROD-FIX log 2026-08-27: every script_chunk,
+                    # production_analysis and narrative-fill call failed this way
+                    # at once because they all share this helper). Strip the
+                    # offending key and retry once in-place rather than let the
+                    # whole report degrade to fallback text.
+                    match = re.search(
+                        r"unexpected keyword argument '(\w+)'", str(sdk_exc),
+                    )
+                    if not match or match.group(1) not in request_payload:
+                        raise
+                    bad_key = match.group(1)
+                    logger.error(
+                        "Anthropic SDK rejected '%s' at stage=%s (installed SDK "
+                        "version mismatch with pinned requirements — check "
+                        "`pip show anthropic` in this environment). Retrying "
+                        "without it so the report doesn't silently fall back.",
+                        bad_key, stage,
+                    )
+                    request_payload.pop(bad_key, None)
+                    if output_config:
+                        result = client.messages.create(**request_payload)
+                    else:
+                        with client.messages.stream(**request_payload) as stream:
+                            result = stream.get_final_message()
                 _elapsed = _time.monotonic() - _t0
                 _usage = getattr(result, "usage", None)
                 logger.info(
