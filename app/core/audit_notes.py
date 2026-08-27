@@ -66,7 +66,7 @@ AUDIT_MARKERS: tuple[str, ...] = (
 # YYYY-MM stamp, then a colon. Bracketed spans do not nest in this dataset, so a
 # simple [^\]]* body is sufficient and avoids the catastrophic backtracking a
 # nesting-aware pattern would risk.
-AUDIT_SPAN = re.compile(r"\[\s*[A-Z][A-Z][A-Z /-]*(?:\s+\d{4}-\d{2})?\s*:[^\]]*\]")
+AUDIT_SPAN = re.compile(r"\[\s*[A-Z][A-Z][A-Z /-]*(?:\s+\d{4}-\d{2}(?:-\d{2})?)?\s*:[^\]]*\]")
 
 # Parenthetical asides carrying an instruction to the data team rather than
 # information for the client, e.g. New York's annual programme cap:

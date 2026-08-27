@@ -35,6 +35,8 @@ COPY scripts ./scripts
 #
 # The version files import from app.alembic_utils, app.core.{audit_notes,config,
 # territories} and app.models.sql_models — all inside `app`, copied above.
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 COPY .env.example ./.env.example
 COPY README.md ./README.md
 

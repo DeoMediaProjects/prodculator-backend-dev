@@ -54,6 +54,8 @@ from app.modules.reports.format_eligibility import (
     scores_zero as format_scores_zero,
 )
 from app.core.formats import canonical_format
+from app.modules.reports.calculation_status import resolve_calculation_status
+from app.modules.reports.coproduction_section import build_coproduction_structure
 from app.modules.reports.programme_eligibility import (
     any_unavailable,
     evaluate_programme_eligibility,
@@ -214,6 +216,14 @@ class ReportBuilder:
             datasets.get("_inactive_incentives", []) or []
         )
         self._territory_financials: dict = datasets.get("_territory_financials") or {}
+        #: programme_id -> the statutory input keys its exact formula requires.
+        self._programme_required_inputs: dict = (
+            datasets.get("_programme_required_inputs") or {}
+        )
+        #: Territory label -> the producer's scenario for it: the spend allocated
+        #: there and any statutory figures supplied. Absent for a territory the
+        #: producer has not filled in, which is a real state and not an error.
+        self._territory_scenarios: dict = datasets.get("_territory_scenarios") or {}
         self._production_format: str | None = datasets.get("_production_format")
         self._production_priority: str = datasets.get("_production_priority", "full")
         self._currency_scores: dict | None = datasets.get("_currency_advantage_scores")
@@ -323,6 +333,23 @@ class ReportBuilder:
             # Deterministic sections
             "locationRankings": location_rankings,
             "incentiveEstimates": self._built_incentive_estimates,
+            # Present only for a co-production. Built after the estimates because
+            # it copies their figures rather than recalculating, so this section
+            # and the incentive section cannot quote different numbers for the
+            # same programme.
+            "coProductionStructure": build_coproduction_structure(
+                mode=self.request_metadata.get("production_structure_mode")
+                or "comparison",
+                scenarios=self._territory_scenarios,
+                estimates=self._built_incentive_estimates,
+                budget=self._budget_gbp,
+                currency=self.request_metadata.get("budget_currency"),
+                unallocated_spend=self.request_metadata.get("unallocated_spend"),
+                route=self.request_metadata.get("co_production_route"),
+                supranational_interest=self.request_metadata.get(
+                    "supranational_support_interest"
+                ),
+            ),
             # Set only when the production format is one the programme data cannot
             # vouch for, so the PDF carries the same caveat the wizard showed
             # rather than the warning living only at intake.
@@ -1582,6 +1609,29 @@ class ReportBuilder:
 
         # HETV threshold check
         self._apply_hetv_check(est, db_row)
+
+        # One canonical status for this figure, derived from the verdicts already
+        # resolved above rather than from a second opinion. Last on purpose: it
+        # reads eligibility, confirmation and the mechanism gate, so it has to run
+        # after all three have been settled.
+        est.update(resolve_calculation_status(
+            est,
+            db_row,
+            scenario=self._territory_scenarios.get(territory),
+            declared_inputs=self._programme_required_inputs.get(
+                db_row.get("programme_id")
+            ),
+        ))
+
+        # The contract's one hard rule about figures: a status that may not carry
+        # an amount does not carry one. Enforced here rather than trusted to every
+        # consumer, because an illustrative figure and a relied-upon figure look
+        # identical once rendered, and the withheld value is kept for audit.
+        if not est.get("calculationCarriesFigure"):
+            for field in ("confirmedIncentive", "potentialIncentive"):
+                if est.get(field) is not None:
+                    est.setdefault("estimatedRebateWithheld", est[field])
+                    est[field] = None
 
         return est
 

@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Any, ClassVar
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 
@@ -81,7 +81,12 @@ class User(SQLModel, table=True):
     # S3 object key for the account's uploaded logo, never a URL: the bucket is
     # private and served by presigned URL, so a stored URL would expire in place.
     logo_key: str | None = None
-    is_blocked: bool = Field(default=False)
+    # server_default mirrors migration fe6e41788a05 so a schema built by
+    # create_all (AUTO_CREATE_DB_SCHEMA, local/test) matches the migrated
+    # one: sign-up inserts via Core insert(), which skips Python defaults.
+    is_blocked: bool = Field(
+        default=False, sa_column_kwargs={"server_default": text("false")}
+    )
     blocked_at: datetime | None = None
     last_active: datetime | None = None
     # Billing geography captured from Stripe (ISO-3166 country code, state/province

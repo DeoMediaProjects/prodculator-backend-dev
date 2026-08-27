@@ -1,7 +1,7 @@
 """resolve_quebec_qpstc_and_alberta_afttc
 
 Revision ID: t0u1v2w3x4y5
-Revises: v2w3x4y5z6a7
+Revises: z6a7b8c9d0e1
 Create Date: 2026-08-17
 
 SEQUENCING (moved 2026-08-19)
@@ -12,7 +12,7 @@ u1v2w3x4y5z6 / v2w3x4y5z6a7 and blocked them: the deploy runs `git pull` then
 `alembic upgrade head`, and an absent revision makes alembic fail to build the
 revision map at all (KeyError), so nothing shipped.
 
-It now revises v2w3x4y5z6a7 and runs last. The two sets are independent — this
+It revises z6a7b8c9d0e1. Applied to production on 22 August 2026, so this position is now fixed and must not move: anything inserted before it would be treated as already applied and silently skipped. The two sets are independent — this
 one touches Quebec and Alberta only, those touch the UK, Belgium, Netherlands,
 Mexico and British Columbia, and neither reads a column the other adds — so the
 order carries no data dependency.
@@ -88,7 +88,7 @@ from alembic import op
 from app.alembic_utils import assert_migration_count
 
 revision = "t0u1v2w3x4y5"
-down_revision = "v2w3x4y5z6a7"
+down_revision = "z6a7b8c9d0e1"
 branch_labels = None
 depends_on = None
 
