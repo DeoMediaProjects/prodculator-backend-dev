@@ -122,6 +122,7 @@ async def approve_pending_change(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
+        logger.exception("Failed to approve change")
         raise HTTPException(status_code=400, detail="Failed to approve change")
 
 
@@ -136,6 +137,7 @@ async def reject_pending_change(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
+        logger.exception("Failed to reject change")
         raise HTTPException(status_code=400, detail="Failed to reject change")
 
 

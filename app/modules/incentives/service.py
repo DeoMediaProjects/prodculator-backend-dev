@@ -463,10 +463,21 @@ class IncentivesService:
             .single()
             .execute()
         )
-        return _pending_change_from_db(result.data)
+        return _pending_change_from_db(result.data or change)
 
     def reject_change(self, change_id: str, admin_id: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
+        change = (
+            self.supabase.table(_PENDING_CHANGES_TABLE)
+            .select("*")
+            .eq("id", change_id)
+            .single()
+            .execute()
+            .data
+        )
+        if not change:
+            raise ValueError("Pending change not found")
+
         result = (
             self.supabase.table(_PENDING_CHANGES_TABLE)
             .update({"status": "rejected", "resolved_at": now, "resolved_by": admin_id})
@@ -475,28 +486,99 @@ class IncentivesService:
             .single()
             .execute()
         )
-        return _pending_change_from_db(result.data)
+        return _pending_change_from_db(result.data or change)
 
     def _get_or_create_resource_id_for_change(self, change: dict[str, Any], now: str) -> str:
         territory = change.get("territory")
-        source_url = change.get("source")
+        source_url = change.get("source") or change.get("source_url")
+        program = change.get("record_label") or change.get("program")
 
-        # Reuse a recently created row for the same territory/source to keep
-        # multi-field approvals (e.g. rate + cap) on one resource.
-        query = self.supabase.table(_TABLE).select("id").order("created_at", desc=True).limit(1)
+        # 1. Match by territory + program if both are known
+        if territory and program:
+            existing = (
+                self.supabase.table(_TABLE)
+                .select("id")
+                .eq("territory", territory)
+                .eq("program", program)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if existing:
+                return existing[0]["id"]
+
+        # 2. Match by territory + source_url
+        if territory and source_url:
+            existing = (
+                self.supabase.table(_TABLE)
+                .select("id")
+                .eq("territory", territory)
+                .eq("source_url", source_url)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if existing:
+                return existing[0]["id"]
+
+        # 3. Match by territory if only 1 incentive exists for that territory
         if territory:
-            query = query.eq("territory", territory)
-        if source_url:
-            query = query.eq("source_url", source_url)
-        existing = query.execute().data or []
-        if existing:
-            return existing[0]["id"]
+            existing = (
+                self.supabase.table(_TABLE)
+                .select("id")
+                .eq("territory", territory)
+                .limit(2)
+                .execute()
+                .data
+                or []
+            )
+            if len(existing) == 1:
+                return existing[0]["id"]
+
+        # 4. Infer program name if missing (program is NOT NULL in database schema)
+        if not program:
+            if source_url:
+                source_rows = (
+                    self.supabase.table("scrape_sources")
+                    .select("label")
+                    .eq("resource_type", _RESOURCE_TYPE)
+                    .eq("url", source_url)
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if source_rows and source_rows[0].get("label"):
+                    program = source_rows[0]["label"]
+
+        if not program:
+            program = f"{territory} Film Incentive" if territory else "General Incentive"
+
+        # Check again if (territory, program) exists
+        if territory and program:
+            existing = (
+                self.supabase.table(_TABLE)
+                .select("id")
+                .eq("territory", territory)
+                .eq("program", program)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if existing:
+                return existing[0]["id"]
 
         row_id = str(uuid4())
         create_payload: dict[str, Any] = {
             "id": row_id,
-            "territory": territory,
+            "territory": territory or "Unknown",
+            "program": program,
             "source_url": source_url,
+            "status": "active",
             "created_at": now,
             "updated_at": now,
         }

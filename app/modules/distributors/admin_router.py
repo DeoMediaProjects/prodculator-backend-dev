@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.audit import AuditedAPIRoute
@@ -5,6 +7,8 @@ from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_supabase
 from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
+
+logger = logging.getLogger(__name__)
 from app.modules.admin.schemas import (
     AdminListResponse,
     AdminUpsertRequest,
@@ -81,6 +85,7 @@ async def approve_pending_change(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
+        logger.exception("Failed to approve change")
         raise HTTPException(status_code=400, detail="Failed to approve change")
 
 
@@ -95,6 +100,7 @@ async def reject_pending_change(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
+        logger.exception("Failed to reject change")
         raise HTTPException(status_code=400, detail="Failed to reject change")
 
 
