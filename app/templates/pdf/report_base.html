@@ -1366,6 +1366,23 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <p style="font-size:10.5px;line-height:1.55;color:#3A382F;margin:0">{{ report.formatEligibilityCaveat }}</p>
   </div>
   {% endif %}
+  {# Only for "undecided": these territories are being compared as alternatives,
+     not combined into one production, but at least one holds a stated
+     co-production treaty route the producer has not ruled out. Kept separate
+     from the co-production structure section above, which only exists once a
+     structure has actually been chosen. #}
+  {% if report.coProductionOpportunities %}
+  <div style="margin-top:12px;border:1px solid #6B6350;border-left-width:3px;background:#F5F3EE;padding:11px 14px";break-inside:avoid;page-break-inside:avoid">
+    <div style="font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#4A4638;margin-bottom:4px">Co-production opportunities in this comparison</div>
+    <p style="font-size:10.5px;line-height:1.55;color:#3A382F;margin:0 0 6px">These territories are shown here as separate scenarios, not as one combined
+    production. At least one programme in each also states an official co-production treaty route, in case that becomes the direction later:</p>
+    <ul style="margin:0;padding-left:16px;font-size:10.5px;line-height:1.6;color:#3A382F">
+      {% for opp in report.coProductionOpportunities %}
+      <li><b>{{ opp.territory }}</b>{% if opp.program %} — {{ opp.program }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   <p class="disclaimer" style="margin-top:10px">Estimates only. Final eligibility depends on official approval by the relevant authorities.</p>
   {% endif %}
 </div>

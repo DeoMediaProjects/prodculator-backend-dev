@@ -55,7 +55,10 @@ from app.modules.reports.format_eligibility import (
 )
 from app.core.formats import canonical_format
 from app.modules.reports.calculation_status import resolve_calculation_status
-from app.modules.reports.coproduction_section import build_coproduction_structure
+from app.modules.reports.coproduction_section import (
+    build_coproduction_opportunities,
+    build_coproduction_structure,
+)
 from app.modules.reports.programme_eligibility import (
     any_unavailable,
     evaluate_programme_eligibility,
@@ -349,6 +352,13 @@ class ReportBuilder:
                 supranational_interest=self.request_metadata.get(
                     "supranational_support_interest"
                 ),
+            ),
+            # Present only for "undecided" — see build_coproduction_opportunities
+            # for why this and coProductionStructure are mutually exclusive.
+            "coProductionOpportunities": build_coproduction_opportunities(
+                mode=self.request_metadata.get("production_structure_mode")
+                or "comparison",
+                estimates=self._built_incentive_estimates,
             ),
             # Set only when the production format is one the programme data cannot
             # vouch for, so the PDF carries the same caveat the wizard showed
@@ -1694,6 +1704,14 @@ class ReportBuilder:
         Both are fixed at the source now, and the verdict comes from the one gate
         every other surface reads.
         """
+        # Whether this programme states a co-production treaty route at all,
+        # independent of whether THIS producer's nationality needs it. Read
+        # unconditionally (unlike producerEligibilityRoutes below, which only
+        # fires once a nationality mismatch is found) so an "undecided"
+        # comparison can point out where the option exists even for a
+        # producer who already qualifies directly.
+        est["coProductionEligible"] = db_row.get("co_production_eligible") is True
+
         result = evaluate_producer_eligibility(db_row, self._project_facts)
 
         # Never overwrite a status another check already settled — the format and

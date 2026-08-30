@@ -869,6 +869,21 @@ class CoProductionStructure(BaseModel):
     combinedIncentiveReason: str
 
 
+class CoProductionOpportunity(BaseModel):
+    """A territory in an "undecided" comparison whose incentive programme
+    states an official co-production treaty route.
+
+    Distinct from ``CoProductionStructure``: this never implies the
+    territories have been combined into one production. It only tells the
+    producer where the option exists, so "undecided" delivers on the wizard's
+    promise to keep comparison logic while surfacing co-production
+    opportunities separately, instead of behaving exactly like "comparison".
+    """
+
+    territory: str
+    program: str | None = None
+
+
 class ScriptAnalysis(BaseModel):
     genre: str
     tone: str
@@ -909,6 +924,10 @@ class ScriptAnalysis(BaseModel):
     #: empty structure: a section that renders with nothing in it invites the
     #: reader to wonder what went missing.
     coProductionStructure: CoProductionStructure | None = None
+    #: Present only for "undecided". None for "comparison" (the producer has
+    #: already decided not to co-produce, so this would be noise) and for
+    #: "coproduction" (already shown via coProductionStructure instead).
+    coProductionOpportunities: list[CoProductionOpportunity] | None = None
 
 
 class ProductionIntelligence(BaseModel):

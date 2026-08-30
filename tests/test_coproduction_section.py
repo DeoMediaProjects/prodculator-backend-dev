@@ -13,7 +13,10 @@ import re
 
 import pytest
 
-from app.modules.reports.coproduction_section import build_coproduction_structure
+from app.modules.reports.coproduction_section import (
+    build_coproduction_opportunities,
+    build_coproduction_structure,
+)
 from app.modules.reports.pdf_service import PDFService
 
 
@@ -229,3 +232,63 @@ class TestRendering:
             created_at="2026-08-26T00:00:00Z",
         )
         assert "Not supplied" in _visible_text(markup)
+
+
+# ── co-production opportunities (undecided mode) ─────────────────────────────
+
+
+def _opp_estimates():
+    return [
+        {"territory": "France", "program": "CNC Tax Rebate", "coProductionEligible": True},
+        {"territory": "Germany", "program": "GMPF", "coProductionEligible": False},
+        {"territory": "Ireland", "program": "Section 481", "coProductionEligible": True},
+    ]
+
+
+class TestCoProductionOpportunities:
+    def test_only_populated_for_undecided(self):
+        assert build_coproduction_opportunities(mode="comparison", estimates=_opp_estimates()) is None
+        assert build_coproduction_opportunities(mode="coproduction", estimates=_opp_estimates()) is None
+
+    def test_lists_only_eligible_territories(self):
+        opportunities = build_coproduction_opportunities(mode="undecided", estimates=_opp_estimates())
+        territories = {o["territory"] for o in opportunities}
+        assert territories == {"France", "Ireland"}
+        assert "Germany" not in territories
+
+    def test_none_when_nothing_is_eligible(self):
+        estimates = [{"territory": "Germany", "program": "GMPF", "coProductionEligible": False}]
+        assert build_coproduction_opportunities(mode="undecided", estimates=estimates) is None
+
+    def test_deduplicates_multiple_programmes_per_territory(self):
+        estimates = [
+            {"territory": "France", "program": "CNC Tax Rebate", "coProductionEligible": True},
+            {"territory": "France", "program": "Another Programme", "coProductionEligible": True},
+        ]
+        opportunities = build_coproduction_opportunities(mode="undecided", estimates=estimates)
+        assert len(opportunities) == 1
+        assert opportunities[0]["territory"] == "France"
+
+    def test_renders_in_the_pdf_kept_separate_from_the_structure_section(self):
+        # The opportunities notice lives inside the Tax Incentive Analysis
+        # section, which only renders once there is at least one estimate —
+        # true of every real report, so the fixture needs one too.
+        markup = PDFService().render_report_html(
+            {
+                "incentiveEstimates": [
+                    {"territory": "France", "program": "CNC Tax Rebate", "rate": "30%"},
+                ],
+                "coProductionStructure": None,
+                "coProductionOpportunities": build_coproduction_opportunities(
+                    mode="undecided", estimates=_opp_estimates(),
+                ),
+            },
+            script_title="Undecided Fixture",
+            created_at="2026-08-26T00:00:00Z",
+        )
+        text = _visible_text(markup)
+        assert "Co-production opportunities in this comparison" in text
+        assert "France" in text
+        assert "Ireland" in text
+        # Not shown as a chosen structure — no partner-reconciliation language.
+        assert "not ranked against one another" not in text
