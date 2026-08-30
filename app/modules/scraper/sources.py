@@ -32,7 +32,7 @@ DEFAULT_SOURCES: list[dict] = [
         "resource_type": "incentives",
         "url": "https://www.georgia.org/industries/film-entertainment/georgia-film-tv-production/production-incentives",
         "label": "Georgia Film Tax Credit (20–30 %)",
-        "territory": "United States",
+        "territory": "Georgia (USA)",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
@@ -42,7 +42,7 @@ DEFAULT_SOURCES: list[dict] = [
         "resource_type": "incentives",
         "url": "https://esd.ny.gov/new-york-state-film-tax-credit-program-production",
         "label": "New York State Film Tax Credit (Production)",
-        "territory": "United States",
+        "territory": "New York",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
@@ -54,7 +54,7 @@ DEFAULT_SOURCES: list[dict] = [
         "resource_type": "incentives",
         "url": "https://film.ca.gov/tax-credit/",
         "label": "California Film & TV Tax Credit Program",
-        "territory": "United States",
+        "territory": "California",
         "is_pdf": False,
         "use_bls_api": False,
         "use_rest_api": False,
@@ -154,9 +154,13 @@ DEFAULT_SOURCES: list[dict] = [
     },
 
     # ── Spain ─────────────────────────────────────────────────────────────
+    # NOTE: The general "ayudas" (grants) page does not carry the national
+    # tax rebate rate — that lives on the dedicated fiscal-incentives page.
+    # Pointing the scraper at ayudas.html for incentives made it come back
+    # empty on every run.
     {
         "resource_type": "incentives",
-        "url": "https://www.cultura.gob.es/cultura/areas/cine/ayudas.html",
+        "url": "https://www.cultura.gob.es/en/cultura/areas/cine/industria-cine/coproducir-espa/incentivos-fiscales.html",
         "label": "Spain ICAA Film Tax Incentives",
         "territory": "Spain",
         "is_pdf": False,

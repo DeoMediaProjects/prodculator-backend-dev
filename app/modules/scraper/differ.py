@@ -69,6 +69,20 @@ _DATE_FIELDS = {"application_deadline", "application_opens"}
 # ISO date pattern for validation
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
+# Null-ish placeholder strings AI extraction falls back to when a page
+# doesn't actually contain the requested value. These must never be queued
+# as a confirmed detected change — they mean "couldn't find it", not "found
+# an empty value".
+_PLACEHOLDER_VALUES = {
+    "n/a", "na", "none", "unknown", "tbd", "null", "-", "--",
+    "not available", "not found", "no data", "no rate", "n.a.",
+}
+
+
+def _is_placeholder_value(value: str) -> bool:
+    """Return True if *value* is a null-ish placeholder rather than real data."""
+    return value.strip().lower() in _PLACEHOLDER_VALUES
+
 
 def _is_stale_date(value: str) -> bool:
     """Return True if a date string represents a year before _MIN_DATE_YEAR."""
@@ -88,10 +102,18 @@ def diff_and_queue(
     source_url: str,
     db: DatabaseClient,
     confidence: str = "medium",
+    territory_hint: str | None = None,
 ) -> int:
     """Compare extracted records against DB rows.
     Inserts pending_changes for any field that differs.
     Returns count of pending_changes created.
+
+    ``territory_hint`` is the territory declared on the scrape source config
+    (trusted, one URL maps to exactly one territory). When set, it overrides
+    whatever territory the AI extractor guessed from page text — the page
+    text can mention other territories in passing (e.g. a national incentive
+    page referencing a named province), which would otherwise cause the
+    record to be matched and written into the wrong territory's row.
     """
     table = _TABLES[resource_type]
     match_keys = _MATCH_KEYS[resource_type]
@@ -99,11 +121,17 @@ def diff_and_queue(
     label_field = _LABEL_FIELDS.get(resource_type)
     now = datetime.now(timezone.utc).isoformat()
     changes_created = 0
+    normalized_hint = normalize_territory(territory_hint)
 
     for record in extracted_records:
         # Normalise territory before matching and diffing
         if "territory" in record:
             record["territory"] = normalize_territory(record["territory"])
+
+        # A trusted source-configured territory always wins over whatever
+        # the AI extracted from the page text — see docstring above.
+        if normalized_hint is not None:
+            record["territory"] = normalized_hint
 
         existing = _find_existing(db, table, record, match_keys)
         resource_id = existing.get("id") if existing else None
@@ -123,6 +151,15 @@ def diff_and_queue(
 
             extracted_str = str(extracted_val).strip()
 
+            # Extraction failed to find a real value — don't queue a null-ish
+            # placeholder as though it were a confirmed finding.
+            if _is_placeholder_value(extracted_str):
+                logger.warning(
+                    "Extraction failed for %s.%s in %s: got placeholder %r (source: %s)",
+                    resource_type, field, territory, extracted_str, source_url,
+                )
+                continue
+
             # Skip stale dates (e.g. 2017-01-16 from old page content)
             if field in _DATE_FIELDS and _is_stale_date(extracted_str):
                 logger.info(
@@ -137,8 +174,11 @@ def diff_and_queue(
             if current_str == extracted_str:
                 continue
 
-            # Idempotency: skip if identical pending change already exists
-            if _pending_change_exists(db, resource_type, resource_id, field, extracted_str):
+            # Dedup: skip if a pending change for this same territory + field
+            # already exists, regardless of exact wording — otherwise the same
+            # underlying fact gets queued repeatedly worded slightly
+            # differently each time (e.g. "53%" vs "Enhanced rate").
+            if _pending_change_exists(db, resource_type, resource_id, territory, field):
                 continue
 
             change_row: dict[str, Any] = {
@@ -191,19 +231,27 @@ def _pending_change_exists(
     db: DatabaseClient,
     resource_type: str,
     resource_id: str | None,
+    territory: str | None,
     field: str,
-    detected_value: str,
 ) -> bool:
-    """Prevent duplicate pending_changes for the same detected value."""
+    """Prevent duplicate pending_changes for the same territory + field.
+
+    Matches on the fact being changed (same resource, or same territory when
+    the record isn't linked to an existing row), not on the exact wording of
+    the detected value — two extractions of the same underlying fact can be
+    worded differently (e.g. "53%" vs "Enhanced rate") and would otherwise
+    both slip past an exact-value dedup check.
+    """
     query = (
         db.table("pending_changes")
         .select("*", count="exact", head=True)
         .eq("resource_type", resource_type)
         .eq("field", field)
-        .eq("detected_value", detected_value)
         .eq("status", "pending")
     )
     if resource_id:
         query = query.eq("resource_id", resource_id)
+    else:
+        query = query.eq("territory", territory)
     result = query.execute()
     return (result.count or 0) > 0

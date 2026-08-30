@@ -23,4 +23,6 @@ def run(source_row: dict[str, Any], db: DatabaseClient, settings: Settings) -> i
         logger.info("No festival records extracted from %s", url)
         return 0
 
-    return diff_and_queue("festivals", records, url, db, confidence="medium")
+    return diff_and_queue(
+        "festivals", records, url, db, confidence="medium", territory_hint=territory_hint,
+    )

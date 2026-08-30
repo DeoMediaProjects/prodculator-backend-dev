@@ -23,4 +23,6 @@ def run(source_row: dict[str, Any], db: DatabaseClient, settings: Settings) -> i
         logger.info("No incentive records extracted from %s", url)
         return 0
 
-    return diff_and_queue("incentives", records, url, db, confidence="medium")
+    return diff_and_queue(
+        "incentives", records, url, db, confidence="medium", territory_hint=territory_hint,
+    )
