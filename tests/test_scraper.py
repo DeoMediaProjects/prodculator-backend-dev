@@ -465,6 +465,86 @@ class TestDiffer:
 
         assert count == 0
 
+    def test_skips_placeholder_rate_values(self):
+        # A scraper that couldn't find a rate on the page must not queue
+        # "N/A" as though it were a confirmed detected value.
+        db = FakeSupabase()
+        extracted = [
+            {"territory": "Spain", "program": "Spain ICAA Film Tax Incentives", "rate": "N/A", "cap": None, "status": "Active"},
+        ]
+
+        count = diff_and_queue("incentives", extracted, "https://source.com", db)
+
+        fields = {c["field"] for c in db.store["pending_changes"]}
+        assert "rate" not in fields
+        assert count == 1  # only "status" (a new record) should still queue
+
+    def test_skips_placeholder_variants_case_insensitive(self):
+        db = FakeSupabase()
+        extracted = [
+            {"territory": "United Kingdom", "program": "UK Film Tax Relief", "rate": "none", "cap": "n/a", "status": "Active"},
+        ]
+
+        count = diff_and_queue("incentives", extracted, "https://source.com", db)
+
+        assert count == 0
+
+    def test_territory_hint_overrides_ai_extracted_territory(self):
+        # A source configured for the South Africa national scheme must
+        # never let a stray mention of "Gauteng" in the page text route the
+        # detected change into the Gauteng provincial row.
+        db = FakeSupabase()
+        db.store["incentive_programs"].append({
+            "id": "gauteng-1",
+            "territory": "Gauteng",
+            "program": "Gauteng Film Incentive",
+            "rate": "20%",
+            "cap": "ZAR 25,000,000",
+            "status": "Active",
+        })
+        extracted = [
+            {"territory": "Gauteng", "program": "Gauteng Film Incentive", "rate": "25%", "cap": "ZAR 25,000,000", "status": "Active"},
+        ]
+
+        count = diff_and_queue(
+            "incentives", extracted, "https://www.thedtic.gov.za/...", db,
+            territory_hint="South Africa",
+        )
+
+        # No existing "South Africa" (national) row exists yet, so every
+        # field comes back as a new, unmatched pending change — which is the
+        # safe outcome: nothing gets attributed to the Gauteng row.
+        assert count == 3
+        for change in db.store["pending_changes"]:
+            assert change["territory"] == "South Africa"
+            assert change["resource_id"] != "gauteng-1"
+
+    def test_dedup_matches_same_territory_and_field_regardless_of_wording(self):
+        # Three worded-differently extractions of the same underlying UK
+        # rate fact should only ever produce one pending change.
+        db = FakeSupabase()
+        db.store["pending_changes"].append({
+            "id": "existing-pc",
+            "resource_type": "incentives",
+            "resource_id": "i1",
+            "territory": "United Kingdom",
+            "field": "rate",
+            "current_value": "25%",
+            "detected_value": "Enhanced rate",
+            "confidence": "medium",
+            "source": "https://old-source.com",
+            "status": "pending",
+        })
+
+        extracted = [
+            {"territory": "United Kingdom", "program": "UK Film Tax Relief", "rate": "Enhanced rate (see policy note)"},
+        ]
+
+        count = diff_and_queue("incentives", extracted, "https://source.com", db)
+
+        assert count == 0
+        assert len(db.store["pending_changes"]) == 1
+
 # ── ScraperService tests ─────────────────────────────────────────────────────
 
 
@@ -796,6 +876,23 @@ class TestSources:
             "Ireland", "France", "Germany", "Spain", "Czech Republic", "Hungary", "Malta",
         }
         assert expected.issubset(festival_territories)
+
+    def test_us_state_incentive_sources_use_state_territory(self):
+        # California/Georgia/New York incentive_programs rows are keyed by
+        # state, not by "United States" — the scrape source territory must
+        # match, or diff_and_queue can never find the existing row to diff
+        # against (and rate updates silently fail to land on it).
+        by_label = {s["label"]: s for s in DEFAULT_SOURCES if s["resource_type"] == "incentives"}
+        assert by_label["California Film & TV Tax Credit Program"]["territory"] == "California"
+        assert by_label["New York State Film Tax Credit (Production)"]["territory"] == "New York"
+        assert by_label["Georgia Film Tax Credit (20–30 %)"]["territory"] == "Georgia (USA)"
+
+    def test_spain_incentive_source_points_to_fiscal_incentives_page(self):
+        spain = next(
+            s for s in DEFAULT_SOURCES
+            if s["resource_type"] == "incentives" and s["territory"] == "Spain"
+        )
+        assert "incentivos-fiscales" in spain["url"]
 
     def test_grant_sources_exist_for_key_countries(self):
         grant_territories = {

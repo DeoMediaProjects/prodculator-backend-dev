@@ -99,6 +99,35 @@ def _partner(
     }
 
 
+def build_coproduction_opportunities(
+    *,
+    mode: str,
+    estimates: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    """Territories in an "undecided" comparison with an official co-production
+    treaty route, surfaced separately from the comparison itself.
+
+    Only populated for "undecided" — see ``STRUCTURE_MODES`` in v2_contracts:
+    the wizard promises comparison logic plus co-production opportunities
+    "shown separately" for this mode specifically. A "comparison" report never
+    shows this (the producer has already ruled it out), and "coproduction"
+    already shows the chosen structure via ``build_coproduction_structure``.
+    """
+    if mode != "undecided":
+        return None
+
+    seen: set[str] = set()
+    opportunities: list[dict[str, Any]] = []
+    for est in estimates:
+        territory = est.get("territory")
+        if not territory or territory in seen or not est.get("coProductionEligible"):
+            continue
+        seen.add(territory)
+        opportunities.append({"territory": territory, "program": est.get("program")})
+
+    return opportunities or None
+
+
 def build_coproduction_structure(
     *,
     mode: str,

@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 _USER_AGENT = "Prodculator-Scraper/1.0 (+https://prodculator.com)"
 
+# Some government sites block requests that only send a User-Agent (no
+# Accept/Accept-Language) as a basic bot-detection heuristic, e.g.
+# film.ca.gov returning 403 to this scraper. Sending a fuller, standard
+# header set makes the request look like a normal browser fetch.
+_REQUEST_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 # Tags whose entire content block should be removed before stripping
 _STRIP_TAGS = re.compile(
     r"<(script|style|nav|footer|header|aside|noscript)[^>]*>.*?</\1>",
@@ -64,7 +74,7 @@ def _check_robots_txt(url: str, timeout: int = 10) -> bool:
         rp = RobotFileParser()
         try:
             with _make_client(timeout) as client:
-                resp = client.get(robots_url, headers={"User-Agent": _USER_AGENT})
+                resp = client.get(robots_url, headers=_REQUEST_HEADERS)
                 if resp.status_code == 200:
                     rp.parse(resp.text.splitlines())
                 else:
@@ -77,7 +87,7 @@ def _check_robots_txt(url: str, timeout: int = 10) -> bool:
                 try:
                     rp_retry = RobotFileParser()
                     with _make_client(timeout, verify=False) as client:
-                        resp = client.get(robots_url, headers={"User-Agent": _USER_AGENT})
+                        resp = client.get(robots_url, headers=_REQUEST_HEADERS)
                         if resp.status_code == 200:
                             rp_retry.parse(resp.text.splitlines())
                             rp = rp_retry
@@ -103,7 +113,7 @@ def fetch_and_strip(url: str, settings: Settings) -> str | None:
 
     try:
         with _make_client(settings.SCRAPER_REQUEST_TIMEOUT) as client:
-            resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+            resp = client.get(url, headers=_REQUEST_HEADERS)
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
@@ -111,7 +121,7 @@ def fetch_and_strip(url: str, settings: Settings) -> str | None:
             logger.info("SSL verification failed for %s, retrying without verify", url)
             try:
                 with _make_client(settings.SCRAPER_REQUEST_TIMEOUT, verify=False) as client:
-                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp = client.get(url, headers=_REQUEST_HEADERS)
                     resp.raise_for_status()
                     html = resp.text
             except Exception as retry_exc:
@@ -148,14 +158,14 @@ def fetch_pdf_text(url: str, settings: Settings) -> str | None:
 
     try:
         with _make_client(settings.SCRAPER_REQUEST_TIMEOUT) as client:
-            resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+            resp = client.get(url, headers=_REQUEST_HEADERS)
             resp.raise_for_status()
             pdf_bytes = resp.content
     except Exception as exc:
         if _is_ssl_error(exc):
             try:
                 with _make_client(settings.SCRAPER_REQUEST_TIMEOUT, verify=False) as client:
-                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp = client.get(url, headers=_REQUEST_HEADERS)
                     resp.raise_for_status()
                     pdf_bytes = resp.content
             except Exception as retry_exc:
@@ -208,14 +218,14 @@ def fetch_pdf_links(url: str, settings: Settings) -> list[str]:
 
     try:
         with _make_client(settings.SCRAPER_REQUEST_TIMEOUT) as client:
-            resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+            resp = client.get(url, headers=_REQUEST_HEADERS)
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
         if _is_ssl_error(exc):
             try:
                 with _make_client(settings.SCRAPER_REQUEST_TIMEOUT, verify=False) as client:
-                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp = client.get(url, headers=_REQUEST_HEADERS)
                     resp.raise_for_status()
                     html = resp.text
             except Exception as retry_exc:
