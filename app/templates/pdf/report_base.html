@@ -648,6 +648,25 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         <p>{{ report.genre or 'This production' }}{% if report.tone %}, {{ report.tone | lower }} in tone{% endif %}{% if report.scale %}, {{ report.scale | lower }} in scale{% endif %}.
         {% if report.complexity %}Production complexity is assessed as {{ report.complexity | lower }}.{% endif %}</p>
       </div>
+      {% set sintel = report.scriptIntelligence %}
+      {% if sintel and (sintel.creativeRecognition or sintel.scheduleWeatherNotes or sintel.complexityDrivers) %}
+      <div style="border-top:1px solid var(--hairline);padding-top:16px;margin-bottom:16px">
+        {% if sintel.creativeRecognition %}
+        <div class="h5label">Creative recognition</div>
+        <p class="serif" style="font-size:12.5px;margin:0 0 14px">{{ sintel.creativeRecognition }}</p>
+        {% endif %}
+        {% if sintel.scheduleWeatherNotes %}
+        <div class="h5label">Schedule &amp; weather notes</div>
+        <p class="serif" style="font-size:12.5px;margin:0 0 14px">{{ sintel.scheduleWeatherNotes }}</p>
+        {% endif %}
+        {% if sintel.complexityDrivers %}
+        <div class="h5label">Complexity drivers</div>
+        <ul class="challenges">
+          {% for driver in sintel.complexityDrivers %}<li>{{ driver }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% endif %}
       {% if si and si.productionChallenges %}
       <div style="border-top:1px solid var(--hairline);padding-top:16px">
         <div class="h5label">Production challenges</div>
@@ -722,6 +741,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
         {{ dimbar('Crew depth', loc.crewDepth) }}
         {{ dimbar('Infrastructure', loc.infrastructure) }}
       </div>
+      {% set verdicts = (report.dimensionVerdicts or {}).get(loc.name) %}
+      {% if verdicts %}
+      <div style="margin-top:8px">
+        {% for dim, verdict in verdicts.items() %}
+        <div style="font-size:9px;color:var(--grey);font-weight:500;line-height:1.5;margin-bottom:2px">
+          <span style="font-weight:700;color:#3A382F">{{ dim }}:</span> {{ verdict }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="tfacts">
         {% set loc_sc = scenarios | selectattr('territory', 'equalto', loc.name) | first %}
         {% if loc_sc and loc_sc.programme %}<div class="tfact"><span class="k">Programme</span><span class="v">{{ loc_sc.programme }}</span></div>{% endif %}
