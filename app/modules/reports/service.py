@@ -1542,11 +1542,24 @@ class ReportService:
         # Comparable productions (small dataset, load all)
         comparables = self._safe_query("comparable_productions", lambda q: q.select("*"))
 
-        # Open grants
-        grants = self._safe_query(
-            "grant_opportunities",
-            lambda q: q.select("*").in_("status", ["open", "opening_soon", "closing_soon"]),
-        )
+        # Every grant on file. The engine decides what is live, not this query.
+        #
+        # This previously filtered `.in_("status", ["open","opening_soon","closing_soon"])`
+        # on the SEEDED status column — the exact "seeded status becomes stale"
+        # failure Grants Engine v2 exists to remove (Logic Guide §2: "Status is
+        # recomputed from approved dates/cycle state at runtime"; §3: "Every paid
+        # package queries the same eligible database").
+        #
+        # It was invisible because every current row happens to be open or
+        # opening_soon, so nothing was filtered. Against the v2 master it would have
+        # been severe: the status vocabulary there has 53 spellings in mixed case, the
+        # IN clause is case-sensitive, and only about 60 of 253 rows would have
+        # matched — silently deleting every rolling, cycle-based and current-programme
+        # fund before the matcher ever saw them.
+        #
+        # Routing, lifecycle and current-cycle exclusions now happen in the gate chain
+        # where each one is recorded with a reason a producer can be shown.
+        grants = self._safe_query("grant_opportunities", lambda q: q.select("*"))
 
         # Upcoming festivals
         all_festivals = self._safe_query("film_festivals", lambda q: q.select("*"))
@@ -1899,27 +1912,33 @@ class ReportService:
         return matched[:5]
 
     def _find_grants(self, analysis: ScriptAnalysisResult, territory_analysis: list[dict]) -> list[dict]:
-        result = (
-            self.supabase.table("grant_opportunities")
-            .select("*")
-            .in_("status", ["open", "opening_soon", "closing_soon"])
-            .execute()
+        """Retired. Grants are matched by ``app.modules.grants.engine`` only.
+
+        This helper used to return a grant list with ``"matchScore": 70`` hardcoded on
+        every row, no format, deadline, verification, nationality, region or budget
+        gate, and a territory filter that was its only test. Grants Engine v2 forbids
+        it by name — Developer Guide §6 "Do not use the deprecated legacy helper that
+        hardcodes score 70", and §14's QA table requires that it "must not execute in
+        v2 path".
+
+        It raises rather than being deleted because it was worse than broken: it read
+        four columns that do not exist on the live table (``organization``,
+        ``amount_max``, ``deadline``, and a ``status`` filter the festivals twin
+        applied to a column that was never there), and because every read used
+        ``.get()`` with a default it would not have crashed. It would have returned
+        funds with an empty organisation, an amount of "Varies" and a fabricated
+        "Rolling" deadline — inventing exactly the two values the contract says must
+        never be invented, under a score that means nothing, and looking entirely
+        plausible on the page.
+
+        A loud failure is the point. If anything reaches this, that path needs to move
+        to the v2 engine, not to be quietly served fabricated data.
+        """
+        raise NotImplementedError(
+            "_find_grants was retired by Grants Engine v2. Use "
+            "app.modules.grants.engine.GrantsMatchingService via "
+            "ReportBuilder._build_funding_opportunities instead."
         )
-        grants = result.data or []
-        top_territories = [t["territory"] for t in territory_analysis[:3]]
-        matched = [
-            {
-                "title": g["title"],
-                "organization": g.get("organization", ""),
-                "amount": f"Up to ${g['amount_max'] / 100 / 1_000_000:.1f}M" if g.get("amount_max") else "Varies",
-                "deadline": g.get("deadline", "Rolling"),
-                "territory": g.get("territory", ""),
-                "matchScore": 70,
-            }
-            for g in grants
-            if g.get("territory") in top_territories
-        ]
-        return matched[:5]
 
     def _recommend_festivals(self, analysis: ScriptAnalysisResult) -> list[dict]:
         result = (

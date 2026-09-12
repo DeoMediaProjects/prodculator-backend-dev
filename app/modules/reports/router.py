@@ -344,6 +344,23 @@ async def create_report(
         # Record whether this report consumed a pay-per-report credit so the
         # background task can refund it if generation ultimately fails.
         metadata["_credit_consumed"] = using_credit
+        # The package the grants entitlement reads at generation time.
+        #
+        # The report row records only report_type (free|paid|b2b), and the plan lives
+        # on the user — who may change plan between generation and viewing. Grants
+        # entitlement is applied while the report is BUILT, so the plan has to be
+        # captured here or the builder has nothing to read.
+        #
+        # The credit-buyer promotion is applied identically to the read path
+        # (get_report below, and _format_report_response): a pay-per-report buyer has
+        # plan="free" but bought a full report. Without the same rule here the stored
+        # payload would say "5 shown from 23" while the page served them ten.
+        from app.models.enums import normalize_plan
+
+        _package = normalize_plan(user.plan)
+        if _package == "free" and effective_report_type == "paid":
+            _package = "producer"
+        metadata["_package"] = _package
         report_id = service.create_report(
             user_id=user.id,
             script_title=body_data.script_title,
@@ -1479,7 +1496,10 @@ def _generate_investor_summary_pdf(report: dict) -> bytes | None:
                     "title": fo.get("name") or fo.get("title") or "",
                     "organization": fo.get("type") or "",
                     "amount": fo.get("tier") or "Varies",
-                    "deadline": fo.get("deadline") or "Rolling",
+                    # Not `or "Rolling"`: an absent deadline is unknown, not
+                    # year-round. Grants Engine v2 §4 forbids inventing one, and the
+                    # engine sets "Rolling" itself where a programme genuinely is.
+                    "deadline": fo.get("deadline") or "Not published",
                     "notes": fo.get("notes") or "",
                 })
     grants: list[dict] = grants_raw

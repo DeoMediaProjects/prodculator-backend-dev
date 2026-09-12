@@ -1,0 +1,75 @@
+id,title,lifecycle_state,target_dataset,action,reason,replacement_title
+9303b66f-36a7-5604-a7f6-e8e0c27b35eb,ICAA — Ayudas al Desarrollo de Proyectos,ARCHIVED,,ARCHIVE,,ICAA — Ayudas al Desarrollo de Proyectos
+ceaf0f31-3c16-59ff-a971-919d16097240,IMCINE — FIDECINE (Commercial Cinema Fund),ARCHIVED,,ARCHIVE,,IMCINE — FIDECINE (Commercial Cinema Fund)
+ef7cfd40-0427-520b-b300-cba968c50bd9,Ontario Creates — Film Fund,ARCHIVED,,ARCHIVE_REPLACE,,Ontario Creates — IP Fund — Linear Content
+782515c4-f42d-5335-a57d-dabad19290e1,Creative Europe MEDIA — Development Single Project,ARCHIVED,,ARCHIVE,LEGACY / NOT A 2026 MEDIA DEVELOPMENT ACTION,
+0427430d-8bfc-529c-b20e-d977aebd1a15,RTE — Documentary on One Development Fund,ARCHIVED,,ARCHIVE_REPLACE,RTÉ/ARTE FUND ROLLING,
+0c577d00-3d1e-592f-a8d6-161ceb6cf375,Fonds Images Afrique — Institut Français,ARCHIVED,,ARCHIVE_RECLASSIFY,NO CURRENT OFFICIAL FONDS IMAGES AFRIQUE CALL IDENTIFIED,
+4b115def-8bf3-5fea-a3df-e9f64b8ffc9e,Arts Council Malta — Creative Fund,ARCHIVED,,ARCHIVE_REPLACE,2026 STRANDS 1-5 CLOSED; STRAND 6 OPEN,
+90ac0fd8-5f90-5a79-87b4-6b9eef2f7d6c,Malta Film Fund — Production Grant,ARCHIVED,,ARCHIVE_REPLACE,2026 STRAND 4 CLOSED,
+333e76a0-5eae-5fe0-97c6-bf5e7be2f2ab,"NYSCA — Film, Media, and New Technology Grants",ARCHIVED,,ARCHIVE_REPLACE,CURRENT REGRANT PATHWAY,
+3d864145-e928-5e07-88e4-de83e2a1e9e9,California Arts Council — Artists in Communities,ARCHIVED,,ARCHIVE_REPLACE,2026 ROUND CLOSED,
+c8d328a3-aaee-5621-9c4f-fdcef9730f77,Georgia Film Office — Film Georgia Fund,ARCHIVED,,ARCHIVE_RECLASSIFY,NO CURRENT FILM GRANT SUBSTANTIATED,
+ba26116e-6876-55e4-9179-581b79817501,Illinois Arts Council Agency — Individual Artists Support,ARCHIVED,,ARCHIVE_REPLACE,CREATIVE ACCELERATOR OPEN TO 2026-10-14,
+606cff15-13a7-5a7a-92b3-3ec8012d968d,Louisiana Division of the Arts — Artist Fellowship,ARCHIVED,,ARCHIVE_REPLACE,FY27 LPG ROUND CLOSED,
+e7766cf4-f546-5fe8-af3f-97e25ac7eb71,New Mexico Arts — Film and Arts Funding,ARCHIVED,,ARCHIVE_REPLACE,FY27 NEW APPLICATIONS CLOSED; FY28 OPPORTUNITIES EXPECTED FALL 2026,
+e0b65972-3eea-559a-9c57-0a5e423fc057,Australian Film Television and Radio School — Short Film Fund,ARCHIVED,,ARCHIVE_RECLASSIFY,NO CURRENT GENERAL SHORT-FILM FUND SUBSTANTIATED,
+dea26066-be0e-5b77-a657-835c40086d49,Chicken & Egg Pictures — Hatching Fund,ARCHIVED,,ARCHIVE_SPLIT,CURRENT PROGRAMS ARE DISTINCT,
+eb1b5ea0-f52f-5499-8811-c367d2163ae0,DOC/NYC — Fund for Inclusion,ARCHIVED,,ARCHIVE_REPLACE,2026 CURRENT FUNDS DIFFER,
+54a3a50d-5b1d-52eb-897e-54ba6560d1bc,African Development Bank — Fund for African Private Sector Assistance (FAPA) Cultural Industry,ARCHIVED,,ARCHIVE_RECLASSIFY,"ACTIVE FUND, WRONG PRODUCT BUCKET",
+689de546-c297-52db-a044-719db6fcaeeb,Hubert Bals Fund — IDFAcademy,ARCHIVED,,ARCHIVE_RECLASSIFY,INVALID COMBINED RECORD,
+835bb23f-8d72-5b2c-a1ed-a4094b1a71bf,Hamburg Film Fund (HFF / MFG / FFF Bayern),ARCHIVED,,ARCHIVE_SPLIT,STRUCTURALLY INVALID,
+e95f73c4-886a-5bd2-b639-05d15377d6c2,Tribeca Film Institute — Reframe Grants,ARCHIVED,,ARCHIVE_RECLASSIFY,LEGACY / NON-CANONICAL,
+dd89d939-8cb0-5685-9b8e-e4450fd9ba6d,Cine Foundation International — Production Grant,ARCHIVED,,ARCHIVE,UNVERIFIED / LEGACY,
+6a23f8a0-b8cb-53fa-a7cb-98b7af336c66,Scottish Film Talent Network,ARCHIVED,,ARCHIVE_REPLACE,CLOSED SINCE 2020,
+029f4e4e-ad04-544f-bc8f-16a3d16185c9,Screen Ireland — Scéal Uplift (Feature Fiction),RECLASSIFIED,INCENTIVE_ENGINE,RECLASSIFY,,Section 481 — Scéal Uplift
+0c79f9e8-8f68-5078-b43c-2f2c0cd7f251,NFDC — Film Bazaar Co-Production Market,RECLASSIFIED,MARKETS_LABS_WIP,RECLASSIFY,,NFDC — Film Bazaar Co-Production Market
+3e3fba1b-ca2f-5c15-b137-db7f15e25c96,Sundance Institute — Catalyst Forum,RECLASSIFIED,MARKETS_LABS_WIP,RECLASSIFY,,Sundance Institute — Catalyst Forum
+516d3dcf-39cb-5066-b76b-d8f4281fd3e5,Durban FilmMart — Development Finance Forum,RECLASSIFIED,MARKETS_LABS_WIP,RECLASSIFY,,Durban FilmMart — Development Finance Forum
+7d0f8613-0da6-5d99-9c8b-8c0f4828e314,Film London — Production Finance Market,RECLASSIFIED,MARKETS_LABS_WIP,RECLASSIFY,,Film London — Production Finance Market
+FR-CNC-A4D,Alliance 4 Development (A4D),RECLASSIFIED,MARKETS_LABS_WIP,RECLASSIFY_REVIEW,,Alliance 4 Development (A4D)
+61cacf0e-ea62-58bd-a827-67180a38b2e3,Creative England — iFeatures,RECLASSIFIED,,RECLASSIFY,NO CURRENT OPEN ROUND ANNOUNCED,
+6347333e-b9c5-5e08-98bf-b0a033b3b9c7,Realness Institute — African Feature Film Development,RECLASSIFIED,,RECLASSIFY,CURRENT CALL CLOSED / NEXT CALL TBC,
+d4503efc-2ec3-5c70-91c3-607b1e5390ef,BAFTA — Rocliffe New Writing Competition,RECLASSIFIED,,RECLASSIFY,2026 TV COMEDY OPEN,
+f6086ffa-267d-5b00-ace8-95bac3f09512,Sundance Institute — Feature Film Program,RECLASSIFIED,,RECLASSIFY,2027 DEVELOPMENT TRACK CLOSED 12 MAY 2026,
+81436d47-4ee8-5dc6-9b49-758f62d9d8a6,German Federal Film Fund (DFFF) — DFFF I,RECLASSIFIED,,RECLASSIFY,2026 APPLICATION CAPACITY EXHAUSTED; 2027 INTAKE EXPECTED FROM NOV 2026,
+d88bd137-1e2e-5920-8440-754061123d7c,German Federal Film Fund (DFFF) — DFFF II (Large Budget),RECLASSIFIED,,RECLASSIFY,2026 APPLICATION CAPACITY EXHAUSTED; 2027 INTAKE EXPECTED FROM NOV 2026,
+4e7bbe55-936f-5edc-ad6c-7f6b600d7b77,NAC — National Arts Council Singapore — Creation Grant,RECLASSIFIED,,CORRECT_RECLASSIFY,2026 ROUND CLOSED,
+3dd618f9-1eb3-560e-b6dd-435dbf0f1936,Tribeca — Chanel Through Her Lens,RECLASSIFIED,,RECLASSIFY_CORRECT,2026 APPLICATIONS CLOSED,
+77f24c3a-4e21-5b97-abf0-c104d78f59dc,Sundance Institute — Women at Sundance — Adobe Fellows,RECLASSIFIED,,RECLASSIFY_CORRECT,INVITATION/NOMINATION BASED,
+82fa28c2-5493-52a7-ab02-48b6973dd353,Tribeca — IF/Then Shorts — Social Impact Documentary,RECLASSIFIED,,RECLASSIFY_CORRECT,"CURRENT PROGRAM, OPPORTUNITIES CYCLE-DEPENDENT",
+a6d8f7d2-e08a-5cfa-ab22-37ff235020b8,Points North Institute — Fellowship,RECLASSIFIED,,RECLASSIFY_CORRECT,2026 FELLOWSHIP CYCLE,
+dc1dc448-e5a9-532e-8769-3112af186528,EWA Network — Women in Film and Television,RECLASSIFIED,,RECLASSIFY_CORRECT,CURRENT NETWORK PROGRAMS,
+753c4b82-1e7c-5098-88ac-e95d64648614,RAI Cinema — Co-Production Fund,RECLASSIFIED,,CORRECT_RECLASSIFY_NEEDS_TERMS,BROADCASTER/CO-PRODUCTION RELATIONSHIP,
+0c7e8c54-ac05-5e29-b958-2bea3feb95ad,Netherlands Film Fund — International Co-Production,SPLIT_PARENT,,SPLIT,,Netherlands Film Fund — International Co-Production
+248f7aa7-7173-5445-bc97-5684b6d87e17,Screen Australia — Story Development,SPLIT_PARENT,,SPLIT,,Screen Australia — Story Development
+2516878e-27cb-524d-9f8d-1b8520922435,Korean Film Council (KOFIC) — International Co-Production Fund,SPLIT_PARENT,,SPLIT,,Korean Film Council (KOFIC) — International Co-Production Fund
+264e67c0-2807-597e-af13-69e48d3c58a9,IDFA Bertha Fund,SPLIT_PARENT,,SPLIT,,IDFA Bertha Fund
+2728adc5-5744-5c2d-8f7f-03778572cf8a,IFFR — Hubert Bals Fund — Production,SPLIT_PARENT,,SPLIT,,IFFR — Hubert Bals Fund — Production
+39b9b071-6f7b-5458-b7dc-07dc74e1013b,Busan International Film Festival — Asian Cinema Fund,SPLIT_PARENT,,SPLIT,,Busan International Film Festival — Asian Cinema Fund
+3ae7a3c1-88c2-5da9-bb0b-31c32b8aa753,IMCINE — FOPROCINE,SPLIT_PARENT,,ARCHIVE_SPLIT,,IMCINE — FOPROCINE
+42971f37-f74f-5039-9395-1cf5516c8add,ICAA — Subsidios a la Producción de Largometrajes,SPLIT_PARENT,,SPLIT,,ICAA — General Production Aid + ICAA — Selective Production Aid
+5c84f7e0-19a1-5747-ada4-5523481f8737,MiC — Contributi Selettivi alla Produzione,SPLIT_PARENT,,SPLIT,,MiC — Contributi Selettivi alla Produzione
+654423c3-d0a9-56dd-bd22-1cd2b02d9976,ICEC — Ajuts a la Producció Cinematogràfica (Catalonia),SPLIT_PARENT,,SPLIT,,ICEC — Feature Production / Documentary Production / Animation Production / Short Production / Minority International Co-production
+6cd9682a-b879-5cee-b47a-d8894e730e31,Screen Ireland — Short Film Scheme,SPLIT_PARENT,,SPLIT,,Screen Ireland — Focus Shorts + Frameworks
+a90bc3d8-fb87-51ad-b9ce-5158515b0931,BFI Film Fund — Production,SPLIT_PARENT,,SPLIT,,BFI Discovery Feature Funding + BFI Impact Feature Funding
+4a124fb7-ea7f-56d5-a064-17f2b6feb8ee,Northern Ireland Screen — Development and Production,SPLIT_PARENT,,SPLIT,DEVELOPMENT ROUTES CURRENT; PRODUCTION CASE-BY-CASE,
+636a32bd-da1c-565c-bfdb-d86aca4b2eee,Singapore International Film Festival — Southeast Asian Film Fund,SPLIT_PARENT,,SUSPEND_SPLIT,TEMPORARY HIATUS IN 2026,
+2f838be7-fae8-5d3c-a71a-654926f4a832,ANCINE — FSA Produção Independente,SPLIT_PARENT,,SPLIT,MULTIPLE 2026 CALLS; GENERIC RECORD INVALID,
+37166ec3-4c2f-5382-903e-f4b4c2f00aa0,Centre Cinématographique Marocain — Fonds d'Aide,SPLIT_PARENT,,SPLIT,CURRENT; THREE ANNUAL SESSIONS,
+744e88fd-e3b1-5391-b490-9e66f7e13010,FFA — Drehbuchförderung (Script Development),SPLIT_PARENT,,SPLIT,CURRENT / MULTIPLE 2026 DEADLINES,
+8171edc1-3c2d-5640-8618-689721b68c3c,ICA — Apoio à Produção de Longas-metragens,SPLIT_PARENT,,SPLIT,2026 SECOND FICTION FEATURE CALL OPEN TO 22 OCT 2026,
+6d91e878-16ed-5cfc-9919-9795b2caf56b,Czech Film Fund — Production Support,SPLIT_PARENT,,SPLIT,CURRENT 2026 CATEGORY-BASED CALLS,
+dfc409ee-7bc6-5cc3-962d-bbb8d15c2f90,Czech Film Fund — Script Development,SPLIT_PARENT,,SPLIT,CURRENT 2026 CATEGORY-BASED CALLS,
+a0cc08d6-cb37-540b-b7a7-ad74c2cb0e5c,Ibermedia — Co-Production and Development Fund,SPLIT_PARENT,,SPLIT,2026 CALL CLOSED,
+95d2f740-d0dd-5ea0-8a7f-17a2922deca9,Canada Media Fund — Development — English Market,SPLIT_PARENT,,SPLIT,MULTIPLE CURRENT WINDOWS,
+ae16e338-cf69-57a9-a4a6-67ad38edeef5,BC Arts Council — Creative BC Film Fund,SPLIT_PARENT,,CORRECT_REPLACE,OPEN UNTIL BUDGET EXPENDED,
+885f7213-1945-510d-b3e4-824886676f74,SODEC — Programme d'aide au développement (Quebec),SPLIT_PARENT,,SPLIT,SELECTIVE SECOND WINDOW 2026-09-07 TO 2026-10-07,
+c1a45713-b468-5272-9723-d85ef042794f,SODEC — Programme d'aide à la production (Quebec),SPLIT_PARENT,,SPLIT,MULTIPLE 2026-27 WINDOWS,
+4dd4cae3-0346-5f27-a1e9-ea14ba1e1e1f,Film and Television Institute of India — Short Film,SPLIT_PARENT,,SPLIT_CORRECT,2026 NER SHORT-FILM/FEATURE CALLS EXIST,
+88a2da97-53da-5d94-ad54-d47a7438deaf,Japan — Agency for Cultural Affairs — Creative Industries Fund,SPLIT_PARENT,,SPLIT,2026 ROUNDS CLOSED / AWARDS MADE,
+cd34b748-eafe-50e2-97af-7b6f64307d0f,IMDA — Singapore Media Fund,SPLIT_PARENT,,SPLIT,2026 CFP CYCLES,
+7f403456-f23a-5d84-bbf7-b39f709ba0c3,IDA Enterprise Documentary Fund,SPLIT_PARENT,,CORRECT_SPLIT,PRODUCTION FUND CURRENT FRAMEWORK; DEVELOPMENT ON HOLD,
+76a6652c-bba1-5f48-b920-c0d2320fccaa,ANCINE — FSA Desenvolvimento (Development),SPLIT_PARENT,,SPLIT_REPLACE,PROGRAMME ACTIVE; GENERIC ROW NOT CANONICAL,
+b308f55d-4a95-5fe5-bada-313e4435d404,Canarias Crea — Ayudas a la Producción Audiovisual,SPLIT_PARENT,,SPLIT,2026 CALLS ACTIVE/CURRENT,
+e59b8d24-c6b9-5542-8c3b-6fbc2d9f950c,Netherlands Film Fund — Feature Film Production,SPLIT_PARENT,,SPLIT_REPLACE,SCHEME-BASED / ROUND-BASED,
