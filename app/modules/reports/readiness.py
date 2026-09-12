@@ -969,7 +969,25 @@ def _assess_soft_money(ctx: _Context, flags: list[dict]) -> dict:
         _pct(ctx.net_rebate_value, ctx.total_budget_value)
         if ctx.net_rebate_value is not None else 0.0
     )
-    residual_pct = max(0.0, 100.0 - soft_pct - incentive_pct)
+    # Matched soft money is DELIBERATELY not deducted here.
+    #
+    # A matched grant is an opportunity, not finance. Grants Engine v2 Logic Guide §7
+    # ("Financial Readiness: Matched/selective funds are pipeline opportunities. They
+    # must not be counted as committed finance until award/contract evidence exists")
+    # and §9 ("must not be added numerically to committed finance merely because the
+    # matcher found them") both forbid it, and the vocabulary in §8 is explicit that
+    # MATCHED != AWARDED != COMMITTED FINANCE.
+    #
+    # This line previously read `100.0 - soft_pct - incentive_pct`, which told a
+    # producer their equity ask was smaller because a matcher had found funds nobody
+    # had applied for. It was latent rather than harmless: max_amount is prose on
+    # every current row so `quantified` was always empty and soft_pct always 0. The
+    # v2 master supplies 40 genuinely numeric amounts, so the first correct amount
+    # would have silently started discounting the equity ask.
+    #
+    # The modelled incentive stays in, because a statutory rebate is calculated from
+    # the production's own spend rather than awarded at someone's discretion.
+    residual_pct = max(0.0, 100.0 - incentive_pct)
 
     figures.append(_figure(
         "Matched soft money (maximum)",
@@ -992,8 +1010,16 @@ def _assess_soft_money(ctx: _Context, flags: list[dict]) -> dict:
     figures.append(_figure(
         "Residual for equity or debt",
         _fmt_pct(residual_pct),
-        "100% less the soft-money and incentive shares above; not reduced by "
-        "any equity already committed, which this report does not hold",
+        "100% less the modelled incentive share; matched soft money is not "
+        "deducted because a match is not an award, and not reduced by any "
+        "equity already committed, which this report does not hold",
+    ))
+    figures.append(_figure(
+        "Equity ask if every matched fund were awarded",
+        _fmt_pct(max(0.0, residual_pct - soft_pct)),
+        "illustrative only — the residual above less the soft-money share, "
+        "shown to size the opportunity, not to claim it. No matched fund is "
+        "finance until awarded and contracted",
     ))
 
     if quantified:
@@ -1049,6 +1075,15 @@ def _assess_soft_money(ctx: _Context, flags: list[dict]) -> dict:
             "No soft money matched this production — the whole budget less the "
             "modelled incentive must come from equity or debt."
         )
+    elif not quantified:
+        # Funds matched but none states a usable amount. Saying "0% coverage" would
+        # read as "these funds are worth nothing" rather than "nobody has published
+        # what they are worth", which is the actual state of 164 of the 253 records.
+        status = STATUS_CONDITIONAL
+        headline = (
+            f"{len(funds)} matched fund(s), none publishing a per-project award "
+            f"amount this engine can size — soft-money coverage is unknown, not nil."
+        )
     elif soft_pct >= SOFT_MONEY_MATERIAL_PCT and open_deadlines:
         status = STATUS_READY
         headline = (
@@ -1065,8 +1100,8 @@ def _assess_soft_money(ctx: _Context, flags: list[dict]) -> dict:
         status = STATUS_CONDITIONAL
         headline = (
             f"Matched soft money covers {_fmt_pct(soft_pct)} of budget, below "
-            f"the {SOFT_MONEY_MATERIAL_PCT:g}% at which it materially reduces "
-            f"the equity ask."
+            f"the {SOFT_MONEY_MATERIAL_PCT:g}% at which it would materially "
+            f"change the financing plan if awarded."
         )
 
     return {

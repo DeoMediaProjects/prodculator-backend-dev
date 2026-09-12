@@ -875,13 +875,29 @@ class TestBuildComparables:
 
 
 class TestBuildFundingOpportunities:
-    def test_grant_label_prefix(self):
+    def test_grant_amount_is_the_source_wording_verbatim(self):
+        """The amount shown is what the source published, unedited.
+
+        This asserted a synthesised "Up to " prefix, applied to a field
+        (``amount_description``) that does not exist on the grants table — so on live
+        data it was always None and the prefix never ran.
+
+        Grants Engine v2 keeps the funder's own wording instead. The source already
+        says whether a figure is a ceiling, a range or a whole-call pool, and
+        rewriting "£50,000 per project" into "Up to £50,000 per project" restates a
+        per-project entitlement as a maximum. Where a figure IS a pool the engine
+        attaches CAVEAT_POOL_NOT_PER_PROJECT rather than editing the number, per
+        Developer Guide §1 ("Total programme/call pools are not per-project
+        maximums").
+        """
         from datetime import date as _date
         grants = [
             {"title": "BFI Development Fund", "territory": "United Kingdom",
-             "amount_description": "£50,000 per project",
-             "deadline": "rolling", "recurrence": "rolling",
-             "verified_at": _date.today().isoformat()},
+             "max_amount": "£50,000 per project",
+             "current_cycle_verified": "True", "official_source_verified": "True",
+             "current_status": "rolling",
+             "application_deadline": "rolling", "recurrence": "rolling",
+             "last_verified_at": _date.today().isoformat()},
         ]
         inc = _make_incentive()
         ds = _make_datasets(incentives=[inc], grants=grants)
@@ -889,7 +905,95 @@ class TestBuildFundingOpportunities:
 
         opps = report["fundingOpportunities"]
         assert len(opps) == 1
-        assert opps[0]["notes"].startswith("Up to £50,000")
+        assert opps[0]["notes"] == "£50,000 per project"
+
+    def test_package_controls_display_depth_not_the_matched_universe(self):
+        """Entitlement is the last layer, and only the last layer.
+
+        Logic Guide §6: "All paid packages search the full database... Match and rank
+        everything first; entitlement is the final display layer." So a Professional
+        and a Producer report over identical data must agree on how many funds are
+        eligible and disagree only on how many are shown — and the cheaper tier's list
+        must be a prefix of the richer one, not a different selection.
+        """
+        from datetime import date as _date
+        grants = [
+            {"title": f"Fund {i}", "territory": "United Kingdom",
+             "max_amount": "£50,000", "current_cycle_verified": "True",
+             "current_status": "open", "application_deadline": "rolling",
+             "recurrence": "rolling", "funding_body": f"Body {i}",
+             "last_verified_at": _date.today().isoformat()}
+            for i in range(14)
+        ]
+        ds = _make_datasets(incentives=[_make_incentive()], grants=grants)
+
+        def build_for(package):
+            return _build(ds, request_metadata={"_package": package})
+
+        professional = build_for("professional")
+        producer = build_for("producer")
+
+        assert professional["grantsPayload"]["eligible_match_count"] == \
+            producer["grantsPayload"]["eligible_match_count"] == 14
+        assert professional["grantsPayload"]["display_limit"] == 5
+        assert producer["grantsPayload"]["display_limit"] == 10
+
+        names = lambda r: [o["name"] for o in r["fundingOpportunities"]
+                           if o["type"] == "Fund"]
+        assert names(producer)[:5] == names(professional)
+
+    def test_report_carries_the_grants_payload_with_its_counts(self):
+        """The report states how much it is not showing.
+
+        "10 shown from 23 eligible" needs the eligible total, and the flat
+        fundingOpportunities list only carries the ten. Without the payload the UI has
+        no way to tell a Single customer that eighteen further funds matched.
+        """
+        from datetime import date as _date
+        grants = [
+            {"title": f"Fund {i}", "territory": "United Kingdom",
+             "max_amount": "£50,000", "current_cycle_verified": "True",
+             "current_status": "open", "application_deadline": "rolling",
+             "recurrence": "rolling", "funding_body": f"Body {i}",
+             "last_verified_at": _date.today().isoformat()}
+            for i in range(14)
+        ]
+        ds = _make_datasets(incentives=[_make_incentive()], grants=grants)
+        report = _build(ds)
+
+        payload = report["grantsPayload"]
+        assert payload["eligible_match_count"] == 14
+        # More matched than any package displays, so the summary has to say so.
+        assert payload["display_limit"] <= 10
+        assert str(payload["eligible_match_count"]) in \
+            payload["narrative_context"]["summary_statement"]
+        assert payload["narrative_context"]["not_committed_finance"] is True
+        # The flat list is the entitlement slice of the same result, not a second
+        # computation of it.
+        funds = [o for o in report["fundingOpportunities"] if o["type"] == "Fund"]
+        assert len(funds) == payload["display_limit"] == len(payload["recommendations"])
+
+    def test_matched_grant_is_never_presented_as_committed_finance(self):
+        """Every recommendation carries the not-committed-finance caveat.
+
+        Logic Guide §9: a matched grant stays an opportunity until awarded. The caveat
+        is how the report says so, and it is unconditional — there is no state of the
+        engine in which a match is finance.
+        """
+        from datetime import date as _date
+        grants = [
+            {"title": "BFI Development Fund", "territory": "United Kingdom",
+             "max_amount": "£50,000", "current_cycle_verified": "True",
+             "current_status": "open", "application_deadline": "rolling",
+             "recurrence": "rolling", "last_verified_at": _date.today().isoformat()},
+        ]
+        ds = _make_datasets(incentives=[_make_incentive()], grants=grants)
+        report = _build(ds)
+
+        funds = [o for o in report["fundingOpportunities"] if o["type"] == "Fund"]
+        assert funds
+        for fund in funds:
+            assert any("not committed finance" in c.lower() for c in fund["caveats"])
 
     def test_feature_only_grants_filtered_for_tv(self):
         """Format is a HARD GATE (grants matcher G1): a feature-only fund is

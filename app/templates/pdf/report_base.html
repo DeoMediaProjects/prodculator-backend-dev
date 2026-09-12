@@ -1437,7 +1437,12 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
       </td>
       <td>{{ opp.territory }}</td>
       <td>{{ opp.notes }}</td>
-      <td>{{ opp.deadline or 'Rolling' }}</td>
+      {# An absent deadline is not a rolling one. This read `or 'Rolling'`, which
+         told a producer a programme accepted applications year-round whenever we
+         simply had no date — Grants Engine v2 §4 forbids inventing a deadline, and
+         the engine now sets the string "Rolling" itself only where the programme
+         genuinely is. #}
+      <td>{{ opp.deadline or 'Not published' }}</td>
     </tr>
     {% if opp.whyMatched %}
     <tr><td colspan="4" style="font-family:var(--serif);font-size:11px;color:#26241F;font-style:italic">{{ opp.whyMatched }}</td></tr>

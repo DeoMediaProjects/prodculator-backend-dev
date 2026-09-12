@@ -73,6 +73,10 @@ from app.modules.reports.readiness import (
     SECTION_EXPLAINER as _READINESS_EXPLAINER,
     compute_financial_readiness,
 )
+from app.modules.grants.engine import GrantsMatchingService
+from app.modules.grants.normalise import parse_date as _grant_parse_date
+from app.modules.grants.engine import ProjectFacts as GrantsProjectFacts
+from app.modules.grants.schemas_v2 import GrantsReportPayload
 from app.modules.reports.matching import (
     estimate_completion_date,
     match_distributors,
@@ -202,6 +206,10 @@ class ReportBuilder:
         self.script_analysis = script_analysis
         self.is_preview = is_preview
         self.warnings: list[str] = []
+        #: The Grants Engine v2 result. Built once in _build_funding_opportunities and
+        #: read by every other grant-consuming section, so none of them re-queries the
+        #: table or re-derives eligibility (Logic Guide §3).
+        self.grants_payload: GrantsReportPayload = GrantsReportPayload()
 
         # Pre-index datasets
         self._incentives_by_program = index_incentives(
@@ -417,6 +425,21 @@ class ReportBuilder:
             )
             if readiness:
                 report["financialReadiness"] = readiness
+
+        # The Grants Engine v2 result object, emitted alongside the flat
+        # fundingOpportunities list the PDF, Excel and frontend already render.
+        #
+        # Both, not one. report_payload_schema.json is snake_case and the whole report
+        # is camelCase, and five test files, the PDF template, the Excel exporter and
+        # the frontend all read the flat shape — switching them in one move would be a
+        # breaking change dressed up as a refactor. So the flat list stays the render
+        # contract and is DERIVED from this payload rather than computed separately,
+        # which is what Logic Guide §3 actually asks for: one engine result, not one
+        # data shape.
+        #
+        # Counts are the part the report cannot state without this: "10 shown from 23
+        # eligible" needs the eligible total, and the flat list only carries the ten.
+        report["grantsPayload"] = self.grants_payload.as_payload_dict()
 
         # Inject section explainers and scoring methodology
         self._inject_section_explainers(report)
@@ -2620,6 +2643,56 @@ class ReportBuilder:
 
     # ── Funding Opportunities ──────────────────────────────────────────────
 
+    def _package(self) -> str:
+        """The purchased package, for the grants display entitlement.
+
+        Read from request metadata, which the report router stamps at creation time.
+        Falls back to the report type so a paid report is never served the free depth,
+        and finally to None so ``display_limit`` applies its own conservative default.
+
+        Entitlement is display depth only. Every package matches and ranks the same
+        universe — Logic Guide §6: "All paid packages search the full database."
+        """
+        package = self.request_metadata.get("_package") or self.request_metadata.get("package")
+        if package:
+            return str(package).strip().lower()
+        # A credit-bought report has no plan on the row; the read path already treats
+        # it as producer-level, so generation must agree or the stored payload and the
+        # served payload would disagree about how many funds exist.
+        if (self.request_metadata.get("report_type") or "").lower() == "paid":
+            return "producer"
+        return "free"
+
+    def _derive_production_stage(self) -> str | None:
+        """Where the production has reached, inferred from its own dates.
+
+        No intake field asks for stage, and Developer Guide §7 forbids adding a second
+        questionnaire for something derivable. So it is derived here — and marked
+        derived, so the stage gate qualifies a record rather than excluding it.
+
+        Returns None when the dates say nothing, which is a real and common state.
+        """
+        start = _grant_parse_date(self.request_metadata.get("filming_start_date"))
+        completion = _grant_parse_date(self.request_metadata.get("completion_date"))
+        today = date.today()
+
+        if start is None and completion is None:
+            return None
+        if completion is not None and today > completion:
+            return "distribution"
+        if start is not None and today < start:
+            return "development"
+        if start is not None and today >= start:
+            duration_weeks = self.request_metadata.get("filming_duration")
+            try:
+                weeks = int(duration_weeks) if duration_weeks else None
+            except (TypeError, ValueError):
+                weeks = None
+            if weeks and today > start + timedelta(weeks=weeks):
+                return "completion"
+            return "production"
+        return None
+
     def _build_funding_opportunities(self) -> list[dict]:
         """Build fundingOpportunities from the deterministic grants matcher
         plus territory-matched festivals.
@@ -2655,34 +2728,60 @@ class ReportBuilder:
             "ranked_territories": list(self._territory_names),
             "script_origin": script_origin,
         }
-        grant_matches, grant_flags = match_grants(grants, production)
-        for flag in grant_flags:
+        # Grants Engine v2. One service produces one payload; every grant-consuming
+        # section reads that payload rather than re-querying the table and inventing a
+        # second version of the rules (Logic Guide §3).
+        facts = GrantsProjectFacts(
+            format=self._production_format or None,
+            genres=sorted(self._production_genres()),
+            budget_usd=budget_usd,
+            home_country=self.request_metadata.get("country") or None,
+            producer_country=self.request_metadata.get("producer_country") or None,
+            script_origin=script_origin,
+            ranked_territories=list(self._territory_names),
+            # Derived from the shoot dates, never asked for — so it qualifies a record
+            # rather than excluding it. See ProjectFacts.production_stage_declared.
+            production_stage=self._derive_production_stage(),
+            production_stage_declared=False,
+            co_production_status=self.request_metadata.get("co_production_status") or None,
+            co_production_interest=self.request_metadata.get("co_production_interest") or None,
+        )
+        grants_service = GrantsMatchingService()
+        grants_payload = grants_service.build_payload(
+            grants, facts, package=self._package()
+        )
+        # Retained on the builder so other sections consume this object instead of the
+        # raw dataset, and so the report can state "N shown from M eligible".
+        self.grants_payload = grants_payload
+
+        for flag in grants_payload.admin_flags:
             logger.info(
-                "grants matcher admin flag: %s — %s [%s]",
-                flag.get("fund_name"), flag.get("detail"), flag.get("flag"),
+                "grants engine admin flag: %s — %s [%s]",
+                flag.get("opportunity"), flag.get("detail"), flag.get("flag"),
             )
 
         opportunities: list[dict] = []
-        for m in grant_matches[:10]:
-            g = m["grant"]
-            notes = (
-                g.get("max_amount")
-                or g.get("amount_description")
-                or ""
-            )
-            if notes and not notes.lower().startswith("up to") and _re.search(r'[£$€]\s*\d', notes):
-                notes = f"Up to {notes}"
+        for match in grants_payload.recommendations:
+            display = match.display_fields
             opportunities.append({
-                "name": g.get("title") or g.get("fund_name") or "",
+                "name": display.title,
                 "type": "Fund",
-                "territory": g.get("territory") or "",
-                "deadline": (
-                    g.get("application_deadline") or g.get("deadline") or ""
-                ),
-                "notes": notes,
-                "badges": m["badges"],
-                "whyMatched": "; ".join(m["signals"]),
-                "matchScore": m["score"],
+                "territory": display.territory or "",
+                # None rather than "" when nothing is published, so no renderer can
+                # turn an absent deadline into an invented "Rolling".
+                "deadline": display.deadline or "",
+                "notes": display.amount or "",
+                "genre": [],
+                "badges": display.badges,
+                "whyMatched": "; ".join(match.match_reasons),
+                "matchScore": match.raw_score,
+                # v2 additions, so a consumer can tell a verified live round from a
+                # programme nobody has checked this cycle.
+                "eligibilityStatus": match.eligibility_status,
+                "portfolioRank": match.portfolio_rank,
+                "caveats": match.caveats,
+                "officialSource": display.official_source,
+                "verifiedAt": match.verification.verified_at,
             })
 
         # Production genres for festival relevance filtering

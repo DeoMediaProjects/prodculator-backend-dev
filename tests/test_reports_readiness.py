@@ -638,8 +638,50 @@ class TestSoftMoney:
             f for f in component["figures"]
             if f["label"] == "Residual for equity or debt"
         )
-        # 100% - 10% soft - 20% incentive
-        assert residual["value"] == "70.0%"
+        # 100% - 20% incentive. The 10% of matched soft money is deliberately NOT
+        # deducted.
+        #
+        # This assertion used to read 70.0% — 100 less soft less incentive — which
+        # told a producer their equity ask had shrunk because a matcher had found
+        # funds nobody had applied for. Grants Engine v2 forbids it outright (Logic
+        # Guide §7 "Matched/selective funds are pipeline opportunities. They must not
+        # be counted as committed finance until award/contract evidence exists", and
+        # §8's ladder MATCHED != AWARDED != COMMITTED FINANCE).
+        #
+        # The bug was latent rather than harmless: max_amount is prose on every row of
+        # the live table, so the money parser never returned a figure and soft_pct was
+        # always 0. The v2 master supplies 40 genuinely numeric amounts, so the first
+        # correct amount would have started quietly discounting the equity ask.
+        #
+        # The modelled incentive stays deducted, because a statutory rebate is
+        # calculated from the production's own spend rather than awarded at a funder's
+        # discretion.
+        assert residual["value"] == "80.0%"
+
+    def test_matched_soft_money_never_reduces_the_equity_ask(self):
+        """The residual must not move when matched soft money appears.
+
+        The guard for the contract breach above: same production, once with a
+        quantified matched fund and once with none. If the residual differs, matched
+        money is being treated as committed finance somewhere.
+        """
+        scenarios = [_scenario(total=30_000_000, net_rebate=6_000_000)]
+        with_grant = _component(
+            _assess(_report(scenarios=scenarios),
+                    _datasets(grants=_grant_rows(max_amount=3_000_000)),
+                    _metadata()),
+            "soft_money_coverage",
+        )
+        without_grant = _component(
+            _assess(_report(scenarios=scenarios), _datasets(grants=[]), _metadata()),
+            "soft_money_coverage",
+        )
+
+        def residual(component):
+            return next(f for f in component["figures"]
+                        if f["label"] == "Residual for equity or debt")["value"]
+
+        assert residual(with_grant) == residual(without_grant) == "80.0%"
 
     def test_note_states_that_soft_money_is_not_committed(self):
         section = _assess(_report(), _datasets(), _metadata())
