@@ -132,7 +132,12 @@ class StripeService:
             customer_email=user_email,
             success_url=f"{self.settings.FRONTEND_URL}/dashboard?payment=success",
             cancel_url=f"{self.settings.FRONTEND_URL}/pricing?payment=cancelled",
-            metadata={"userId": user_id, **(metadata or {})},
+            metadata={
+                "userId": user_id,
+                "priceId": price_id,
+                "paymentType": "credit",
+                **(metadata or {}),
+            },
         )
         return {"session_id": session.id, "url": session.url}
 
@@ -155,7 +160,11 @@ class StripeService:
             customer_email=user_email,
             success_url=f"{self.settings.FRONTEND_URL}/dashboard?credit=success",
             cancel_url=f"{self.settings.FRONTEND_URL}/pay-per-report?payment=cancelled",
-            metadata={"userId": user_id, "paymentType": "credit"},
+            metadata={
+                "userId": user_id,
+                "priceId": price_id,
+                "paymentType": "credit",
+            },
             **(
                 {"discounts": d}
                 if (d := self._promo_discounts(self.SINGLE_REPORT_PROMO_KEY))
@@ -179,7 +188,7 @@ class StripeService:
         auto-refund webhook keeps the test subscriber whole. Never set from a
         normal user path — only the admin test endpoint passes it.
         """
-        combined_metadata = {"userId": user_id, **(metadata or {})}
+        combined_metadata = {"userId": user_id, "priceId": price_id, **(metadata or {})}
         plan_type = (metadata or {}).get("planType", "professional")
         if test_billing:
             price_id = self.get_or_create_test_price(price_id)

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 import stripe
 
+from app.core.config import Settings, get_settings
 from app.core.dependencies import get_supabase
 from app.modules.payments import router as payments_router
 from app.modules.payments.router import get_stripe_service
@@ -179,6 +180,11 @@ def test_pay_then_webhook_then_me_reflects_upgrade(client, monkeypatch):
     db = _seed_db()
     client.app.dependency_overrides[get_supabase] = lambda: db
     client.app.dependency_overrides[get_stripe_service] = lambda: FakeStripeService()
+    client.app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None,
+        JWT_SECRET_KEY="x" * 64,
+        STRIPE_PRICE_PRODUCER_GBP="price_producer",
+    )
 
     auth = {"Authorization": "Bearer token"}
 
@@ -192,7 +198,7 @@ def test_pay_then_webhook_then_me_reflects_upgrade(client, monkeypatch):
     checkout = client.post(
         "/api/payments/subscription-checkout",
         headers=auth,
-        json={"price_id": "price_producer", "plan_type": "producer"},
+        json={"price_id": "price_producer", "plan_type": "producer", "currency": "gbp"},
     )
     assert checkout.status_code == 200
     assert checkout.json()["session_id"] == "cs_sub"

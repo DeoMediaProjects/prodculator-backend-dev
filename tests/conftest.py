@@ -36,6 +36,17 @@ _APP_IMPORT_ENV = {
     "RATE_LIMIT_ENABLED": "false",
     "RATE_LIMIT_STORAGE_URI": "memory://",
     "STRIPE_SECRET_KEY": "",
+    "STRIPE_WEBHOOK_SECRET": "",
+    # Tests must never inherit live outbound-service credentials from .env.
+    "BREVO_API_KEY": "",
+    "SENDGRID_API_KEY": "",
+    "ANTHROPIC_API_KEY": "",
+    "OPENAI_API_KEY": "",
+    "AWS_ACCESS_KEY_ID": "",
+    "AWS_SECRET_ACCESS_KEY": "",
+    "AWS_S3_BUCKET_NAME": "",
+    "FIREBASE_PROJECT_ID": "",
+    "FIREBASE_SERVICE_ACCOUNT_JSON": "",
     "JWT_SECRET_KEY": "test-secret-key-with-at-least-32-chars",
 }
 _PREVIOUS_ENV = {key: os.environ.get(key) for key in _APP_IMPORT_ENV}

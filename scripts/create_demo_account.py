@@ -9,10 +9,11 @@ Idempotent: re-running updates the existing account in place (plan, credits,
 password, subscription window) rather than erroring or duplicating rows.
 
 Usage:
-    python scripts/create_demo_account.py
     python scripts/create_demo_account.py --email demo@demomedia.com --password 'DemoMedia2026!' --credits 100
 """
 import argparse
+import secrets
+import string
 import sys
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -27,12 +28,17 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 
 DEFAULT_EMAIL = "demo@deomedia.net"
-DEFAULT_PASSWORD = "DeoMedia2026!"
 PLAN = "studio"
 # Studio's per-period report limit (see app/modules/payments/plan_catalog.py).
 # Credits act as overflow once the period limit is hit, so a demo effectively
 # has limit + credits worth of full reports.
 STUDIO_REPORT_LIMIT = 10
+
+
+def generate_password(length: int = 20) -> str:
+    """Generate a strong one-time password when one is not supplied."""
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*-_"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def create_demo_account(email: str, password: str, credits: int, name: str) -> None:
@@ -138,12 +144,16 @@ def create_demo_account(email: str, password: str, credits: int, name: str) -> N
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed a Studio demo account")
     parser.add_argument("--email", default=DEFAULT_EMAIL, help=f"Demo email (default: {DEFAULT_EMAIL}); must contain 'demomedia'")
-    parser.add_argument("--password", default=DEFAULT_PASSWORD, help="Demo password")
+    parser.add_argument(
+        "--password",
+        help="Demo password (a strong random password is generated when omitted)",
+    )
     parser.add_argument("--credits", type=int, default=100, help="Pay-per-report credits (default: 100)")
     parser.add_argument("--name", default="Demo Media", help="Display name")
     args = parser.parse_args()
 
-    create_demo_account(email=args.email, password=args.password, credits=args.credits, name=args.name)
+    password = args.password or generate_password()
+    create_demo_account(email=args.email, password=password, credits=args.credits, name=args.name)
 
 
 if __name__ == "__main__":

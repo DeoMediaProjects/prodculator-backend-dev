@@ -22,9 +22,11 @@ class SendTestEmailRequest(BaseModel):
 
 
 class EmailAttachment(BaseModel):
-    filename: str = Field(min_length=1)
-    content: str = Field(min_length=1)
-    type: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=255)
+    # About 10 MiB decoded. Provider limits are typically lower than the global
+    # screenplay-upload limit, so reject abusive payloads before decoding/sending.
+    content: str = Field(min_length=1, max_length=14_000_000)
+    type: str = Field(min_length=1, max_length=127)
 
     @field_validator("content")
     @classmethod
@@ -40,7 +42,7 @@ class TransactionalEmailRequest(BaseModel):
     template: str = Field(min_length=1)
     to: EmailStr
     data: dict[str, Any]
-    attachments: list[EmailAttachment] = Field(default_factory=list)
+    attachments: list[EmailAttachment] = Field(default_factory=list, max_length=5)
 
 
 class TransactionalEmailPreviewRequest(BaseModel):

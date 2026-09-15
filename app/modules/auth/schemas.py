@@ -27,7 +27,7 @@ class LogoResponse(BaseModel):
 
 class SignUpRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=128)
     name: str | None = None
     company: str | None = None
     role: str | None = None
@@ -35,7 +35,7 @@ class SignUpRequest(BaseModel):
 
 class SignInRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -59,27 +59,27 @@ class UpdatePasswordRequest(BaseModel):
     # an unlocked laptop, a borrowed device or a leaked token would otherwise be
     # enough to take an account over silently, since changing the password is what
     # locks the real owner out. Re-authenticating here is the standard control.
-    current_password: str = Field(min_length=1)
-    new_password: str = Field(min_length=8)
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class ConfirmResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str = Field(min_length=8)
+    token: str = Field(min_length=1, max_length=8192)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class RefreshTokenRequest(BaseModel):
     # Optional: cookie-based clients send no body and supply the refresh token via
     # the httpOnly refresh cookie instead.
-    refresh_token: str | None = None
+    refresh_token: str | None = Field(default=None, max_length=8192)
 
 
 class GoogleAuthRequest(BaseModel):
-    id_token: str
+    id_token: str = Field(min_length=1, max_length=16384)
 
 
 class VerifyEmailRequest(BaseModel):
-    token: str
+    token: str = Field(min_length=1, max_length=8192)
 
 
 class SignUpResponse(BaseModel):

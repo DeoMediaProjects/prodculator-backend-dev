@@ -46,6 +46,8 @@ class TestPriceMap:
 
 class TestFindMissingPriceIds:
     _ALL_PRICES = {
+        "STRIPE_PRICE_SINGLE_GBP": "single-gbp",
+        "STRIPE_PRICE_SINGLE_USD": "single-usd",
         "STRIPE_PRICE_PROFESSIONAL_GBP": "p1",
         "STRIPE_PRICE_PROFESSIONAL_USD": "p2",
         "STRIPE_PRICE_PRODUCER_GBP": "p3",
@@ -68,7 +70,7 @@ class TestFindMissingPriceIds:
     def test_reports_all_missing_when_configured_but_unset(self):
         s = Settings(_env_file=None, JWT_SECRET_KEY="x" * 64, STRIPE_SECRET_KEY="sk_live_x")
         missing = find_missing_price_ids(s)
-        assert len(missing) == 12  # every required price label
+        assert len(missing) == 14  # every required price label
 
     def test_empty_when_all_prices_set(self):
         s = Settings(

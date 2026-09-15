@@ -1,5 +1,6 @@
 """Integration tests for subscription-based feature gating across routes."""
 
+from app.core.config import Settings, get_settings
 from app.core.dependencies import get_current_user, get_supabase
 from app.modules.auth.schemas import AuthUser
 from app.modules.payments.router import get_stripe_service
@@ -630,6 +631,11 @@ class TestSubscriptionCheckoutPlanType:
         client.app.dependency_overrides[get_current_user] = lambda: user
         client.app.dependency_overrides[get_supabase] = lambda: db
         client.app.dependency_overrides[get_stripe_service] = lambda: TrackingStripeService()
+        client.app.dependency_overrides[get_settings] = lambda: Settings(
+            _env_file=None,
+            JWT_SECRET_KEY="x" * 64,
+            STRIPE_PRICE_PRODUCER_USD="price_xxx",
+        )
 
         response = client.post(
             "/api/payments/subscription-checkout",
@@ -654,6 +660,11 @@ class TestSubscriptionCheckoutPlanType:
         client.app.dependency_overrides[get_current_user] = lambda: user
         client.app.dependency_overrides[get_supabase] = lambda: db
         client.app.dependency_overrides[get_stripe_service] = lambda: TrackingStripeService()
+        client.app.dependency_overrides[get_settings] = lambda: Settings(
+            _env_file=None,
+            JWT_SECRET_KEY="x" * 64,
+            STRIPE_PRICE_PROFESSIONAL_USD="price_xxx",
+        )
 
         response = client.post(
             "/api/payments/subscription-checkout",

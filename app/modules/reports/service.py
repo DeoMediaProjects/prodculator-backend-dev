@@ -22,7 +22,6 @@ from app.modules.b2b.signal_normalise import (
 )
 from app.modules.fx.service import FXService
 from app.modules.reports.project_incentive import resolve_project_incentive
-from app.modules.reports.helpers import needs_format_eligibility_check
 from app.modules.scripts.schemas import ScriptAnalysisResult
 from app.modules.scripts.service import ScriptAnalysisService
 

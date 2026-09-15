@@ -137,8 +137,11 @@ class _LocalStorageBucket:
             return None
 
     def _safe_path(self, relative_path: str) -> Path:
-        candidate = (self.root / relative_path).resolve()
-        if not str(candidate).startswith(str(self.root.resolve())):
+        root = self.root.resolve()
+        candidate = (root / relative_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
             raise ValueError("Invalid storage path")
         return candidate
 

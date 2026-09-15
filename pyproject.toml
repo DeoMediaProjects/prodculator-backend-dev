@@ -25,7 +25,7 @@ dependencies = [
     "stripe>=8.0.0",
     "Jinja2>=3.1.3",
     "pdfplumber>=0.10.0",
-    "weasyprint>=62.0",
+    "weasyprint>=70.0",
     "python-dotenv>=1.0.0",
     "slowapi>=0.1.9",
     "sentry-sdk[fastapi]>=2.0.0",
@@ -49,11 +49,12 @@ target-version = "py311"
 # places `logger = logging.getLogger(__name__)` and env/import bootstrapping
 # before some imports (routers, test setup). Everything else in the default
 # (E, F) rule set is enforced.
+select = ["E4", "E7", "E9", "F"]
 ignore = ["E402"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests use throwaway locals and compact assert helpers.
-"tests/**" = ["F841", "E741", "E701", "E702"]
+"tests/**" = ["F401", "F841", "E731", "E741", "E701", "E702"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"

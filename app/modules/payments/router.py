@@ -45,6 +45,29 @@ def _resolve_base_subscription_price(
     return getattr(settings, f"STRIPE_PRICE_{plan}{cyc}_{cur}", "") or ""
 
 
+def _resolve_catalog_price(
+    settings: Settings,
+    *,
+    supplied_price_id: str,
+    currency: str,
+    plan_type: str | None = None,
+    billing_cycle: str = "monthly",
+) -> str:
+    """Resolve a purchasable price exclusively from server configuration."""
+    if plan_type is None:
+        expected = getattr(settings, f"STRIPE_PRICE_SINGLE_{currency.upper()}", "") or ""
+    else:
+        expected = _resolve_base_subscription_price(
+            settings, plan_type, currency, billing_cycle
+        )
+    if not expected:
+        raise HTTPException(status_code=503, detail="Requested product is not configured")
+    supplied = (supplied_price_id or "").strip()
+    if supplied and supplied != expected:
+        raise HTTPException(status_code=400, detail="Invalid price for the selected product")
+    return expected
+
+
 class TestSubscriptionCheckoutRequest(BaseModel):
     """Admin-only: mint a compressed-cycle test checkout for a target user."""
     user_email: str
@@ -261,15 +284,21 @@ async def create_checkout(
     body: CheckoutRequest,
     user: AuthUser = Depends(get_current_user),
     service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ):
     """Create a one-time payment checkout session."""
     try:
+        price_id = _resolve_catalog_price(
+            settings, supplied_price_id=body.price_id, currency=body.currency
+        )
         result = service.create_checkout_session(
-            price_id=body.price_id,
+            price_id=price_id,
             user_email=user.email,
             user_id=user.id,
         )
         return CheckoutResponse(**result)
+    except HTTPException:
+        raise
     except stripe_lib.StripeError:
         logger.exception("Stripe error in create_checkout for user=%s", user.id)
         raise HTTPException(status_code=400, detail="Payment processing failed")
@@ -302,27 +331,13 @@ async def create_subscription_checkout(
             },
         )
 
-    # Resolve the Stripe price server-side. The frontend bakes VITE_STRIPE_PRICE_*
-    # at build time, so a build without those env vars sends an empty price_id and
-    # Stripe rejects the request. The backend is the source of truth for prices:
-    # honour a non-empty client price_id (keeps local dev working), otherwise
-    # resolve from plan/currency/cycle out of the server's own STRIPE_PRICE_* config.
-    price_id = (body.price_id or "").strip()
-    if not price_id:
-        price_id = _resolve_base_subscription_price(
-            settings, body.plan_type, body.currency, body.billing_cycle
-        )
-    if not price_id:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"No Stripe price configured for "
-                f"{body.plan_type}/{body.currency}/{body.billing_cycle}. "
-                f"Set STRIPE_PRICE_{body.plan_type.strip().upper()}"
-                f"{'_ANNUAL' if body.billing_cycle == 'annual' else ''}_"
-                f"{body.currency.strip().upper()} on the server."
-            ),
-        )
+    price_id = _resolve_catalog_price(
+        settings,
+        supplied_price_id=body.price_id,
+        currency=body.currency,
+        plan_type=body.plan_type,
+        billing_cycle=body.billing_cycle,
+    )
 
     try:
         # When token-amount billing test mode is ON (a deliberate ops flag,
@@ -352,15 +367,21 @@ async def create_credit_checkout(
     body: CheckoutRequest,
     user: AuthUser = Depends(get_current_user),
     service: StripeService = Depends(get_stripe_service),
+    settings: Settings = Depends(get_settings),
 ):
     """Create a one-time checkout session for a pay-per-report credit."""
     try:
+        price_id = _resolve_catalog_price(
+            settings, supplied_price_id=body.price_id, currency=body.currency
+        )
         result = service.create_credit_checkout_session(
-            price_id=body.price_id,
+            price_id=price_id,
             user_email=user.email,
             user_id=user.id,
         )
         return CheckoutResponse(**result)
+    except HTTPException:
+        raise
     except stripe_lib.StripeError:
         logger.exception("Stripe error in create_credit_checkout for user=%s", user.id)
         raise HTTPException(status_code=400, detail="Payment processing failed")

@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2" \
+    && python -m pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 # Operational scripts (demo-account seeding, backfills, reconciliation) are run
@@ -37,12 +38,23 @@ COPY scripts ./scripts
 # territories} and app.models.sql_models — all inside `app`, copied above.
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
-COPY .env.example ./.env.example
-COPY README.md ./README.md
+
+# Run the application without root privileges. The local storage directory stays
+# writable for development; production should use S3.
+RUN groupadd --gid 10001 prodculator \
+    && useradd --uid 10001 --gid prodculator --no-create-home --shell /usr/sbin/nologin prodculator \
+    && mkdir -p /app/storage \
+    && chown -R prodculator:prodculator /app
+
+USER prodculator
 
 EXPOSE 8000
 
-# --proxy-headers + --forwarded-allow-ips so request.client.host reflects the
-# real client IP behind a reverse proxy. Without this, per-client rate limiting
-# would bucket every request under the proxy's IP.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" || exit 1
+
+# Proxy headers are enabled below, but only explicitly trusted proxy addresses
+# may supply them (configured through UVICORN_FORWARDED_ALLOW_IPS).
+# Configure UVICORN_FORWARDED_ALLOW_IPS with the exact reverse-proxy CIDR(s).
+# Trusting "*" lets direct clients spoof their IP and evade per-IP rate limits.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

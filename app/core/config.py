@@ -1,8 +1,11 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings import PydanticBaseSettingsSource
+
+DEVELOPMENT_JWT_SECRET = "development-only-secret-change-before-production"
 
 
 class Settings(BaseSettings):
@@ -24,6 +27,9 @@ class Settings(BaseSettings):
     SENTRY_ENVIRONMENT: str | None = None
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
+    # Host-header allowlist. When empty, BACKEND_URL supplies the public API
+    # hostname. Platform health-check/internal hostnames can be added explicitly.
+    ALLOWED_HOSTS: list[str] = []
 
     # Database
     DB_URL: str = "sqlite:///./prodculator.db"
@@ -34,9 +40,12 @@ class Settings(BaseSettings):
     # never approach it; hitting it is logged as a warning (possible truncation —
     # the call site should paginate).
     DB_MAX_ROWS: int = 10000
+    # Global HTTP body ceiling. The largest legitimate request is a 50 MiB
+    # screenplay plus multipart overhead.
+    MAX_REQUEST_BODY_BYTES: int = 55 * 1024 * 1024
 
     # JWT/Auth
-    JWT_SECRET_KEY: str = "dev-secret-change-me"  # must be overridden in production
+    JWT_SECRET_KEY: str = DEVELOPMENT_JWT_SECRET  # must be overridden in production
     JWT_ACCESS_TOKEN_EXPIRES_SECONDS: int = 3600
     JWT_REFRESH_TOKEN_EXPIRES_SECONDS: int = 1209600
 
@@ -323,6 +332,77 @@ class Settings(BaseSettings):
             if value in {"dev", "development"}:
                 return True
         return v
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV.strip().lower() in {"prod", "production", "release"}
+
+    @property
+    def trusted_hosts(self) -> list[str]:
+        hosts = [host.strip() for host in self.ALLOWED_HOSTS if host.strip()]
+        backend_host = urlparse(self.BACKEND_URL).hostname
+        if backend_host and backend_host not in hosts:
+            hosts.append(backend_host)
+        if not self.is_production:
+            for host in ("testserver", "localhost", "127.0.0.1"):
+                if host not in hosts:
+                    hosts.append(host)
+        return hosts
+
+    @model_validator(mode="after")
+    def validate_production_safety(self) -> "Settings":
+        """Refuse to boot production with development-grade defaults."""
+        if not self.is_production:
+            return self
+
+        problems: list[str] = []
+        if self.DEBUG:
+            problems.append("DEBUG must be false")
+        if self.JWT_SECRET_KEY == DEVELOPMENT_JWT_SECRET or len(self.JWT_SECRET_KEY) < 48:
+            problems.append("JWT_SECRET_KEY must be a unique secret of at least 48 characters")
+        if not self.AUTH_COOKIE_ENABLED or not self.AUTH_COOKIE_SECURE:
+            problems.append("secure cookie authentication must be enabled")
+        if self.AUTO_CREATE_DB_SCHEMA:
+            problems.append("AUTO_CREATE_DB_SCHEMA must be false; run Alembic migrations explicitly")
+        if self.DB_URL.lower().startswith("sqlite"):
+            problems.append("DB_URL must use a production database, not SQLite")
+        if not self.RATE_LIMIT_ENABLED or self.rate_limit_storage_uri == "memory://":
+            problems.append("distributed rate limiting must be enabled with Redis storage")
+        if not 1024 * 1024 <= self.MAX_REQUEST_BODY_BYTES <= 100 * 1024 * 1024:
+            problems.append("MAX_REQUEST_BODY_BYTES must be between 1 MiB and 100 MiB")
+
+        for name, value in (("FRONTEND_URL", self.FRONTEND_URL), ("BACKEND_URL", self.BACKEND_URL)):
+            parsed = urlparse(value)
+            if parsed.scheme != "https" or not parsed.hostname:
+                problems.append(f"{name} must be an absolute HTTPS URL")
+
+        if not self.CORS_ORIGINS:
+            problems.append("CORS_ORIGINS must contain at least one trusted frontend origin")
+        for origin in self.CORS_ORIGINS:
+            parsed = urlparse(origin)
+            if origin == "*" or parsed.scheme != "https" or not parsed.hostname:
+                problems.append(f"unsafe CORS origin: {origin!r}")
+        if any(host == "*" for host in self.trusted_hosts):
+            problems.append("ALLOWED_HOSTS cannot contain '*' in production")
+
+        s3_values = (
+            self.AWS_S3_BUCKET_NAME,
+            self.AWS_ACCESS_KEY_ID,
+            self.AWS_SECRET_ACCESS_KEY,
+        )
+        if not all(s3_values):
+            problems.append("durable S3 storage credentials and bucket are required")
+
+        if self.STRIPE_SECRET_KEY:
+            from app.modules.payments.plan_catalog import find_missing_price_ids
+
+            missing_prices = find_missing_price_ids(self)
+            if missing_prices:
+                problems.append("missing Stripe price IDs: " + ", ".join(missing_prices))
+
+        if problems:
+            raise ValueError("Unsafe production configuration: " + "; ".join(problems))
+        return self
 
     @classmethod
     def settings_customise_sources(

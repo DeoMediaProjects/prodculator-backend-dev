@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 import re
+import sys
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -10,6 +12,17 @@ from markupsafe import Markup, escape as _html_escape
 from app.core.database_client import DatabaseClient
 
 logger = logging.getLogger(__name__)
+
+# WeasyPrint needs Pango/Cairo/GObject native libraries, which aren't on
+# Windows' default DLL search path the way they are on Linux (where the
+# production image installs them via apt). Locally these come from MSYS2's
+# ucrt64 environment. This only fires on Windows, only when the caller
+# hasn't already set the variable, and only when that MSYS2 install is
+# actually present — so it's a no-op on Linux/CI/production.
+if sys.platform == "win32" and not os.environ.get("WEASYPRINT_DLL_DIRECTORIES"):
+    _msys2_ucrt64_bin = Path(r"C:\msys64\ucrt64\bin")
+    if _msys2_ucrt64_bin.is_dir():
+        os.environ["WEASYPRINT_DLL_DIRECTORIES"] = str(_msys2_ucrt64_bin)
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 

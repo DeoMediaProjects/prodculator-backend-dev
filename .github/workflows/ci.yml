@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Lint & Test
@@ -29,10 +32,16 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt ruff
+          pip install -r requirements.txt ruff bandit pip-audit
 
       - name: Lint (ruff)
         run: ruff check app tests
+
+      - name: Static security scan (Bandit)
+        run: bandit -r app -lll -q
+
+      - name: Audit Python dependencies
+        run: pip-audit -r requirements.txt
 
       - name: Tests (pytest)
         run: pytest -q

@@ -14,7 +14,11 @@ from app.core.database_client import DatabaseClient
 from app.core.config import Settings
 from app.models.enums import normalize_plan
 from app.modules.email.service import EmailService
-from app.modules.payments.plan_catalog import PLAN_REPORT_LIMITS, resolve_plan_from_subscription
+from app.modules.payments.plan_catalog import (
+    PLAN_REPORT_LIMITS,
+    build_price_to_plan_map,
+    resolve_plan_from_subscription,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +202,30 @@ class WebhookHandler:
             )
             return
 
-        # One-time purchase (pay-per-report) — increment credits_remaining.
+        # One-time purchase (pay-per-report). The endpoint writes the server-
+        # selected price into metadata; verify it again here before granting a
+        # credit so an unknown/legacy Stripe object cannot mint entitlement.
         if session.get("mode") == "payment":
+            allowed_single_prices = (
+                {
+                    self.settings.STRIPE_PRICE_SINGLE_USD,
+                    self.settings.STRIPE_PRICE_SINGLE_GBP,
+                }
+                - {""}
+                if self.settings
+                else set()
+            )
+            if self.settings and self.settings.is_production and (
+                not allowed_single_prices
+                or
+                metadata.get("paymentType") != "credit"
+                or metadata.get("priceId") not in allowed_single_prices
+            ):
+                logger.error(
+                    "Refusing credit grant for checkout %s: unrecognized payment metadata",
+                    session.get("id"),
+                )
+                return
             self._handle_credit_purchase(user_id)
             return
 
@@ -209,6 +235,15 @@ class WebhookHandler:
 
         raw_plan = metadata.get("planType", "professional")
         plan_type = normalize_plan(raw_plan)
+        price_map = build_price_to_plan_map(self.settings) if self.settings else {}
+        if self.settings and self.settings.is_production:
+            verified_plan = price_map.get(metadata.get("priceId"))
+            if not verified_plan or normalize_plan(verified_plan) != plan_type:
+                logger.error(
+                    "Refusing subscription entitlement for checkout %s: price/plan mismatch",
+                    session.get("id"),
+                )
+                return
         stripe_subscription_id = session.get("subscription")
         report_limit = PLAN_REPORT_LIMITS.get(plan_type, 3)
 
@@ -367,6 +402,12 @@ class WebhookHandler:
         resolved_plan: str | None = None
         if self.settings:
             resolved_plan = resolve_plan_from_subscription(subscription, self.settings)
+            # Test-billing subscriptions use a cloned low-value price. Their
+            # immutable source price is recorded by our server in metadata.
+            if not resolved_plan:
+                source_price = (subscription.get("metadata") or {}).get("priceId")
+                if (subscription.get("metadata") or {}).get("autoRefund") == "true":
+                    resolved_plan = build_price_to_plan_map(self.settings).get(source_price)
 
         # Fetch the current row BEFORE updating so we have the previous plan_type
         # (for the downgrade_applied email) and the pending-downgrade markers.
@@ -432,6 +473,14 @@ class WebhookHandler:
 
         rows = result.data or []
         if not rows:
+            # A configured catalog means metadata alone is never pricing
+            # authority. Unknown Stripe prices must not create entitlements.
+            if self.settings and self.settings.is_production and not resolved_plan:
+                logger.error(
+                    "subscription %s uses an unrecognized price; no entitlement created",
+                    subscription_id,
+                )
+                return
             # No row matched. Two ways to get here:
             #
             #  1. An invoice-billed subscription (created by an admin, billed by

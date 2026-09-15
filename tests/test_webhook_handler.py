@@ -15,6 +15,30 @@ def _settings_with_prices() -> Settings:
     )
 
 
+def _production_settings_with_prices() -> Settings:
+    return Settings(
+        _env_file=None,
+        APP_ENV="production",
+        DEBUG=False,
+        JWT_SECRET_KEY="x" * 64,
+        FRONTEND_URL="https://app.example.com",
+        BACKEND_URL="https://api.example.com",
+        CORS_ORIGINS=["https://app.example.com"],
+        DB_URL="postgresql+psycopg2://app:secret@db/prodculator",
+        AUTO_CREATE_DB_SCHEMA=False,
+        AUTH_COOKIE_ENABLED=True,
+        AUTH_COOKIE_SECURE=True,
+        RATE_LIMIT_ENABLED=True,
+        RATE_LIMIT_STORAGE_URI="redis://redis:6379/0",
+        AWS_S3_BUCKET_NAME="prodculator-reports",
+        AWS_ACCESS_KEY_ID="test-access-key",
+        AWS_SECRET_ACCESS_KEY="test-secret-key",
+        STRIPE_PRICE_PROFESSIONAL_GBP="price_pro",
+        STRIPE_PRICE_PRODUCER_GBP="price_producer",
+        STRIPE_PRICE_STUDIO_GBP="price_studio",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fake DatabaseClient that records writes
 # ---------------------------------------------------------------------------
@@ -222,6 +246,27 @@ class TestCheckoutCompleted:
         sub_upserts = db.writes.get("subscriptions:upsert", [])
         assert sub_upserts[0]["data"]["plan_type"] == "professional"
         assert sub_upserts[0]["data"]["report_limit"] == 1
+
+    def test_production_rejects_price_plan_metadata_mismatch(self):
+        db = FakeSupabase()
+        handler = WebhookHandler(db, _production_settings_with_prices())
+        session = self._make_session("studio")
+        session["metadata"]["priceId"] = "price_pro"
+
+        handler.handle_event("evt_mismatch", "checkout.session.completed", session)
+
+        assert "subscriptions:upsert" not in db.writes
+        assert "users:update" not in db.writes
+
+    def test_production_accepts_server_catalog_price_and_matching_plan(self):
+        db = FakeSupabase()
+        handler = WebhookHandler(db, _production_settings_with_prices())
+        session = self._make_session("producer")
+        session["metadata"]["priceId"] = "price_producer"
+
+        handler.handle_event("evt_verified", "checkout.session.completed", session)
+
+        assert db.writes["subscriptions:upsert"][0]["data"]["plan_type"] == "producer"
 
 
 class TestSubscriptionDeleted:
