@@ -5,6 +5,8 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings import PydanticBaseSettingsSource
 
+DEVELOPMENT_JWT_SECRET = "development-only-secret-change-before-production"
+
 
 class Settings(BaseSettings):
     # App
@@ -43,7 +45,7 @@ class Settings(BaseSettings):
     MAX_REQUEST_BODY_BYTES: int = 55 * 1024 * 1024
 
     # JWT/Auth
-    JWT_SECRET_KEY: str = "dev-secret-change-me"  # must be overridden in production
+    JWT_SECRET_KEY: str = DEVELOPMENT_JWT_SECRET  # must be overridden in production
     JWT_ACCESS_TOKEN_EXPIRES_SECONDS: int = 3600
     JWT_REFRESH_TOKEN_EXPIRES_SECONDS: int = 1209600
 
@@ -356,7 +358,7 @@ class Settings(BaseSettings):
         problems: list[str] = []
         if self.DEBUG:
             problems.append("DEBUG must be false")
-        if self.JWT_SECRET_KEY == "dev-secret-change-me" or len(self.JWT_SECRET_KEY) < 48:
+        if self.JWT_SECRET_KEY == DEVELOPMENT_JWT_SECRET or len(self.JWT_SECRET_KEY) < 48:
             problems.append("JWT_SECRET_KEY must be a unique secret of at least 48 characters")
         if not self.AUTH_COOKIE_ENABLED or not self.AUTH_COOKIE_SECURE:
             problems.append("secure cookie authentication must be enabled")

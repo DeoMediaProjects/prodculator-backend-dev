@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import DEVELOPMENT_JWT_SECRET, Settings
 from app.core.storage import _LocalStorageBucket
 
 
@@ -31,6 +31,16 @@ def test_safe_production_configuration_is_accepted():
     settings = _safe_production_settings()
     assert settings.is_production is True
     assert settings.trusted_hosts == ["api.prodculator.example"]
+
+
+def test_default_development_settings_boot_without_dotenv():
+    settings = Settings(_env_file=None)
+    assert settings.JWT_SECRET_KEY == DEVELOPMENT_JWT_SECRET
+
+
+def test_development_secret_is_rejected_in_production():
+    with pytest.raises(ValidationError, match="JWT_SECRET_KEY"):
+        _safe_production_settings(JWT_SECRET_KEY=DEVELOPMENT_JWT_SECRET)
 
 
 @pytest.mark.parametrize(
