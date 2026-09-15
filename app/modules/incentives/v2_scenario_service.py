@@ -19,7 +19,6 @@ from app.modules.incentives.v2_contracts import (
     is_comparison_mode,
 )
 from app.modules.incentives.v2_jurisdictions import (
-    UnknownJurisdiction,
     resolve_jurisdiction,
 )
 from app.modules.incentives.v2_question_resolver import (

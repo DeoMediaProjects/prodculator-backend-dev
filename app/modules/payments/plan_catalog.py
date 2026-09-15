@@ -107,6 +107,8 @@ def resolve_plan_from_subscription(subscription: dict, settings: Settings) -> st
 # A gap here is what silently strands a downgrade/upgrade (the resolve_plan
 # fallback only saves rollovers, not fresh checkouts) — so we surface it at boot.
 _REQUIRED_PRICE_SETTINGS: dict[str, str] = {
+    "STRIPE_PRICE_SINGLE_GBP": "Single report (GBP)",
+    "STRIPE_PRICE_SINGLE_USD": "Single report (USD)",
     "STRIPE_PRICE_PROFESSIONAL_GBP": "Professional (monthly, GBP)",
     "STRIPE_PRICE_PROFESSIONAL_USD": "Professional (monthly, USD)",
     "STRIPE_PRICE_PRODUCER_GBP": "Producer (monthly, GBP)",

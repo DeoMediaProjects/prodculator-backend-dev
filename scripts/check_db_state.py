@@ -1,13 +1,10 @@
 """Quick DB state check for territory data coverage."""
+from app.core.config import get_settings
+
 import psycopg2
 
-conn = psycopg2.connect(
-    host="127.0.0.1",
-    port=5432,
-    dbname="prodculator",
-    user="prodculator",
-    password="prodculator2222",
-)
+database_url = get_settings().DB_URL.replace("postgresql+psycopg2://", "postgresql://", 1)
+conn = psycopg2.connect(database_url)
 cur = conn.cursor()
 
 print("=== INCENTIVE STATUS VALUES ===")

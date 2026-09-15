@@ -396,7 +396,7 @@ class TestSubscriptionCheckoutGuard:
         response = client.post(
             "/api/payments/subscription-checkout",
             headers={"Authorization": "Bearer t"},
-            json={"price_id": "price_producer", "plan_type": "producer"},
+            json={"price_id": "price_producer", "plan_type": "producer", "currency": "gbp"},
         )
         assert response.status_code == 409
         body = response.json()
@@ -425,7 +425,7 @@ class TestSubscriptionCheckoutGuard:
         response = client.post(
             "/api/payments/subscription-checkout",
             headers={"Authorization": "Bearer t"},
-            json={"price_id": "price_producer", "plan_type": "producer"},
+            json={"price_id": "price_producer", "plan_type": "producer", "currency": "gbp"},
         )
         assert response.status_code == 200
         assert response.json()["url"].startswith("https://checkout/")

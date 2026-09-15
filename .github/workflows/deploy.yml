@@ -5,6 +5,13 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   test:
     name: Lint & Test
@@ -23,9 +30,13 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt ruff
+          pip install -r requirements.txt ruff bandit pip-audit
       - name: Lint (ruff)
         run: ruff check app tests
+      - name: Static security scan (Bandit)
+        run: bandit -r app -lll -q
+      - name: Audit Python dependencies
+        run: pip-audit -r requirements.txt
       - name: Tests (pytest)
         run: pytest -q
 
@@ -59,5 +70,18 @@ jobs:
 
             echo "Restarting service..."
             sudo systemctl restart prodculator.service
+
+            echo "Waiting for readiness..."
+            for attempt in $(seq 1 12); do
+              if curl --fail --silent --show-error http://127.0.0.1:8000/api/health/ready > /dev/null; then
+                echo "Service is ready."
+                exit 0
+              fi
+              sleep 5
+            done
+
+            echo "Service did not become ready after 60 seconds."
+            sudo journalctl -u prodculator.service -n 100 --no-pager
+            exit 1
 
             echo "Deploy complete."

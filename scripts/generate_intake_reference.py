@@ -371,7 +371,8 @@ def options_html(source: str) -> str:
     ):
         pairs = value_label_array(const, source)
         rows = "".join(
-            f"<tr><td><code>{esc(v)}</code></td><td>{esc(l)}</td></tr>" for v, l in pairs
+            f"<tr><td><code>{esc(value)}</code></td><td>{esc(label)}</td></tr>"
+            for value, label in pairs
         )
         blocks.append(
             f"<h2>{esc(title)}</h2><p class='note'>{esc(note)} "

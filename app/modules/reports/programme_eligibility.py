@@ -28,7 +28,6 @@ the comparison failed is how a gate becomes decorative.
 from __future__ import annotations
 
 import re
-from datetime import date
 from typing import Any
 
 AVAILABLE = "available"

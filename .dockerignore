@@ -6,3 +6,12 @@ tests/
 .DS_Store
 *.pyc
 .env
+.env.*
+!.env.example
+storage/
+htmlcov/
+.coverage*
+.ruff_cache/
+.mypy_cache/
+.github/
+docs/

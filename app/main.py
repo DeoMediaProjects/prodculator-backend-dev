@@ -9,6 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.auth_cookies import ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER
 from app.core.cache import close_redis, init_redis
@@ -17,6 +18,7 @@ from app.core.database_client import create_client
 from app.core.db import init_db
 from app.core.limiter import limiter
 from app.core.logging_config import configure_logging, request_id_ctx
+from app.core.request_limits import RequestBodyLimitMiddleware
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.modules.payments.plan_catalog import find_missing_price_ids
 from app.modules.scraper.service import ScraperService
@@ -133,6 +135,10 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Block forged Host headers before they affect URL generation, logs or caches.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+app.add_middleware(RequestBodyLimitMiddleware, max_body_size=settings.MAX_REQUEST_BODY_BYTES)
+
 
 _CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
@@ -187,7 +193,14 @@ async def csrf_protect(request: Request, call_next):
 # echo it back so clients/proxies can stitch logs together.
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
-    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    supplied_rid = (request.headers.get("X-Request-ID") or "").strip()
+    rid = (
+        supplied_rid
+        if supplied_rid
+        and len(supplied_rid) <= 128
+        and all(ch.isalnum() or ch in "-_.:" for ch in supplied_rid)
+        else uuid.uuid4().hex
+    )
     token = request_id_ctx.set(rid)
     try:
         response = await call_next(request)
@@ -223,15 +236,12 @@ def _embeddable_csp() -> str:
     )
 
 
-# slowapi fail-open guard. When the rate-limit storage backend (Redis) is
-# unreachable, `swallow_errors=True` swallows the error inside the limiter, but
-# its endpoint wrapper still unconditionally reads `request.state.view_rate_limit`
-# to emit rate-limit headers — raising AttributeError (→ 500) because the limiter
-# never got far enough to set it. Pre-seeding it to None makes the limiter
-# genuinely fail OPEN on a Redis blip (header injection no-ops on None) instead of
-# 500ing; when Redis is healthy the limiter overwrites this with the real value.
+# SlowAPI state guard. Its endpoint wrapper reads this attribute when emitting
+# rate-limit headers, even when the storage backend failed before setting it.
+# Development is configured fail-open and production fail-closed; pre-seeding
+# this state keeps either policy from raising an unrelated AttributeError.
 @app.middleware("http")
-async def rate_limit_failopen(request: Request, call_next):
+async def rate_limit_state_guard(request: Request, call_next):
     request.state.view_rate_limit = None
     return await call_next(request)
 
@@ -250,7 +260,7 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault(
         "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
     )
-    if not settings.DEBUG:
+    if settings.is_production:
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=63072000; includeSubDomains; preload",

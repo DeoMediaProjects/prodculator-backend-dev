@@ -1,3 +1,7 @@
+import pytest
+
+from app.core.dependencies import get_current_admin
+from app.modules.admin.schemas import AdminUser
 from app.modules.email.transactional_router import get_email_service
 
 
@@ -23,6 +27,16 @@ class FakeEmailService:
         )
 
 
+@pytest.fixture(autouse=True)
+def authenticated_email_admin(client):
+    client.app.dependency_overrides[get_current_admin] = lambda: AdminUser(
+        id="admin-1",
+        email="admin@example.com",
+        name="Admin",
+        role="support_admin",
+    )
+
+
 def test_preview_transactional_email_success(client):
     fake_service = FakeEmailService()
     client.app.dependency_overrides[get_email_service] = lambda: fake_service
@@ -43,6 +57,15 @@ def test_preview_transactional_email_success(client):
         "subject": "subject:report_ready",
         "html": "<html><body>report_ready</body></html>",
     }
+
+
+def test_transactional_email_requires_admin_authentication(client):
+    client.app.dependency_overrides.pop(get_current_admin, None)
+    response = client.post(
+        "/api/emails/preview",
+        json={"template": "report_ready", "data": {}},
+    )
+    assert response.status_code == 401
 
 
 def test_preview_transactional_email_returns_400_for_unknown_template(client):

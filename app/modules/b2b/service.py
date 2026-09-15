@@ -5,7 +5,7 @@ import calendar
 import logging
 from collections import Counter
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from jinja2 import TemplateNotFound
@@ -16,6 +16,9 @@ from app.core.database_client import DatabaseClient, create_client
 from app.modules.b2b.report_model import build_report_view
 from app.modules.email.service import EmailService
 from app.modules.reports.pdf_service import PDFService
+
+if TYPE_CHECKING:
+    from app.modules.b2b.entitlement_service import EntitlementService
 
 logger = logging.getLogger(__name__)
 

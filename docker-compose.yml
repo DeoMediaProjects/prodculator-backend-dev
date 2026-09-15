@@ -20,6 +20,11 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
 
   worker:
     build:
@@ -42,6 +47,11 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
 
   postgres:
     image: postgres:16-alpine
@@ -49,7 +59,7 @@ services:
       # Host 5433 — a host-installed PostgreSQL 18 shadows 5432 on this
       # machine, which repeatedly sent migrations/seeds to the wrong server.
       # From the host, the CONTAINER database is always localhost:5433.
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -65,6 +75,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
     restart: unless-stopped

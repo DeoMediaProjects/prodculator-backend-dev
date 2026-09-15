@@ -81,7 +81,6 @@ from app.modules.reports.matching import (
     estimate_completion_date,
     match_distributors,
     match_festivals,
-    match_grants,
 )
 from app.modules.reports.scoring import (
     _TRUSTED_BANKABILITY_SOURCE_QUALITY,
@@ -1249,8 +1248,8 @@ class ReportBuilder:
 
         label = (self._production_format or "short").strip().lower()
         parts = [
-            f"Many production incentive programmes are written for features and "
-            f"scripted television, and exclude short films outright."
+            "Many production incentive programmes are written for features and "
+            "scripted television, and exclude short films outright."
         ]
         if ineligible:
             parts.append(
@@ -2720,14 +2719,6 @@ class ReportBuilder:
         if self._budget_gbp:
             budget_usd = self._budget_gbp * STATIC_FX_TO_GBP.get("USD", 1.27)
 
-        production = {
-            "format": self._production_format or "",
-            "genres": sorted(self._production_genres()),
-            "budget_usd": budget_usd,
-            "home_country": self.request_metadata.get("country") or "",
-            "ranked_territories": list(self._territory_names),
-            "script_origin": script_origin,
-        }
         # Grants Engine v2. One service produces one payload; every grant-consuming
         # section reads that payload rather than re-querying the table and inventing a
         # second version of the rules (Logic Guide §3).

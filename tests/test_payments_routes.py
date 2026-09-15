@@ -81,6 +81,7 @@ def test_checkout_and_update_payment_method_success(client, auth_user):
     client.app.dependency_overrides[get_current_user] = lambda: auth_user
     client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase(subscriptions)
     client.app.dependency_overrides[get_stripe_service] = lambda: FakeStripeService()
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
 
     checkout_response = client.post(
         "/api/payments/checkout",
@@ -114,6 +115,8 @@ def _settings_with_prices():
     return Settings(
         _env_file=None,
         JWT_SECRET_KEY="x" * 64,
+        STRIPE_PRICE_SINGLE_USD="price_123",
+        STRIPE_PRICE_SINGLE_GBP="price_single_gbp_live",
         STRIPE_PRICE_PROFESSIONAL_GBP="price_prof_gbp_live",
         STRIPE_PRICE_PROFESSIONAL_USD="price_prof_usd_live",
         STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP="price_prof_annual_gbp_live",
@@ -142,9 +145,8 @@ def test_subscription_checkout_resolves_price_when_client_sends_empty(client, au
     client.app.dependency_overrides.pop(get_settings, None)
 
 
-def test_subscription_checkout_honours_nonempty_client_price(client, auth_user):
-    """A non-empty client price_id is still honoured (keeps local dev, where the
-    frontend DOES bake the price, working unchanged)."""
+def test_subscription_checkout_rejects_non_catalog_client_price(client, auth_user):
+    """Client input cannot substitute a cheap Stripe price for a paid plan."""
     capturing = _CapturingStripeService()
     client.app.dependency_overrides[get_current_user] = lambda: auth_user
     client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
@@ -156,8 +158,8 @@ def test_subscription_checkout_honours_nonempty_client_price(client, auth_user):
         headers={"Authorization": "Bearer token"},
         json={"price_id": "price_client_supplied", "plan_type": "professional", "currency": "gbp"},
     )
-    assert resp.status_code == 200
-    assert capturing.received["price_id"] == "price_client_supplied"
+    assert resp.status_code == 400
+    assert "price_id" not in capturing.received
 
     client.app.dependency_overrides.pop(get_settings, None)
 
@@ -192,7 +194,7 @@ def test_subscription_checkout_test_billing_off_by_default(client, auth_user):
     resp = client.post(
         "/api/payments/subscription-checkout",
         headers={"Authorization": "Bearer token"},
-        json={"price_id": "price_x", "plan_type": "professional"},
+        json={"price_id": "price_prof_usd_live", "plan_type": "professional"},
     )
     assert resp.status_code == 200
     assert capturing.received["test_billing"] is False
@@ -209,8 +211,10 @@ def test_subscription_checkout_routes_through_test_billing_when_enabled(client, 
     def _settings_test_billing_on():
         return Settings(
             _env_file=None,
-            JWT_SECRET_KEY="x" * 64,
-            STRIPE_TEST_BILLING_ENABLED=True,
+                JWT_SECRET_KEY="x" * 64,
+                STRIPE_TEST_BILLING_ENABLED=True,
+                STRIPE_PRICE_SINGLE_USD="price_123",
+                STRIPE_PRICE_SINGLE_GBP="price_single_gbp_live",
             STRIPE_PRICE_PROFESSIONAL_GBP="price_prof_gbp_live",
             STRIPE_PRICE_PROFESSIONAL_USD="price_prof_usd_live",
         )
@@ -223,7 +227,7 @@ def test_subscription_checkout_routes_through_test_billing_when_enabled(client, 
     resp = client.post(
         "/api/payments/subscription-checkout",
         headers={"Authorization": "Bearer token"},
-        json={"price_id": "price_x", "plan_type": "professional"},
+        json={"price_id": "price_prof_usd_live", "plan_type": "professional"},
     )
     assert resp.status_code == 200
     assert capturing.received["test_billing"] is True
@@ -247,10 +251,26 @@ def test_subscription_checkout_400_when_price_unconfigured(client, auth_user):
         # producer/usd is not configured in _settings_with_prices
         json={"price_id": "", "plan_type": "producer", "currency": "usd", "billing_cycle": "monthly"},
     )
-    assert resp.status_code == 400
-    assert "STRIPE_PRICE_PRODUCER_USD" in resp.json()["detail"]
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Requested product is not configured"
     assert "price_id" not in capturing.received  # Stripe was never called
 
+    client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_one_time_checkout_rejects_non_catalog_client_price(client, auth_user):
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_supabase] = lambda: FakeSupabase([])
+    client.app.dependency_overrides[get_stripe_service] = lambda: FakeStripeService()
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
+
+    response = client.post(
+        "/api/payments/checkout",
+        headers={"Authorization": "Bearer token"},
+        json={"price_id": "price_attacker_controlled", "currency": "usd"},
+    )
+
+    assert response.status_code == 400
     client.app.dependency_overrides.pop(get_settings, None)
 
 

@@ -3,7 +3,10 @@ import logging
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from app.core.audit import AuditedAPIRoute
 from app.core.config import Settings, get_settings
+from app.core.permissions import RequirePermission
+from app.modules.admin.schemas import AdminUser
 from app.modules.email.schemas import (
     TransactionalEmailErrorResponse,
     TransactionalEmailPreviewRequest,
@@ -15,7 +18,11 @@ from app.modules.email.service import EmailService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/emails", tags=["Emails"])
+router = APIRouter(
+    prefix="/api/emails",
+    tags=["Emails"],
+    route_class=AuditedAPIRoute,
+)
 
 
 def get_email_service(settings: Settings = Depends(get_settings)) -> EmailService:
@@ -32,6 +39,7 @@ def get_email_service(settings: Settings = Depends(get_settings)) -> EmailServic
 )
 async def preview_transactional_email(
     body: TransactionalEmailPreviewRequest,
+    _: AdminUser = Depends(RequirePermission("canManageEmailGating")),
     service: EmailService = Depends(get_email_service),
 ):
     try:
@@ -60,6 +68,7 @@ async def preview_transactional_email(
 )
 async def send_transactional_email(
     body: TransactionalEmailRequest,
+    _: AdminUser = Depends(RequirePermission("canManageEmailGating")),
     service: EmailService = Depends(get_email_service),
 ):
     try:
