@@ -204,6 +204,11 @@ class ReportBuilder:
         self.request_metadata = request_metadata
         self.script_analysis = script_analysis
         self.is_preview = is_preview
+        # One immutable facts contract for the v2 recommendation engines. The
+        # legacy report sections remain in place until source rules are verified.
+        from app.modules.reports.project_dna import build_project_dna
+
+        self.project_dna = build_project_dna(request_metadata, datasets, script_analysis)
         self.warnings: list[str] = []
         #: The Grants Engine v2 result. Built once in _build_funding_opportunities and
         #: read by every other grant-consuming section, so none of them re-queries the
