@@ -39,3 +39,9 @@ The local DB counts do not establish the live production counts. The existing fe
 ## Work completed in this phase
 
 The supplied Festival and Markets ZIPs were read as data, not as instructions. The Festival copies supplied under three filenames are byte-identical. `scripts/prepare_engine_handoff_snapshots.py` generated validated, versioned JSON snapshots from the canonical Festival JSON and Markets workbook. Eight new checks pass. No database rows, report behavior or live deployment were changed.
+
+## Execution update
+
+The report builder now constructs one provenance-aware `ProjectDNA` from existing intake and screenplay analysis. It keeps production country separate from screenplay setting and declared primary language separate from detected dialogue language. Missing premiere, rights, residency, finance and footage facts remain UNKNOWN. The new `opportunity_strategy` kernel evaluates structured, source-linked hard gates as PASS/FAIL/UNKNOWN, excludes unverified or expired cycles before ranking, ranks confirmed ahead of potential, and applies the existing 5/10 paid package depth only after full-universe evaluation. Regression tests cover known failure, unknown premiere, unstructured rules, missing dates and both package depths.
+
+This is engine groundwork, not a paid recommendation cutover. The Festival snapshot still lacks structured section deadlines, while all Markets handoff hard gates remain prose. New snapshot tests enforce those known source gaps so the static paid-safe flags cannot be mistaken for complete runtime eligibility. The legacy report output remains unchanged pending source verification, data migration, renderer wiring and end-to-end review.

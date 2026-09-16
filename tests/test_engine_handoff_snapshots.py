@@ -49,6 +49,14 @@ def test_festival_snapshot_preserves_all_legacy_seed_ids():
     assert legacy_ids <= new_ids
 
 
+def test_paid_festival_snapshot_is_not_a_structured_cycle_feed():
+    paid = [row for row in _rows("festivals_v2_1_2026-09-15.json") if row["paid_match_eligible_v2"]]
+    # The static handoff flag must not silently become a runtime paid feed.
+    # A prose deadline cannot safely supply a section-specific date boundary.
+    assert all(row.get("deadlines") is None for row in paid)
+    assert all(not isinstance(row.get("eligible_formats"), list) for row in paid)
+
+
 def test_markets_snapshot_has_complete_paid_safe_provenance():
     rows = _rows("markets_labs_wip_v1_2026-09-16.json")
     paid = [row for row in rows if row["paid_safe"]]
@@ -58,6 +66,12 @@ def test_markets_snapshot_has_complete_paid_safe_provenance():
     assert all(row["status"] in {"OPEN", "UPCOMING"} for row in paid)
     assert all(row["source"] and row["verified_on"] for row in paid)
     assert all(isinstance(row["paid_safe"], bool) for row in rows)
+
+
+def test_markets_hard_gates_are_not_machine_readable_yet():
+    rows = _rows("markets_labs_wip_v1_2026-09-16.json")
+    assert all(isinstance(row["hard_gates"], str) for row in rows)
+    assert all(not isinstance(row["hard_gates"], list) for row in rows)
 
 
 @pytest.mark.parametrize(
