@@ -3217,9 +3217,10 @@ class ReportBuilder:
         confirmed-active distributors reach this method (gated at load).
         """
         declared = self._declared_audience_fields()
-        production_territories = list(self._territory_names) + sorted(
-            self._script_countries()
-        )
+        # A screenplay setting or recommended filming location is not the
+        # producer's country of origin. Only declared Project DNA can support
+        # a production-market fit claim.
+        production_territories = self.project_dna.value("production_countries") or []
         matches = match_distributors(
             self.datasets.get("distributors", []),
             genres=sorted(self._production_genres()),
