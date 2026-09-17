@@ -46,10 +46,19 @@ def parse_curated_cycles(payload: dict, *, today: date) -> list[Opportunity]:
             raise ValueError("Initial curated cycle must be verified but rules-incomplete")
         if not _official_url(row.get("source_url") or ""):
             raise ValueError("Curated cycle needs an official HTTPS source page")
-        opened = date.fromisoformat(row["cycle_open"])
+        opened = date.fromisoformat(row["cycle_open"]) if row.get("cycle_open") else None
+        observed_open = (
+            date.fromisoformat(row["observed_open_on"])
+            if row.get("observed_open_on") else None
+        )
         deadline = date.fromisoformat(row["cycle_deadline"])
         verified = date.fromisoformat(row["verified_on"])
-        if opened > deadline or verified > today:
+        if (
+            (opened is None) == (observed_open is None)
+            or (opened is not None and opened > deadline)
+            or (observed_open is not None and (observed_open > verified or observed_open > deadline))
+            or verified > today
+        ):
             raise ValueError("Curated cycle has inconsistent dates")
         identity = (row["kind"], row["record_id"], row["section_name"], deadline)
         if identity in seen:
@@ -88,6 +97,8 @@ def parse_curated_cycles(payload: dict, *, today: date) -> list[Opportunity]:
                 cycle_verified=True,
                 rules_complete=False,
                 gates=tuple(gates),
+                observed_open_on=observed_open,
+                record_id=row["record_id"],
             )
         )
     return results

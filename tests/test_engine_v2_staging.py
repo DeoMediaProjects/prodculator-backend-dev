@@ -22,11 +22,15 @@ MIGRATION = (
     Path(__file__).resolve().parents[1]
     / "alembic/versions/r7s8t9u0v1w2_engine_v2_staging_tables.py"
 )
+OBSERVED_OPEN_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic/versions/s8t9u0v1w2x3_observed_open_cycle.py"
+)
 SNAPSHOTS = Path(__file__).resolve().parents[1] / "data/handoff_snapshots"
 
 
-def _run_migration(engine: sa.Engine, direction: str) -> None:
-    spec = importlib.util.spec_from_file_location(f"_engine_stage_{direction}", MIGRATION)
+def _run_migration(engine: sa.Engine, direction: str, path: Path = MIGRATION) -> None:
+    spec = importlib.util.spec_from_file_location(f"_engine_stage_{direction}", path)
     module = importlib.util.module_from_spec(spec)
     with engine.begin() as conn:
         previous = alembic.op
@@ -57,6 +61,7 @@ def _engine(tmp_path):
             {"id": first_festival["id"], "name": "Admin-edited name"},
         )
     _run_migration(engine, "upgrade")
+    _run_migration(engine, "upgrade", OBSERVED_OPEN_MIGRATION)
     return engine
 
 
@@ -83,6 +88,7 @@ def test_staging_is_dry_run_by_default_and_preserves_live_festival(tmp_path):
 def test_additive_migration_can_replay_without_changing_live_rows(tmp_path):
     engine = _engine(tmp_path)
     _run_migration(engine, "upgrade")
+    _run_migration(engine, "upgrade", OBSERVED_OPEN_MIGRATION)
     assert _count(engine, "film_festivals") == 1
     assert _count(engine, "engine_handoff_records") == 0
 
@@ -147,21 +153,42 @@ def test_downgrade_refuses_populated_staging_tables(tmp_path):
     assert _count(engine, "engine_handoff_records") == 583
 
 
+def test_observed_open_migration_refuses_to_discard_evidence(tmp_path):
+    engine = _engine(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO opportunity_cycles "
+            "(id, kind, record_id, section_name, observed_open_on, cycle_verified, "
+            "rules_complete, source_url, verified_on) VALUES "
+            "('observed', 'FESTIVAL', 'festival', 'competition', '2026-09-03', "
+            "1, 0, 'https://example.org/rules', '2026-09-17')"
+        ))
+    with pytest.raises(RuntimeError, match="Refusing to discard observed-open evidence"):
+        _run_migration(engine, "downgrade", OBSERVED_OPEN_MIGRATION)
+
+
+def test_curated_staging_requires_observed_open_schema(tmp_path):
+    engine = _engine(tmp_path)
+    _run_migration(engine, "downgrade", OBSERVED_OPEN_MIGRATION)
+    with pytest.raises(RuntimeError, match="observed-open cycle migration"):
+        stage_curated_cycles(engine, today=date(2026, 9, 17))
+
+
 def test_official_cycle_staging_requires_snapshot_and_preserves_admin_edits(tmp_path):
     engine = _engine(tmp_path)
     with pytest.raises(ValueError, match="Handoff record not staged"):
         stage_curated_cycles(engine, today=date(2026, 9, 17))
     stage_handoffs(engine, apply=True)
     dry = stage_curated_cycles(engine)
-    assert dry.checked_cycles == 3
-    assert dry.new_cycles == 3
+    assert dry.checked_cycles == 6
+    assert dry.new_cycles == 6
     assert dry.new_rules == dry.checked_rules
     assert not dry.applied
     assert _count(engine, "opportunity_cycles") == 0
 
     applied = stage_curated_cycles(engine, apply=True)
     assert applied.applied
-    assert _count(engine, "opportunity_cycles") == 3
+    assert _count(engine, "opportunity_cycles") == 6
     assert _count(engine, "opportunity_rules") == applied.checked_rules
     assert stage_curated_cycles(engine, apply=True).new_cycles == 0
 
@@ -174,7 +201,7 @@ def test_official_cycle_staging_requires_snapshot_and_preserves_admin_edits(tmp_
         )
     with pytest.raises(ValueError, match="Existing cycle differs"):
         stage_curated_cycles(engine, apply=True)
-    assert _count(engine, "opportunity_cycles") == 3
+    assert _count(engine, "opportunity_cycles") == 6
 
 
 def test_unreviewed_curated_cycle_file_is_rejected(tmp_path, monkeypatch):

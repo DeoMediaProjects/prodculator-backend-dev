@@ -22,13 +22,16 @@ def _payload():
     return json.loads(SOURCE.read_text(encoding="utf-8"))
 
 
-def test_first_tranche_has_two_festival_sections_and_one_market_track():
+def test_curated_tranche_has_source_checked_festival_sections_and_market_tracks():
     cycles = parse_curated_cycles(_payload(), today=TODAY)
-    assert len(cycles) == 3
-    assert len({cycle.id for cycle in cycles}) == 3
+    assert len(cycles) == 6
+    assert len({cycle.id for cycle in cycles}) == 6
     assert {cycle.kind for cycle in cycles} == {"FESTIVAL", "MARKET_LAB_WIP"}
     assert all(cycle.cycle_verified and not cycle.rules_complete for cycle in cycles)
     assert all(cycle.source_url.startswith("https://") for cycle in cycles)
+    observed = [cycle for cycle in cycles if cycle.observed_open_on]
+    assert len(observed) == 3
+    assert all(cycle.cycle_open is None for cycle in observed)
 
 
 def test_known_runtime_failure_and_unknown_material_rules():
@@ -37,7 +40,7 @@ def test_known_runtime_failure_and_unknown_material_rules():
     festivals = build_opportunity_strategy(
         cycles, sixty_minute_feature, kind="FESTIVAL", package="producer", today=TODAY
     )
-    assert festivals.actionable_count == 2
+    assert festivals.actionable_count == 3
     assert festivals.eligible_count == 0
     assert festivals.potential_count == 0
     assert festivals.recommendations == ()
@@ -57,10 +60,11 @@ def test_known_runtime_failure_and_unknown_material_rules():
     markets = build_opportunity_strategy(
         cycles, ninety_two_minute_feature, kind="MARKET_LAB_WIP", package="single", today=TODAY
     )
-    assert markets.potential_count == 1
+    assert markets.potential_count == 3
     assert any(
         "copyright owner" in condition
-        for condition in markets.recommendations[0].conditions_to_confirm
+        for item in markets.recommendations
+        for condition in item.conditions_to_confirm
     )
     assert ninety_two_minute_feature.get("secured_finance").state == "UNKNOWN"
 
@@ -71,11 +75,14 @@ def test_short_section_is_distinct_from_feature_section():
     strategy = build_opportunity_strategy(
         cycles, short, kind="FESTIVAL", package="single", today=TODAY
     )
-    assert len(strategy.recommendations) == 1
-    assert strategy.recommendations[0].opportunity.name.endswith("International Short Film")
+    assert len(strategy.recommendations) == 2
+    anifilm = next(
+        item for item in strategy.recommendations
+        if item.opportunity.name.endswith("International Short Film")
+    )
     assert any(
         "professional work" in condition
-        for condition in strategy.recommendations[0].conditions_to_confirm
+        for condition in anifilm.conditions_to_confirm
     )
 
 
@@ -95,6 +102,16 @@ def test_curated_payload_rejects_unknown_fields_unsourced_rules_and_duplicate_cy
     duplicate["cycles"].append(deepcopy(duplicate["cycles"][0]))
     with pytest.raises(ValueError, match="Duplicate curated cycle"):
         parse_curated_cycles(duplicate, today=TODAY)
+
+    two_open_dates = deepcopy(payload)
+    two_open_dates["cycles"][3]["cycle_open"] = "2026-07-01"
+    with pytest.raises(ValueError, match="inconsistent dates"):
+        parse_curated_cycles(two_open_dates, today=TODAY)
+
+    no_open_evidence = deepcopy(payload)
+    no_open_evidence["cycles"][3]["observed_open_on"] = None
+    with pytest.raises(ValueError, match="inconsistent dates"):
+        parse_curated_cycles(no_open_evidence, today=TODAY)
 
 
 def test_initial_source_check_cannot_masquerade_as_paid_cutover():

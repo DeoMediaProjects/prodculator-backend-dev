@@ -65,6 +65,66 @@
         {"project_field": "animation_percentage", "operator": "manual_confirmation", "expected": null, "condition": "If animated, confirm at least 75% of runtime is animation-created movement and character performance.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
         {"project_field": "commercial_positioning", "operator": "manual_confirmation", "expected": null, "condition": "Selection depends on artistic, commercial and Asian or international market potential.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"}
       ]
+    },
+    {
+      "kind": "FESTIVAL",
+      "record_id": "0f6ee579-c61a-5d08-b24e-0a768008f2f5",
+      "name": "Go Short 2027 - European Competition",
+      "section_name": "European Competition",
+      "cycle_open": null,
+      "observed_open_on": "2026-07-23",
+      "cycle_deadline": "2026-12-15",
+      "cycle_verified": true,
+      "rules_complete": false,
+      "source_url": "https://www.goshort.nl/en/news-overview/call-for-entry-go-short-2027",
+      "verified_on": "2026-09-17",
+      "gates": [
+        {"project_field": "format", "operator": "equals", "expected": "short", "condition": "European Competition accepts short films only.", "source_url": "https://www.goshort.nl/en/news-overview/call-for-entry-go-short-2027"},
+        {"project_field": "runtime_minutes", "operator": "at_most", "expected": 30, "condition": "Film must be no longer than 30 minutes.", "source_url": "https://www.goshort.nl/media/sghjttzm/regulations-go-short-2027-short-film-competition.pdf?v=1"},
+        {"project_field": "production_countries", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the film was (co-)produced in geographical Europe under the listed eligible countries.", "source_url": "https://www.goshort.nl/media/sghjttzm/regulations-go-short-2027-short-film-competition.pdf?v=1"},
+        {"project_field": "completion_date", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the film was finished after 1 December 2025.", "source_url": "https://www.goshort.nl/media/sghjttzm/regulations-go-short-2027-short-film-competition.pdf?v=1"},
+        {"project_field": "primary_languages", "operator": "manual_confirmation", "expected": null, "condition": "Confirm English dialogue or required English subtitles.", "source_url": "https://www.goshort.nl/media/sghjttzm/regulations-go-short-2027-short-film-competition.pdf?v=1"},
+        {"project_field": "prior_screenings", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the film was not submitted to a previous Go Short edition.", "source_url": "https://www.goshort.nl/media/sghjttzm/regulations-go-short-2027-short-film-competition.pdf?v=1"},
+        {"project_field": "project_rights", "operator": "manual_confirmation", "expected": null, "condition": "Confirm screening rights are cleared and submission requirements and fee can be met.", "source_url": "https://www.goshort.nl/media/sghjttzm/regulations-go-short-2027-short-film-competition.pdf?v=1"}
+      ]
+    },
+    {
+      "kind": "MARKET_LAB_WIP",
+      "record_id": "MLWIP-0026",
+      "name": "MIDPOINT Feature Launch 2027",
+      "section_name": "Feature Launch 2027",
+      "cycle_open": null,
+      "observed_open_on": "2026-09-03",
+      "cycle_deadline": "2026-10-26",
+      "cycle_verified": true,
+      "rules_complete": false,
+      "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0",
+      "verified_on": "2026-09-17",
+      "gates": [
+        {"project_field": "format", "operator": "equals", "expected": "feature", "condition": "Feature film projects only.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"},
+        {"project_field": "participant_credits", "operator": "manual_confirmation", "expected": null, "condition": "Confirm this is the filmmaker's first or second feature film.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"},
+        {"project_field": "attached_team", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the required writer, director and producer team can apply.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"},
+        {"project_field": "production_countries", "operator": "manual_confirmation", "expected": null, "condition": "For non-European projects, confirm European co-production intent and check full programme terms.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"}
+      ]
+    },
+    {
+      "kind": "MARKET_LAB_WIP",
+      "record_id": "MLWIP-0027",
+      "name": "MIDPOINT Focus Queer 2027",
+      "section_name": "Focus Queer 2027",
+      "cycle_open": null,
+      "observed_open_on": "2026-09-03",
+      "cycle_deadline": "2026-10-19",
+      "cycle_verified": true,
+      "rules_complete": false,
+      "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0",
+      "verified_on": "2026-09-17",
+      "gates": [
+        {"project_field": "format", "operator": "equals", "expected": "feature", "condition": "Feature film projects only.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"},
+        {"project_field": "themes", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the project has an LGBTQ+ focus under Focus Queer's full programme terms.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"},
+        {"project_field": "attached_team", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the required creative team can apply.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"},
+        {"project_field": "production_countries", "operator": "manual_confirmation", "expected": null, "condition": "For non-European projects, confirm European co-production intent and check full programme terms.", "source_url": "https://www.midpoint-institute.eu/cs/article/applications-open-for-midpoint-feature-launch-2027-midpoint-4MRqs0"}
+      ]
     }
   ]
 }

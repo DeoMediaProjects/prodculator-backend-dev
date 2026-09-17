@@ -20,7 +20,7 @@ import sqlalchemy as sa
 
 ROOT = Path(__file__).resolve().parents[1]
 CURATED = ROOT / "data/curated_opportunities/2026-09-17_initial_cycles.json"
-CURATED_SHA256 = "345f2dd13494564fd956a3c435083e650a1c49d01035d28634309f17b7c251e8"
+CURATED_SHA256 = "96ad110c5870cc5392ccc0e62bdaf11d401eb1b2beb32ef7fbb354f3732db23b"
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,7 @@ def _cycle_record(raw: dict, opportunity) -> dict:
         "record_id": raw["record_id"],
         "section_name": raw["section_name"],
         "cycle_open": opportunity.cycle_open,
+        "observed_open_on": opportunity.observed_open_on,
         "cycle_deadline": opportunity.cycle_deadline,
         "cycle_verified": opportunity.cycle_verified,
         "rules_complete": opportunity.rules_complete,
@@ -103,6 +104,8 @@ def stage_curated_cycles(
         handoff = sa.Table("engine_handoff_records", sa.MetaData(), autoload_with=conn)
         cycle_table = sa.Table("opportunity_cycles", sa.MetaData(), autoload_with=conn)
         rule_table = sa.Table("opportunity_rules", sa.MetaData(), autoload_with=conn)
+        if "observed_open_on" not in cycle_table.c:
+            raise RuntimeError("Apply the observed-open cycle migration first")
         source_ids = {
             (row.kind, row.record_id)
             for row in conn.execute(sa.select(handoff.c.kind, handoff.c.record_id))
