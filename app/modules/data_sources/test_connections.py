@@ -34,6 +34,23 @@ def test_anthropic(settings: Settings) -> tuple[bool, str]:
         return False, str(e)
 
 
+def test_gemini(settings: Settings) -> tuple[bool, str]:
+    key = settings.GEMINI_API_KEY
+    if not key:
+        return False, "GEMINI_API_KEY not configured"
+    try:
+        resp = httpx.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            headers={"x-goog-api-key": key},
+            timeout=_TIMEOUT,
+        )
+        if resp.status_code == 200:
+            return True, "Connection successful"
+        return False, f"HTTP {resp.status_code}"
+    except Exception as e:
+        return False, str(e)
+
+
 def test_database(db: DatabaseClient) -> tuple[bool, str]:
     try:
         result = db.table("data_sources").select("id").limit(1).execute()

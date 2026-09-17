@@ -13,6 +13,7 @@ from app.modules.data_sources.test_connections import (
     test_database,
     test_brevo,
     test_exchange_rate,
+    test_gemini,
     test_not_implemented,
     test_redis,
     test_stripe,
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 _SLUG_TO_SETTING: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
     "database": "DB_URL",
     "tmdb": "TMDB_API_KEY",
     "bls": "BLS_API_KEY",
@@ -119,6 +121,8 @@ class DataSourceService:
 
         if slug == "anthropic":
             success, message = test_anthropic(self.settings)
+        elif slug == "gemini":
+            success, message = test_gemini(self.settings)
         elif slug == "database":
             success, message = test_database(self.db)
         elif slug == "tmdb":

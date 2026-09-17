@@ -1330,7 +1330,7 @@ async def draft_project_details_copy(
 
     script_service = ScriptAnalysisService(settings)
     try:
-        response = script_service._call_anthropic_with_retry(
+        response = script_service._call_llm_with_retry(
             system_prompt=SYSTEM_PROMPT,
             user_content=build_user_content(
                 script_title=report.get("script_title") or "",

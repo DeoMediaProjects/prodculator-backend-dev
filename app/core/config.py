@@ -236,6 +236,39 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
 
+    # Google Gemini — a second same-quality fallback, sitting behind OpenAI in
+    # the chain by default. Identical role to the OpenAI path: the SAME prompts
+    # and per-stage token budgets on a different model, not a degraded path.
+    # Blank key means Gemini is skipped, exactly like a blank OpenAI key.
+    GEMINI_API_KEY: str = ""
+    # Sonnet-tier default, picked to match what ANTHROPIC_MODEL is for: a stable
+    # workhorse, not the most expensive model available. Gemini 3.8 Flash is the
+    # current stable Flash release and is Google's closest analogue to Claude
+    # Sonnet in the cost/quality tradeoff this pipeline needs (many calls per
+    # report). Set GEMINI_MODEL=gemini-3.1-pro-preview only if a report genuinely
+    # needs Pro-level quality — same reasoning as the Opus note above.
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    # Gemini 3.x models always think before answering and CANNOT have thinking
+    # turned off; "low" is the floor. This matters here because thought tokens
+    # are billed against max_output_tokens (Google's documented behaviour), so
+    # left at the default level a 1500-token script-chunk budget can be spent
+    # entirely on thinking and return an empty/truncated body. Set to "" to send
+    # no thinking config at all (e.g. on a model or SDK build that rejects it).
+    GEMINI_THINKING_LEVEL: str = "low"
+    # Headroom multiplier applied to the per-stage max-tokens budget on the
+    # Gemini path, for the same reason: the Anthropic budgets were sized for
+    # answer tokens only, and Gemini spends part of the same allowance on
+    # thought tokens. 2.0 keeps the answer budget intact with room to think.
+    GEMINI_MAX_TOKENS_MULTIPLIER: float = 2.0
+
+    # Order the fallback providers are tried in after Anthropic fails, as a
+    # comma-separated list of "openai" and "gemini". Unconfigured providers are
+    # skipped, so the default is safe with either key missing. Narrow this (e.g.
+    # LLM_FALLBACK_PROVIDERS=gemini) to skip a provider whose key is still in the
+    # env but is known to be out of credits — otherwise every fallback pays that
+    # provider's full retry schedule before moving on.
+    LLM_FALLBACK_PROVIDERS: str = "openai,gemini"
+
     # Script analysis chunking controls.
     SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False
     SCRIPT_CHUNK_TARGET_TOKENS: int = 1800
