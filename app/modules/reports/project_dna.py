@@ -47,6 +47,8 @@ PROJECT_FACT_FIELDS = (
     "commercial_positioning",
     "runtime_minutes",
     "genres",
+    "declared_genres",
+    "script_genres",
     "tone",
     "themes",
     "primary_languages",
@@ -54,6 +56,8 @@ PROJECT_FACT_FIELDS = (
     "production_countries",
     "story_countries",
     "target_audience",
+    "target_sales_territories",
+    "release_profile",
     "stage",
     "budget_gbp",
     "completion_date",
@@ -152,12 +156,18 @@ def build_project_dna(
     )
 
     genres = _clean_list(request_metadata.get("genre"))
+    script_genres = _clean_list(getattr(metadata, "genres", None))
+    record("declared_genres", genres, "intake.genre")
+    record(
+        "script_genres", script_genres, "script_analysis.metadata.genres",
+        confirmation=True,
+    )
     if genres:
         record("genres", genres, "intake.genre")
     else:
         record(
             "genres",
-            _clean_list(getattr(metadata, "genres", None)),
+            script_genres,
             "script_analysis.metadata.genres",
             confirmation=True,
         )
@@ -201,6 +211,16 @@ def build_project_dna(
         "target_audience",
         _clean_list(request_metadata.get("target_audience")),
         "intake.target_audience",
+    )
+    record(
+        "target_sales_territories",
+        _clean_list(request_metadata.get("target_sales_territories")),
+        "intake.target_sales_territories",
+    )
+    record(
+        "release_profile",
+        _clean_list(request_metadata.get("release_profile")),
+        "intake.release_profile",
     )
     record("stage", _clean_text(request_metadata.get("project_stage")), "intake.project_stage")
     budget = datasets.get("_budget_gbp")

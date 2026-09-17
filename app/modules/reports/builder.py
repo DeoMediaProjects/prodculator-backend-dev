@@ -101,15 +101,6 @@ from app.modules.reports.stacking import resolve_stacking
 
 logger = logging.getLogger(__name__)
 
-# Genres that define a festival's primary content category.  When present on
-# a festival, the production must also carry that genre — a broad secondary
-# overlap (e.g. "Thriller" on a Horror+Thriller festival) is not sufficient.
-# Prevents e.g. FrightFest appearing for music-drama thrillers.
-_RESTRICTING_FEST_GENRES: frozenset[str] = frozenset({
-    "horror", "documentary", "animation", "experimental", "lgbtq+",
-})
-
-
 # ── Weight tables (must match validator._WEIGHTS exactly) ─────────────────
 
 SCORE_WEIGHTS = {
@@ -207,8 +198,12 @@ class ReportBuilder:
         # One immutable facts contract for the v2 recommendation engines. The
         # legacy report sections remain in place until source rules are verified.
         from app.modules.reports.project_dna import build_project_dna
+        from app.modules.reports.project_facts_v1 import build_project_facts_snapshot
 
         self.project_dna = build_project_dna(request_metadata, datasets, script_analysis)
+        self.project_facts_snapshot = build_project_facts_snapshot(
+            request_metadata, self.project_dna
+        )
         self.warnings: list[str] = []
         #: The Grants Engine v2 result. Built once in _build_funding_opportunities and
         #: read by every other grant-consuming section, so none of them re-queries the
@@ -337,6 +332,9 @@ class ReportBuilder:
         computed_complexity = self._computed_complexity()
 
         report: dict = {
+            "projectFactsSnapshotId": self.project_facts_snapshot.snapshot_id,
+            "projectFactsVersion": self.project_facts_snapshot.version,
+            "projectFactsSnapshot": self.project_facts_snapshot.as_dict(),
             # AI fills these top-level narrative fields
             "genre": None,
             "tone": None,
@@ -443,7 +441,11 @@ class ReportBuilder:
         #
         # Counts are the part the report cannot state without this: "10 shown from 23
         # eligible" needs the eligible total, and the flat list only carries the ten.
-        report["grantsPayload"] = self.grants_payload.as_payload_dict()
+        report["grantsPayload"] = {
+            **self.grants_payload.as_payload_dict(),
+            "projectfacts_snapshot_id": self.project_facts_snapshot.snapshot_id,
+            "projectfacts_version": self.project_facts_snapshot.version,
+        }
 
         # Inject section explainers and scoring methodology
         self._inject_section_explainers(report)
@@ -2698,8 +2700,7 @@ class ReportBuilder:
         return None
 
     def _build_funding_opportunities(self) -> list[dict]:
-        """Build fundingOpportunities from the deterministic grants matcher
-        plus territory-matched festivals.
+        """Build grant-only fundingOpportunities from the deterministic matcher.
 
         Grants go through reports/matching.match_grants (handoff
         grants_matcher.py, PRO spec Section 07): format / deadline /
@@ -2708,8 +2709,6 @@ class ReportBuilder:
         why-matched strings and prominence badges.
         """
         grants = self.datasets.get("grants", [])
-        festivals = self.datasets.get("festivals", [])
-        selected = {t.lower() for t in self._territory_names}
 
         # Script-origin territory (parser's dominant location country)
         script_origin = None
@@ -2778,81 +2777,6 @@ class ReportBuilder:
                 "caveats": match.caveats,
                 "officialSource": display.official_source,
                 "verifiedAt": match.verification.verified_at,
-            })
-
-        # Production genres for festival relevance filtering
-        prod_genres_raw = self.request_metadata.get("genre") or []
-        if isinstance(prod_genres_raw, str):
-            prod_genres_raw = [prod_genres_raw]
-        prod_genres_lower = {g.lower().strip() for g in prod_genres_raw if g}
-
-        for festival in festivals:
-            if not isinstance(festival, dict):
-                continue
-            # Festivals store location as freetext "City, Country" — extract
-            # the country part and match against selected territories.
-            fest_territory = (
-                festival.get("territory") or festival.get("country") or ""
-            ).strip()
-            if not fest_territory:
-                location_str = (festival.get("location") or "").strip()
-                if "," in location_str:
-                    fest_territory = location_str.rsplit(",", 1)[-1].strip()
-                else:
-                    fest_territory = location_str
-            if fest_territory.lower() not in selected:
-                continue
-            fest_name = (festival.get("title") or festival.get("name") or "").strip()
-            if not fest_name:
-                continue
-            # Genre relevance — include if festival accepts "All Genres" or
-            # shares at least one genre with the production.
-            fest_genres = festival.get("genres") or []
-            if isinstance(fest_genres, str):
-                try:
-                    fest_genres = _json.loads(fest_genres)
-                except (ValueError, TypeError):
-                    fest_genres = [fest_genres]
-            fest_genres_lower = {g.lower().strip() for g in fest_genres if g}
-            if fest_genres_lower and "all genres" not in fest_genres_lower:
-                if not fest_genres_lower & prod_genres_lower:
-                    continue
-                # content_restricted = True (DB-authoritative): festival is
-                # content-type-specific — production must share a restricting genre.
-                # content_restricted = False: no restriction beyond genre overlap.
-                # content_restricted = None (legacy rows): fall back to frozenset.
-                cr = festival.get("content_restricted")
-                if cr is True:
-                    restricting = fest_genres_lower & _RESTRICTING_FEST_GENRES
-                    if restricting and not (restricting & prod_genres_lower):
-                        continue
-                elif cr is None:
-                    # Legacy fallback for rows without content_restricted set
-                    restricting = fest_genres_lower & _RESTRICTING_FEST_GENRES
-                    if restricting and not (restricting & prod_genres_lower):
-                        continue
-                # cr is False: no content restriction — genre overlap alone is sufficient
-            # Festival deadline: may be in 'deadlines' array or 'submission_deadline'
-            fest_deadline = festival.get("submission_deadline") or ""
-            if not fest_deadline:
-                deadlines = festival.get("deadlines")
-                if isinstance(deadlines, str):
-                    try:
-                        deadlines = _json.loads(deadlines)
-                    except (ValueError, TypeError):
-                        deadlines = None
-                if isinstance(deadlines, list) and deadlines:
-                    first = deadlines[0]
-                    if isinstance(first, dict):
-                        fest_deadline = first.get("date") or first.get("deadline") or ""
-                    else:
-                        fest_deadline = str(first)
-            opportunities.append({
-                "name": fest_name,
-                "type": "Festival",
-                "territory": fest_territory,
-                "deadline": fest_deadline,
-                "notes": festival.get("description") or festival.get("notes") or "",
             })
 
         return opportunities

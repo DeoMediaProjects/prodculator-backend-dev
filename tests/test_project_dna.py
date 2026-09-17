@@ -13,6 +13,8 @@ def test_missing_eligibility_facts_remain_unknown():
         "secured_finance",
         "applicant_residency",
         "footage_readiness",
+        "target_sales_territories",
+        "release_profile",
     ):
         fact = dna.get(name)
         assert fact.state == "UNKNOWN"
@@ -48,6 +50,15 @@ def test_intake_and_script_facts_keep_distinct_provenance():
     assert dna.value("genres") == ["Thriller"]
     assert dna.get("tone").source == "script_analysis.metadata.tone"
     assert dna.get("premiere_history").state == "UNKNOWN"
+
+
+def test_commercial_preferences_are_known_only_when_declared():
+    dna = build_project_dna(
+        {"target_sales_territories": ["Kenya"], "release_profile": ["theatrical"]}, {}
+    )
+    assert dna.value("target_sales_territories") == ["Kenya"]
+    assert dna.get("target_sales_territories").source == "intake.target_sales_territories"
+    assert dna.value("release_profile") == ["theatrical"]
 
 
 def test_invalid_values_do_not_become_known():

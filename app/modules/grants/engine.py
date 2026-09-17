@@ -165,6 +165,15 @@ class GrantsMatchingService:
 
     def _gate_routing(self, record: dict) -> HardGateResult:
         routing = _text(record, "routing").upper() or ROUTING_GRANTS
+        # The old grants table may not have a routing column.  This known
+        # Film London programme is a finance market, not direct grant money;
+        # do not let a missing legacy routing value put it back in Grants.
+        title = _text(record, "canonical_title", "title", "name").casefold()
+        normalized_title = " ".join(
+            "".join(char if char.isalnum() else " " for char in title).split()
+        )
+        if normalized_title == "film london production finance market":
+            routing = "MARKETS_LABS_WIP"
         if routing != ROUTING_GRANTS:
             return HardGateResult(
                 gate="routing", passed=False,

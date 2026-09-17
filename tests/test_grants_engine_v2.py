@@ -189,6 +189,17 @@ class TestUnknownHandling:
 
 
 class TestHardGates:
+    def test_legacy_film_london_finance_market_routes_out_of_grants(self):
+        result = _evaluate(_record(
+            canonical_title="Film London — Production Finance Market",
+            routing=None,
+        ))
+        assert result.eligibility_status == "INELIGIBLE"
+        assert any(
+            gate.reason_code == "GATE_ROUTING_NOT_GRANTS"
+            for gate in result.hard_gate_results
+        )
+
     def test_wrong_format_is_rejected_before_scoring(self):
         """acceptance_tests: "Wrong format -> Hard reject before scoring"."""
         result = _evaluate(_record(eligible_formats='["documentary"]'))

@@ -69,6 +69,33 @@ def _make_datasets(
     }
 
 
+def test_v2_request_does_not_turn_total_budget_into_territory_rebate():
+    """A blank v2 scenario cannot inherit a full-budget rebate calculation."""
+    svc = _make_service()
+    datasets = _make_datasets(30_000_000, [_make_incentive()])
+    datasets["_territory_scenarios"] = {}
+
+    svc._pre_compute_territory_financials(datasets)
+
+    assert datasets["_territory_financials"] == {}
+
+
+def test_v2_request_blocks_legacy_proxy_even_with_scenario_spend():
+    """Territory spend is not itself a statutory qualifying-cost base."""
+    svc = _make_service()
+    datasets = _make_datasets(30_000_000, [_make_incentive()])
+    datasets["_territory_scenarios"] = {
+        "United Kingdom": {
+            "territory": "United Kingdom",
+            "scenario_spend": 4_000_000,
+        }
+    }
+
+    svc._pre_compute_territory_financials(datasets)
+
+    assert datasets["_territory_financials"] == {}
+
+
 # ── Basic output shape ────────────────────────────────────────────────────────
 
 
