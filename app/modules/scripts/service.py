@@ -69,7 +69,7 @@ def _analysis_cache_put(key: str, value: "tuple[ScriptAnalysisResult, dict[str, 
 
 
 class _ShimTextBlock:
-    """Mimics an Anthropic content block (.type/.text) for an OpenAI response."""
+    """Mimics an Anthropic content block (.type/.text) for a fallback response."""
 
     def __init__(self, text: str):
         self.type = "text"
@@ -77,7 +77,7 @@ class _ShimTextBlock:
 
 
 class _ShimUsage:
-    """Mimics an Anthropic Usage object for an OpenAI response."""
+    """Mimics an Anthropic Usage object for a fallback response."""
 
     def __init__(self, input_tokens: int | None, output_tokens: int | None):
         self.input_tokens = input_tokens
@@ -86,16 +86,48 @@ class _ShimUsage:
         self.cache_creation_input_tokens = None
 
 
-class _OpenAIResponseShim:
-    """Wraps an OpenAI chat-completion result so it has the same surface as an
-    Anthropic Message (.content, .stop_reason, .usage) — lets every existing
-    Anthropic-response consumer (_extract_text_response, stop_reason checks,
-    metrics logging) work unchanged regardless of which provider answered."""
+class _ProviderResponseShim:
+    """Wraps a fallback provider's result (OpenAI chat-completion, Gemini
+    generate_content) so it has the same surface as an Anthropic Message
+    (.content, .stop_reason, .usage) — lets every existing Anthropic-response
+    consumer (_extract_text_response, stop_reason checks, metrics logging) work
+    unchanged regardless of which provider answered."""
 
     def __init__(self, *, text: str, stop_reason: str, input_tokens: int | None, output_tokens: int | None):
         self.content = [_ShimTextBlock(text)]
         self.stop_reason = stop_reason
         self.usage = _ShimUsage(input_tokens, output_tokens)
+
+
+# Back-compat alias: this shim predates the Gemini path and is imported by name
+# elsewhere (tests, ad-hoc scripts). Same object, provider-neutral name.
+_OpenAIResponseShim = _ProviderResponseShim
+
+
+_GEMINI_SDK_AVAILABLE: bool | None = None
+
+
+def _gemini_sdk_available() -> bool:
+    """True when google-genai is importable.
+
+    The SDK is imported lazily (and this result cached) so that a deployment
+    whose image predates the google-genai requirement still boots and keeps the
+    Anthropic + OpenAI paths working, instead of failing at import time.
+    """
+    global _GEMINI_SDK_AVAILABLE
+    if _GEMINI_SDK_AVAILABLE is None:
+        try:
+            import google.genai  # noqa: F401
+
+            _GEMINI_SDK_AVAILABLE = True
+        except ImportError:
+            logger.warning(
+                "GEMINI_API_KEY is configured but the google-genai package is not "
+                "installed — the Gemini fallback is disabled. Install it with "
+                "`pip install google-genai` (it is in requirements.txt)."
+            )
+            _GEMINI_SDK_AVAILABLE = False
+    return _GEMINI_SDK_AVAILABLE
 
 
 class ClaudeUnavailableError(Exception):
@@ -315,14 +347,138 @@ class ScriptAnalysisService:
             max_retries=0,  # We handle retries ourselves in _call_openai_with_retry
         )
 
+    def _gemini_configured(self) -> bool:
+        if not (getattr(self.settings, "GEMINI_API_KEY", "") and getattr(self.settings, "GEMINI_MODEL", "")):
+            return False
+        return _gemini_sdk_available()
+
+    def _build_gemini_client(self, timeout_seconds: int):
+        from google import genai
+        from google.genai import types as genai_types
+
+        return genai.Client(
+            api_key=self.settings.GEMINI_API_KEY,
+            # HttpOptions.timeout is in MILLISECONDS, unlike the Anthropic and
+            # OpenAI clients above which take seconds. Passing the stage timeout
+            # straight through would give every Gemini call a ~0.1s deadline.
+            http_options=genai_types.HttpOptions(timeout=int(float(timeout_seconds) * 1000)),
+        )
+
+    # Fallback providers, keyed by the name used in LLM_FALLBACK_PROVIDERS.
+    _FALLBACK_PROVIDER_NAMES = ("openai", "gemini")
+
+    def _fallback_chain(self) -> list[str]:
+        """Configured fallback providers, in the order LLM_FALLBACK_PROVIDERS asks
+        for. Unknown names, duplicates and providers whose key (or SDK) is missing
+        are dropped, so the list is always safe to iterate and call.
+        """
+        raw = getattr(self.settings, "LLM_FALLBACK_PROVIDERS", "") or ""
+        requested = [part.strip().lower() for part in raw.split(",") if part.strip()]
+        if not requested:
+            requested = list(self._FALLBACK_PROVIDER_NAMES)
+        chain: list[str] = []
+        for name in requested:
+            if name in chain or name not in self._FALLBACK_PROVIDER_NAMES:
+                continue
+            if self._provider_configured(name):
+                chain.append(name)
+        return chain
+
+    def _provider_configured(self, provider: str) -> bool:
+        if provider == "openai":
+            return self._openai_configured()
+        if provider == "gemini":
+            return self._gemini_configured()
+        return False
+
+    def _provider_model(self, provider: str) -> str:
+        return getattr(self.settings, f"{provider.upper()}_MODEL", "") or ""
+
+    def _call_fallback_provider(self, provider: str, **kwargs):
+        if provider == "openai":
+            return self._call_openai_with_retry(**kwargs)
+        if provider == "gemini":
+            return self._call_gemini_with_retry(**kwargs)
+        raise ValueError(f"Unknown fallback provider: {provider}")
+
+    def _probe_fallback_provider(self, provider: str, timeout_seconds: int) -> None:
+        """Minimal reachability request against a fallback provider. Raises on
+        anything that means the provider could not serve a request.
+
+        Each client is bound to a local first, deliberately. Chaining off the
+        constructor (``self._build_gemini_client(t).models.generate_content(...)``)
+        drops the last reference to the genai Client as soon as ``.models`` is
+        read, its finalizer closes the underlying httpx transport, and the call
+        dies with "Cannot send a request, as the client has been closed" — which
+        the probe would then report as Gemini being unreachable.
+        """
+        if provider == "openai":
+            openai_client = self._build_openai_client(timeout_seconds)
+            openai_client.chat.completions.create(
+                model=self.settings.OPENAI_MODEL,
+                max_tokens=1,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+            return
+        if provider == "gemini":
+            gemini_client = self._build_gemini_client(timeout_seconds)
+            gemini_client.models.generate_content(
+                model=self.settings.GEMINI_MODEL,
+                contents="ping",
+                config=self._gemini_config(max_output_tokens=1),
+            )
+            return
+        raise ValueError(f"Unknown fallback provider: {provider}")
+
+    def _gemini_config(
+        self,
+        *,
+        max_output_tokens: int,
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+    ):
+        """Build a GenerateContentConfig with this deployment's Gemini settings."""
+        from google.genai import types as genai_types
+
+        config_kwargs: dict[str, Any] = {
+            "max_output_tokens": max_output_tokens,
+            # We never pass tools, but the SDK still runs its automatic
+            # function-calling path and logs a "direct use of AFC is not
+            # recommended" warning on every single call. A report makes dozens,
+            # so leaving it on buries the real logs.
+            "automatic_function_calling": genai_types.AutomaticFunctionCallingConfig(disable=True),
+        }
+        if system_instruction is not None:
+            config_kwargs["system_instruction"] = system_instruction
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+
+        thinking_level = (getattr(self.settings, "GEMINI_THINKING_LEVEL", "") or "").strip()
+        if thinking_level:
+            try:
+                return genai_types.GenerateContentConfig(
+                    thinking_config=genai_types.ThinkingConfig(thinking_level=thinking_level),
+                    **config_kwargs,
+                )
+            except Exception as cfg_exc:
+                # SDK/model drift: thinking_level is Gemini-3-era and an older
+                # google-genai build (or a model that predates it) rejects it.
+                # Send the request without it rather than fail over a tuning knob.
+                logger.warning(
+                    "Gemini SDK rejected thinking_level=%r (%s) — sending without it",
+                    thinking_level, cfg_exc,
+                )
+        return genai_types.GenerateContentConfig(**config_kwargs)
+
     def check_available(self) -> None:
         """Pre-flight reachability probe — call BEFORE charging for a report.
 
         Issues a minimal (max_tokens=1) request against the configured model with
-        a short timeout. Raises ClaudeUnavailableError only if BOTH Anthropic and
-        (when configured) the OpenAI fallback are unreachable, so the caller can
-        refuse to charge and surface "Scriptelligence is currently not available"
-        to the user. Returns None when either provider is reachable.
+        a short timeout. Raises ClaudeUnavailableError only if Anthropic AND every
+        configured fallback provider (see LLM_FALLBACK_PROVIDERS) are unreachable,
+        so the caller can refuse to charge and surface "Scriptelligence is
+        currently not available" to the user. Returns None as soon as any one
+        provider answers.
         """
         if not self.settings.ANTHROPIC_API_KEY:
             anthropic_error: Exception | None = ClaudeUnavailableError("Anthropic API key is not configured")
@@ -358,33 +514,40 @@ class ScriptAnalysisService:
         if anthropic_error is None:
             return
 
-        if not self._openai_configured():
+        chain = self._fallback_chain()
+        if not chain:
             raise ClaudeUnavailableError(f"Anthropic API unavailable: {anthropic_error}") from anthropic_error
 
         timeout = getattr(self.settings, "ANTHROPIC_HEALTHCHECK_TIMEOUT", 10) or 10
-        openai_client = self._build_openai_client(timeout)
-        try:
-            openai_client.chat.completions.create(
-                model=self.settings.OPENAI_MODEL,
-                max_tokens=1,
-                messages=[{"role": "user", "content": "ping"}],
-            )
-        except Exception as openai_exc:
-            logger.error(
-                "OpenAI fallback availability probe also failed: exc_type=%s error=%s",
-                type(openai_exc).__name__,
-                openai_exc,
-            )
-            raise ClaudeUnavailableError(
-                f"Anthropic unavailable ({anthropic_error}) and OpenAI fallback "
-                f"also unavailable ({openai_exc})"
-            ) from openai_exc
+        failures: list[str] = []
+        last_exc: Exception | None = None
+        for provider in chain:
+            try:
+                self._probe_fallback_provider(provider, timeout)
+            except Exception as fallback_exc:
+                logger.error(
+                    "%s fallback availability probe also failed: exc_type=%s error=%s",
+                    provider,
+                    type(fallback_exc).__name__,
+                    fallback_exc,
+                )
+                failures.append(f"{provider}: {fallback_exc}")
+                last_exc = fallback_exc
+                continue
 
-        logger.warning(
-            "Anthropic unavailable (%s) — OpenAI fallback is reachable and will "
-            "be used for this session's generations",
-            anthropic_error,
-        )
+            logger.warning(
+                "Anthropic unavailable (%s) — %s fallback (model=%s) is reachable "
+                "and will be used for this session's generations",
+                anthropic_error,
+                provider,
+                self._provider_model(provider),
+            )
+            return
+
+        raise ClaudeUnavailableError(
+            "Anthropic unavailable ({}) and every configured fallback also "
+            "unavailable ({})".format(anthropic_error, "; ".join(failures))
+        ) from last_exc
 
     def _stage_max_tokens(self, stage: str) -> int:
         legacy = self.settings.ANTHROPIC_MAX_TOKENS
@@ -469,8 +632,8 @@ class ScriptAnalysisService:
         script_title: str,
     ) -> tuple[ScriptAnalysisResult, dict[str, Any]]:
         """Analyze script and return result plus metadata about the analysis path."""
-        if not self.settings.ANTHROPIC_API_KEY and not self._openai_configured():
-            raise ValueError("Anthropic API key is not configured")
+        if not self.settings.ANTHROPIC_API_KEY and not self._fallback_chain():
+            raise ValueError("No LLM provider is configured")
 
         # Reuse a previously computed analysis for the same script + model,
         # skipping the (multi-call, billed) analysis pipeline on regeneration.
@@ -1557,10 +1720,11 @@ class ScriptAnalysisService:
 
     def _call_llm_with_retry(self, **kwargs):
         """Try Anthropic first; on a provider-unavailable failure (rate-limit
-        exhausted, timeout, connection, or quota/auth), fall back to OpenAI with
+        exhausted, timeout, connection, or quota/auth), walk the configured
+        fallback chain (LLM_FALLBACK_PROVIDERS, default OpenAI then Gemini) with
         the IDENTICAL system_prompt/user_content/temperature/stage — same
-        instructions, different model, not a degraded path. If OpenAI isn't
-        configured, or also fails, the original Anthropic exception propagates
+        instructions, different model, not a degraded path. If no fallback is
+        configured, or they all fail, the original Anthropic exception propagates
         so existing error handling (ClaudeUnavailableError classification,
         report-failed-and-refund) is unchanged.
         """
@@ -1568,22 +1732,39 @@ class ScriptAnalysisService:
         try:
             return self._call_anthropic_with_retry(**kwargs)
         except Exception as exc:
-            if not self._is_provider_unavailable_error(exc) or not self._openai_configured():
+            if not self._is_provider_unavailable_error(exc):
                 raise
-            logger.warning(
-                "Anthropic unavailable at stage=%s (%s) — falling back to OpenAI model=%s",
-                kwargs.get("stage"), exc, self.settings.OPENAI_MODEL,
-            )
-            try:
-                response = self._call_openai_with_retry(**kwargs)
-            except Exception:
-                logger.exception(
-                    "OpenAI fallback also failed at stage=%s — propagating original Anthropic error",
-                    kwargs.get("stage"),
+            chain = self._fallback_chain()
+            if not chain:
+                raise
+            for provider in chain:
+                logger.warning(
+                    "Anthropic unavailable at stage=%s (%s) — falling back to %s model=%s",
+                    kwargs.get("stage"), exc, provider, self._provider_model(provider),
                 )
-                raise exc
-            self._last_llm_provider = "openai"
-            return response
+                try:
+                    response = self._call_fallback_provider(provider, **kwargs)
+                except Exception as fallback_exc:
+                    logger.exception(
+                        "%s fallback failed at stage=%s", provider, kwargs.get("stage"),
+                    )
+                    # Only a provider-unavailable failure justifies trying the
+                    # next one. Anything else (a content/parsing/programming
+                    # error on this path) would fail identically everywhere, so
+                    # moving on would just burn another provider's full retry
+                    # schedule and bury the real cause.
+                    if not self._is_provider_unavailable_error(fallback_exc):
+                        break
+                    continue
+                self._last_llm_provider = provider
+                return response
+
+            logger.error(
+                "Every configured fallback (%s) failed at stage=%s — propagating "
+                "original Anthropic error",
+                ", ".join(chain), kwargs.get("stage"),
+            )
+            raise exc
 
     def _call_openai_with_retry(
         self,
@@ -1645,7 +1826,7 @@ class ScriptAnalysisService:
                     getattr(usage, "prompt_tokens", None),
                     getattr(usage, "completion_tokens", None),
                 )
-                return _OpenAIResponseShim(
+                return _ProviderResponseShim(
                     text="".join(text_parts),
                     stop_reason=stop_reason,
                     input_tokens=getattr(usage, "prompt_tokens", None),
@@ -1670,6 +1851,123 @@ class ScriptAnalysisService:
                 )
                 sleep(delay)
 
+    def _gemini_max_tokens(self, stage: str) -> int:
+        """The stage budget plus headroom for Gemini's thought tokens.
+
+        The per-stage ANTHROPIC_MAX_TOKENS_* budgets were sized for answer tokens
+        alone. Gemini 3.x always thinks before answering and cannot have thinking
+        switched off, and Google bills those thought tokens against
+        max_output_tokens — so handing Gemini the raw 1500-token script-chunk
+        budget can spend the whole allowance thinking and return a truncated or
+        empty body. GEMINI_MAX_TOKENS_MULTIPLIER keeps the answer budget intact.
+        """
+        base = self._stage_max_tokens(stage)
+        try:
+            multiplier = float(getattr(self.settings, "GEMINI_MAX_TOKENS_MULTIPLIER", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            return base
+        return max(base, int(base * multiplier))
+
+    def _call_gemini_with_retry(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        temperature: float,
+        stage: str,
+        output_config: dict[str, Any] | None = None,
+    ):
+        """Mirrors _call_openai_with_retry: same retry schedule, same prompts,
+        and a response shaped like an Anthropic Message so every downstream
+        consumer works unmodified.
+
+        ``output_config`` (Anthropic's schema-constrained output) is accepted and
+        ignored here, exactly as on the OpenAI path — the schema is also stated
+        in the prompt, and every caller already parses/validates the JSON text.
+        """
+        retry_delays = [8, 20]
+        max_attempts = len(retry_delays) + 1
+        stage_max_tokens = self._gemini_max_tokens(stage)
+        stage_timeout = self._stage_timeout(stage)
+        for attempt in range(1, max_attempts + 1):
+            try:
+                client = self._build_gemini_client(stage_timeout)
+                logger.info(
+                    "Gemini request: stage=%s attempt=%s/%s model=%s max_output_tokens=%s "
+                    "timeout=%s prompt_chars=%s",
+                    stage, attempt, max_attempts, self.settings.GEMINI_MODEL,
+                    stage_max_tokens, stage_timeout, len(user_content),
+                )
+                config = self._gemini_config(
+                    max_output_tokens=stage_max_tokens,
+                    system_instruction=system_prompt,
+                    temperature=temperature,
+                )
+
+                import time as _time
+                _t0 = _time.monotonic()
+                # Streamed for the same reason as the Anthropic path: the report
+                # narrative runs for minutes, and a single non-streaming read
+                # would trip the client read timeout.
+                stream = client.models.generate_content_stream(
+                    model=self.settings.GEMINI_MODEL,
+                    contents=user_content,
+                    config=config,
+                )
+                text_parts: list[str] = []
+                finish_reason = None
+                usage = None
+                for chunk in stream:
+                    for candidate in getattr(chunk, "candidates", None) or []:
+                        if getattr(candidate, "finish_reason", None):
+                            finish_reason = candidate.finish_reason
+                        content = getattr(candidate, "content", None)
+                        for part in getattr(content, "parts", None) or []:
+                            # Thought summaries arrive as ordinary parts flagged
+                            # thought=True. They are not the answer and would
+                            # corrupt the JSON every caller parses.
+                            if getattr(part, "thought", False):
+                                continue
+                            if getattr(part, "text", None):
+                                text_parts.append(part.text)
+                    if getattr(chunk, "usage_metadata", None):
+                        usage = chunk.usage_metadata
+                _elapsed = _time.monotonic() - _t0
+                finish_name = (getattr(finish_reason, "name", None) or str(finish_reason or "")).upper()
+                stop_reason = "max_tokens" if finish_name == "MAX_TOKENS" else "end_turn"
+                logger.info(
+                    "Gemini API call completed: stage=%s attempt=%s elapsed=%.1fs finish_reason=%s "
+                    "input_tokens=%s output_tokens=%s thought_tokens=%s",
+                    stage, attempt, _elapsed, finish_name or None,
+                    getattr(usage, "prompt_token_count", None),
+                    getattr(usage, "candidates_token_count", None),
+                    getattr(usage, "thoughts_token_count", None),
+                )
+                return _ProviderResponseShim(
+                    text="".join(text_parts),
+                    stop_reason=stop_reason,
+                    input_tokens=getattr(usage, "prompt_token_count", None),
+                    output_tokens=getattr(usage, "candidates_token_count", None),
+                )
+            except Exception as exc:
+                logger.error(
+                    "Gemini request failed: stage=%s attempt=%s/%s exc_type=%s error=%s",
+                    stage, attempt, max_attempts, type(exc).__name__, exc,
+                )
+                is_retryable = (
+                    self._is_rate_limit_error(exc)
+                    or self._is_timeout_error(exc)
+                    or self._is_connection_error(exc)
+                )
+                if not is_retryable or attempt >= max_attempts:
+                    raise
+                delay = retry_delays[attempt - 1]
+                logger.warning(
+                    "Gemini retryable error at stage=%s attempt=%s/%s, retrying in %ss",
+                    stage, attempt, max_attempts, delay,
+                )
+                sleep(delay)
+
     @staticmethod
     def _is_rate_limit_error(exc: Exception) -> bool:
         message = str(exc).lower()
@@ -1681,6 +1979,12 @@ class ScriptAnalysisService:
             or "overloaded_error" in message
             or "overloaded" in message
             or "input tokens per minute" in message
+            # Gemini wording for the same conditions ("503 UNAVAILABLE - the
+            # model is overloaded", "429 RESOURCE_EXHAUSTED").
+            or "resource_exhausted" in message
+            or "resource exhausted" in message
+            or "quota exceeded" in message
+            or "503" in message
         )
 
     @staticmethod
@@ -1694,6 +1998,11 @@ class ScriptAnalysisService:
         from openai import APIConnectionError as OpenAIAPIConnectionError
         if isinstance(exc, (AnthropicAPIConnectionError, OpenAIAPIConnectionError)):
             return True
+        # httpx transport errors reach us bare from the Gemini path, which does
+        # not wrap them in an SDK exception type the way the other two clients do.
+        import httpx
+        if isinstance(exc, (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)):
+            return True
         message = str(exc).lower()
         return (
             "connection error" in message
@@ -1706,9 +2015,9 @@ class ScriptAnalysisService:
     def _is_quota_or_auth_error(exc: Exception) -> bool:
         """Billing/auth failures (e.g. out-of-credits) — distinct from rate-limit,
         timeout, or connection errors, but equally a "this provider is unavailable"
-        condition. Not retryable against the same provider; triggers the OpenAI
-        fallback (or, in check_available, fails the pre-flight probe) instead of
-        being silently treated as a content-processing error."""
+        condition. Not retryable against the same provider; triggers the next
+        fallback in the chain (or, in check_available, fails the pre-flight probe)
+        instead of being silently treated as a content-processing error."""
         message = str(exc).lower()
         return (
             "credit balance" in message
@@ -1719,13 +2028,25 @@ class ScriptAnalysisService:
             or "authentication_error" in message
             or "permission_error" in message
             or "incorrect api key" in message
+            # Anthropic returns a plain 400 invalid_request_error (NOT a 429)
+            # when the org's configured spend cap is hit: "You have reached your
+            # specified API usage limits. You will regain access on <date>."
+            # Without this the whole chain saw a content error and refused to
+            # fall back — the exact outage the fallback exists for.
+            or "usage limit" in message
+            or "spend limit" in message
+            # Gemini wording for the same conditions.
+            or "api key not valid" in message
+            or "api_key_invalid" in message
+            or "permission_denied" in message
+            or ("billing" in message and "enable" in message)
         )
 
     @classmethod
     def _is_provider_unavailable_error(cls, exc: Exception) -> bool:
         """True for any failure that means 'this provider could not serve the
         request' (as opposed to a content/parsing problem) — the trigger
-        condition for both the OpenAI fallback and the ClaudeUnavailableError
+        condition for the fallback chain and for the ClaudeUnavailableError
         classification in _analyze_chunked."""
         return (
             cls._is_rate_limit_error(exc)
@@ -2134,8 +2455,8 @@ PUNCTUATION RULE (applies to EVERY text field above): Do NOT use em-dashes or en
         """
         from app.modules.reports.builder import ReportBuilder
 
-        if not self.settings.ANTHROPIC_API_KEY and not self._openai_configured():
-            raise ValueError("Anthropic API key is not configured")
+        if not self.settings.ANTHROPIC_API_KEY and not self._fallback_chain():
+            raise ValueError("No LLM provider is configured")
 
         started = perf_counter()
 

@@ -21,7 +21,16 @@ Eligibility = Literal[
 @dataclass(frozen=True)
 class HardGate:
     field: str
-    operator: Literal["equals", "one_of", "at_least", "at_most", "overlaps"]
+    operator: Literal[
+        "equals",
+        "one_of",
+        "at_least",
+        "at_most",
+        "greater_than",
+        "less_than",
+        "overlaps",
+        "manual_confirmation",
+    ]
     expected: Any
     source_url: str
     condition: str
@@ -47,12 +56,15 @@ class Opportunity:
     rules_complete: bool
     gates: tuple[HardGate, ...] = ()
     fit_signals: tuple[FitSignal, ...] = ()
+    observed_open_on: date | None = None
+    record_id: str | None = None
 
 
 @dataclass(frozen=True)
 class Recommendation:
     opportunity: Opportunity
     eligibility: Eligibility
+    application_status: Literal["OPEN", "UPCOMING", "NOT_ACTIONABLE"]
     score: int
     conditions_to_confirm: tuple[str, ...]
     gate_results: tuple[tuple[str, GateResult], ...]
@@ -70,6 +82,8 @@ class OpportunityStrategy:
 
 def _evaluate_gate(gate: HardGate, dna: ProjectDNA) -> GateResult:
     if not gate.source_url:
+        return "UNKNOWN"
+    if gate.operator == "manual_confirmation":
         return "UNKNOWN"
     fact = dna.get(gate.field)
     if fact.state == "UNKNOWN" or fact.confirmation_required:
@@ -89,6 +103,10 @@ def _evaluate_gate(gate: HardGate, dna: ProjectDNA) -> GateResult:
             passed = float(value) >= float(expected)
         elif gate.operator == "at_most":
             passed = float(value) <= float(expected)
+        elif gate.operator == "greater_than":
+            passed = float(value) > float(expected)
+        elif gate.operator == "less_than":
+            passed = float(value) < float(expected)
         else:
             return "UNKNOWN"
     except (TypeError, ValueError):
@@ -101,16 +119,31 @@ def evaluate_opportunity(
 ) -> Recommendation:
     # No structured current-cycle boundary means no claim that applications are
     # actionable today. A verified historical listing is still historical.
+    known_open = opportunity.cycle_open is not None
+    observed_open = opportunity.observed_open_on is not None
     actionable = (
         opportunity.cycle_verified
         and opportunity.verified_on <= today
-        and opportunity.cycle_open is not None
         and opportunity.cycle_deadline is not None
-        and opportunity.cycle_open <= today <= opportunity.cycle_deadline
+        and today <= opportunity.cycle_deadline
         and bool(opportunity.source_url)
+        and (
+            (known_open and opportunity.cycle_open <= opportunity.cycle_deadline)
+            or (
+                not known_open
+                and observed_open
+                and opportunity.observed_open_on <= today
+                and opportunity.observed_open_on <= opportunity.verified_on
+                and opportunity.observed_open_on <= opportunity.cycle_deadline
+            )
+        )
     )
     if not actionable:
-        return Recommendation(opportunity, "NOT_ACTIONABLE", 0, (), ())
+        return Recommendation(opportunity, "NOT_ACTIONABLE", "NOT_ACTIONABLE", 0, (), ())
+    application_status = (
+        "UPCOMING" if opportunity.cycle_open is not None and today < opportunity.cycle_open
+        else "OPEN"
+    )
 
     results = tuple((gate.condition, _evaluate_gate(gate, dna)) for gate in opportunity.gates)
     if any(result == "FAIL" for _, result in results):
@@ -134,7 +167,7 @@ def evaluate_opportunity(
         for signal in opportunity.fit_signals
         if signal.source_url and signal.points > 0
     )
-    return Recommendation(opportunity, eligibility, score, conditions, results)
+    return Recommendation(opportunity, eligibility, application_status, score, conditions, results)
 
 
 def build_opportunity_strategy(
@@ -157,10 +190,23 @@ def build_opportunity_strategy(
         key=lambda item: (
             item.eligibility != "ELIGIBLE_CONFIRMED",
             -item.score,
+            -sum(result == "PASS" for _, result in item.gate_results),
+            sum(result == "UNKNOWN" for _, result in item.gate_results),
             item.opportunity.cycle_deadline or date.max,
             item.opportunity.id,
         )
     )
+    if kind == "FESTIVAL":
+        # Several sections of one festival are alternatives, not separate package slots.
+        distinct = []
+        seen_records = set()
+        for item in rankable:
+            identity = item.opportunity.record_id or item.opportunity.id
+            if identity in seen_records:
+                continue
+            seen_records.add(identity)
+            distinct.append(item)
+        rankable = distinct
     # Match the existing Single/Professional/Producer/Studio report packages.
     # Unknown identifiers receive the smaller entitlement.
     entitlement = 10 if package.strip().lower() in {"producer", "studio"} else 5

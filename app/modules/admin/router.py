@@ -245,15 +245,35 @@ async def get_system_status(
     # is not the same as reachable — the label says so rather than implying a
     # health check.
     ai_configured = bool(settings.ANTHROPIC_API_KEY)
-    fallback_configured = bool(getattr(settings, "OPENAI_API_KEY", ""))
+    # Named in the order they are actually tried, so the panel reads as the
+    # provider chain rather than a set of unrelated keys.
+    _fallback_keys = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+    _requested = [
+        part.strip().lower()
+        for part in (getattr(settings, "LLM_FALLBACK_PROVIDERS", "") or "").split(",")
+        if part.strip()
+    ]
+    configured_fallbacks = [
+        name for name in _requested
+        if name in _fallback_keys and bool(getattr(settings, _fallback_keys[name], ""))
+    ]
+    fallback_detail = (
+        f"fallbacks: {' → '.join(configured_fallbacks)}"
+        if configured_fallbacks
+        else "no fallback configured"
+    )
     services.append({
         "name": "Script Analysis (Claude)",
-        "status": "configured" if ai_configured else "not_configured",
+        "status": "configured" if ai_configured or configured_fallbacks else "not_configured",
         "check": "configuration",
         "detail": (
-            f"Anthropic key present; OpenAI fallback {'configured' if fallback_configured else 'not configured'}"
+            f"Anthropic key present; {fallback_detail}"
             if ai_configured
-            else "ANTHROPIC_API_KEY is not set — report generation will refuse rather than charge"
+            else (
+                f"ANTHROPIC_API_KEY is not set — {fallback_detail}"
+                if configured_fallbacks
+                else "ANTHROPIC_API_KEY is not set — report generation will refuse rather than charge"
+            )
         ),
         "last_checked": None,
     })

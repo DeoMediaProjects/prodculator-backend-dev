@@ -34,6 +34,8 @@ async def health_check(settings: Settings = Depends(get_settings)):
         "environment": settings.APP_ENV,
         "database_configured": bool(settings.DB_URL),
         "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
+        "openai_configured": bool(settings.OPENAI_API_KEY),
+        "gemini_configured": bool(settings.GEMINI_API_KEY),
         "stripe_configured": bool(settings.STRIPE_SECRET_KEY),
         "brevo_configured": bool(settings.BREVO_API_KEY),
     }

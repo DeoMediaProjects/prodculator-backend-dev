@@ -24,6 +24,10 @@ httpx>=0.27.0
 # lock file.
 anthropic==0.123.0
 openai>=1.50.0
+# Gemini fallback provider (see LLM_FALLBACK_PROVIDERS). Imported lazily in
+# app/modules/scripts/service.py so an image built before this line still boots
+# with the Anthropic + OpenAI paths intact.
+google-genai>=1.0.0
 stripe>=8.0.0
 Jinja2>=3.1.3
 pdfplumber>=0.10.0
