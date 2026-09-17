@@ -26,6 +26,7 @@ COPY scripts ./scripts
 # Reviewed handoff snapshots are staged by an explicit, non-destructive import
 # command. They are never read by the paid report matcher directly.
 COPY data/handoff_snapshots ./data/handoff_snapshots
+COPY data/curated_opportunities ./data/curated_opportunities
 # Migrations, for the same reason as scripts above: `alembic upgrade head` needs
 # the version files and the config, not just the alembic package from
 # requirements.txt. Without these the Railway console could not migrate at all,

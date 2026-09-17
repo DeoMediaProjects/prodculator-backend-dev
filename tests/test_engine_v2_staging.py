@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from datetime import date
 from pathlib import Path
 
 import alembic
@@ -13,6 +14,8 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 from scripts import stage_engine_handoffs
+from scripts import stage_curated_cycles as curated_script
+from scripts.stage_curated_cycles import stage_curated_cycles
 from scripts.stage_engine_handoffs import stage_handoffs
 
 MIGRATION = (
@@ -142,3 +145,42 @@ def test_downgrade_refuses_populated_staging_tables(tmp_path):
     with pytest.raises(RuntimeError, match="Refusing to drop populated"):
         _run_migration(engine, "downgrade")
     assert _count(engine, "engine_handoff_records") == 583
+
+
+def test_official_cycle_staging_requires_snapshot_and_preserves_admin_edits(tmp_path):
+    engine = _engine(tmp_path)
+    with pytest.raises(ValueError, match="Handoff record not staged"):
+        stage_curated_cycles(engine, today=date(2026, 9, 17))
+    stage_handoffs(engine, apply=True)
+    dry = stage_curated_cycles(engine)
+    assert dry.checked_cycles == 3
+    assert dry.new_cycles == 3
+    assert dry.new_rules == dry.checked_rules
+    assert not dry.applied
+    assert _count(engine, "opportunity_cycles") == 0
+
+    applied = stage_curated_cycles(engine, apply=True)
+    assert applied.applied
+    assert _count(engine, "opportunity_cycles") == 3
+    assert _count(engine, "opportunity_rules") == applied.checked_rules
+    assert stage_curated_cycles(engine, apply=True).new_cycles == 0
+
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "UPDATE opportunity_cycles SET section_name = 'Admin-reviewed name' "
+                "WHERE section_name = 'International Short Film'"
+            )
+        )
+    with pytest.raises(ValueError, match="Existing cycle differs"):
+        stage_curated_cycles(engine, apply=True)
+    assert _count(engine, "opportunity_cycles") == 3
+
+
+def test_unreviewed_curated_cycle_file_is_rejected(tmp_path, monkeypatch):
+    engine = _engine(tmp_path)
+    stage_handoffs(engine, apply=True)
+    monkeypatch.setattr(curated_script, "CURATED_SHA256", "0" * 64)
+    with pytest.raises(ValueError, match="reviewed SHA-256"):
+        stage_curated_cycles(engine, apply=True)
+    assert _count(engine, "opportunity_cycles") == 0

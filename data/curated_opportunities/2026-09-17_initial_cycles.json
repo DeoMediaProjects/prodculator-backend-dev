@@ -1,0 +1,70 @@
+{
+  "reviewed_on": "2026-09-17",
+  "review_status": "INITIAL_SOURCE_CHECK_NOT_PAID_CUTOVER",
+  "cycles": [
+    {
+      "kind": "FESTIVAL",
+      "record_id": "0188e239-87d4-5c32-a8aa-858691fcd96e",
+      "name": "Anifilm 2027 - International Feature Film for Adults",
+      "section_name": "International Feature Film for Adults",
+      "cycle_open": "2026-09-01",
+      "cycle_deadline": "2026-12-31",
+      "cycle_verified": true,
+      "rules_complete": false,
+      "source_url": "https://www.anifilm.cz/en/statutes-and-rules",
+      "verified_on": "2026-09-17",
+      "gates": [
+        {"project_field": "format", "operator": "equals", "expected": "feature", "condition": "Feature film section only.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "runtime_minutes", "operator": "greater_than", "expected": 60, "condition": "Runtime must be longer than 60 minutes.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "animation_percentage", "operator": "greater_than", "expected": 50, "condition": "More than 50% of the work must be animation.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "completion_date", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the work was completed after 1 January 2026 or did not premiere before that date.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "prior_screenings", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the work has not competed at Anifilm in an earlier year.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "project_rights", "operator": "manual_confirmation", "expected": null, "condition": "Confirm screening and music rights are cleared and the submitter is authorised.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"}
+      ]
+    },
+    {
+      "kind": "FESTIVAL",
+      "record_id": "0188e239-87d4-5c32-a8aa-858691fcd96e",
+      "name": "Anifilm 2027 - International Short Film",
+      "section_name": "International Short Film",
+      "cycle_open": "2026-09-01",
+      "cycle_deadline": "2026-12-31",
+      "cycle_verified": true,
+      "rules_complete": false,
+      "source_url": "https://www.anifilm.cz/en/statutes-and-rules",
+      "verified_on": "2026-09-17",
+      "gates": [
+        {"project_field": "format", "operator": "equals", "expected": "short", "condition": "Short film section only.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "runtime_minutes", "operator": "at_most", "expected": 59, "condition": "Runtime must be 59 minutes or less.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "animation_percentage", "operator": "greater_than", "expected": 50, "condition": "More than 50% of the work must be animation.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "student_status", "operator": "manual_confirmation", "expected": null, "condition": "The International Short Film section is for professional work made outside school; student work has a separate section.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "completion_date", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the work was completed after 1 January 2026 or did not premiere before that date.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "prior_screenings", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the work has not competed at Anifilm in an earlier year.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"},
+        {"project_field": "project_rights", "operator": "manual_confirmation", "expected": null, "condition": "Confirm screening and music rights are cleared and the submitter is authorised.", "source_url": "https://www.anifilm.cz/en/statutes-and-rules"}
+      ]
+    },
+    {
+      "kind": "MARKET_LAB_WIP",
+      "record_id": "MLWIP-0001",
+      "name": "HAF25 - In-Development Projects",
+      "section_name": "In-Development Projects",
+      "cycle_open": "2026-09-01",
+      "cycle_deadline": "2026-10-30",
+      "cycle_verified": true,
+      "rules_complete": false,
+      "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria",
+      "verified_on": "2026-09-17",
+      "gates": [
+        {"project_field": "format", "operator": "equals", "expected": "feature", "condition": "A full-length live-action or animated film project is required.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "runtime_minutes", "operator": "at_least", "expected": 60, "condition": "Planned runtime must be at least 60 minutes.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "project_rights", "operator": "manual_confirmation", "expected": null, "condition": "Applicant must own the material or be authorised by its copyright owner.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "stage", "operator": "manual_confirmation", "expected": null, "condition": "Confirm script-development or pre-production stage.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "attached_team", "operator": "manual_confirmation", "expected": null, "condition": "Confirm an attached director, producer and production company.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "secured_finance", "operator": "manual_confirmation", "expected": null, "condition": "Confirm a proposed budget exists and the project is not fully financed.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "application_materials", "operator": "manual_confirmation", "expected": null, "condition": "Confirm the required application materials and submission fee can be provided.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "animation_percentage", "operator": "manual_confirmation", "expected": null, "condition": "If animated, confirm at least 75% of runtime is animation-created movement and character performance.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"},
+        {"project_field": "commercial_positioning", "operator": "manual_confirmation", "expected": null, "condition": "Selection depends on artistic, commercial and Asian or international market potential.", "source_url": "https://industry.hkiff.org.hk/en/haf/idp/eligibility-and-selection-criteria"}
+      ]
+    }
+  ]
+}

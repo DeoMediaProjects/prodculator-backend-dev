@@ -21,7 +21,16 @@ Eligibility = Literal[
 @dataclass(frozen=True)
 class HardGate:
     field: str
-    operator: Literal["equals", "one_of", "at_least", "at_most", "overlaps"]
+    operator: Literal[
+        "equals",
+        "one_of",
+        "at_least",
+        "at_most",
+        "greater_than",
+        "less_than",
+        "overlaps",
+        "manual_confirmation",
+    ]
     expected: Any
     source_url: str
     condition: str
@@ -72,6 +81,8 @@ class OpportunityStrategy:
 def _evaluate_gate(gate: HardGate, dna: ProjectDNA) -> GateResult:
     if not gate.source_url:
         return "UNKNOWN"
+    if gate.operator == "manual_confirmation":
+        return "UNKNOWN"
     fact = dna.get(gate.field)
     if fact.state == "UNKNOWN" or fact.confirmation_required:
         return "UNKNOWN"
@@ -90,6 +101,10 @@ def _evaluate_gate(gate: HardGate, dna: ProjectDNA) -> GateResult:
             passed = float(value) >= float(expected)
         elif gate.operator == "at_most":
             passed = float(value) <= float(expected)
+        elif gate.operator == "greater_than":
+            passed = float(value) > float(expected)
+        elif gate.operator == "less_than":
+            passed = float(value) < float(expected)
         else:
             return "UNKNOWN"
     except (TypeError, ValueError):

@@ -36,10 +36,15 @@ class ProjectDNA:
         return self.get(name).value
 
 
-_UNKNOWN_FIELDS = (
+PROJECT_FACT_FIELDS = (
     "format",
     "content_form",
     "technique",
+    "animation_percentage",
+    "student_status",
+    "attached_team",
+    "application_materials",
+    "commercial_positioning",
     "runtime_minutes",
     "genres",
     "tone",
@@ -88,7 +93,7 @@ def build_project_dna(
     script_analysis: Any = None,
 ) -> ProjectDNA:
     """Normalise only observed inputs; never fill missing eligibility facts."""
-    facts = {name: ProjectFact() for name in _UNKNOWN_FIELDS}
+    facts = {name: ProjectFact() for name in PROJECT_FACT_FIELDS}
 
     def record(name: str, value: Any, source: str, *, confirmation: bool = False) -> None:
         if value is not None and value != "" and value != []:
