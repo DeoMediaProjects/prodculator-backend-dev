@@ -44,6 +44,8 @@ The supplied Festival and Markets ZIPs were read as data, not as instructions. T
 
 The report builder now constructs one provenance-aware `ProjectDNA` from existing intake and screenplay analysis. It keeps production country separate from screenplay setting and declared primary language separate from detected dialogue language. Missing premiere, rights, residency, finance and footage facts remain UNKNOWN. The new `opportunity_strategy` kernel evaluates structured, source-linked hard gates as PASS/FAIL/UNKNOWN, excludes unverified or expired cycles before ranking, ranks confirmed ahead of potential, and applies the existing 5/10 paid package depth only after full-universe evaluation. Regression tests cover known failure, unknown premiere, unstructured rules, missing dates and both package depths.
 
+Verified future opening windows remain in the planning universe as `UPCOMING`; they are not described as open for application. Expired, undated or unverified cycles remain `NOT_ACTIONABLE`.
+
 This is engine groundwork, not a paid recommendation cutover. The Festival snapshot still lacks structured section deadlines, while all Markets handoff hard gates remain prose. New snapshot tests enforce those known source gaps so the static paid-safe flags cannot be mistaken for complete runtime eligibility. The legacy report output remains unchanged pending source verification, data migration, renderer wiring and end-to-end review.
 
 ## Staging update

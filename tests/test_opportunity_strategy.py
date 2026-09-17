@@ -83,6 +83,24 @@ def test_unstructured_rules_and_missing_cycle_cannot_confirm():
     )
 
 
+def test_verified_future_window_is_labeled_upcoming_not_closed():
+    dna = build_project_dna({"format": "feature film"}, {})
+    gate = HardGate("format", "equals", "feature", SOURCE, "Feature only")
+    item = candidate(
+        gates=(gate,),
+        cycle_open=date(2026, 9, 20),
+        cycle_deadline=date(2026, 10, 1),
+    )
+    result = evaluate_opportunity(item, dna, today=TODAY)
+    assert result.eligibility == "ELIGIBLE_CONFIRMED"
+    assert result.application_status == "UPCOMING"
+    strategy = build_opportunity_strategy(
+        [item], dna, kind="FESTIVAL", package="single", today=TODAY
+    )
+    assert strategy.actionable_count == 1
+    assert strategy.recommendations == (result,)
+
+
 def test_missing_rule_source_and_empty_gate_set_are_not_confirmed():
     dna = build_project_dna({"format": "feature film"}, {})
     no_source = candidate(gates=(HardGate("format", "equals", "feature", "", "Feature only"),))

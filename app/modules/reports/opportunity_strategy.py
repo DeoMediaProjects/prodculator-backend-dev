@@ -53,6 +53,7 @@ class Opportunity:
 class Recommendation:
     opportunity: Opportunity
     eligibility: Eligibility
+    application_status: Literal["OPEN", "UPCOMING", "NOT_ACTIONABLE"]
     score: int
     conditions_to_confirm: tuple[str, ...]
     gate_results: tuple[tuple[str, GateResult], ...]
@@ -106,11 +107,13 @@ def evaluate_opportunity(
         and opportunity.verified_on <= today
         and opportunity.cycle_open is not None
         and opportunity.cycle_deadline is not None
-        and opportunity.cycle_open <= today <= opportunity.cycle_deadline
+        and opportunity.cycle_open <= opportunity.cycle_deadline
+        and today <= opportunity.cycle_deadline
         and bool(opportunity.source_url)
     )
     if not actionable:
-        return Recommendation(opportunity, "NOT_ACTIONABLE", 0, (), ())
+        return Recommendation(opportunity, "NOT_ACTIONABLE", "NOT_ACTIONABLE", 0, (), ())
+    application_status = "UPCOMING" if today < opportunity.cycle_open else "OPEN"
 
     results = tuple((gate.condition, _evaluate_gate(gate, dna)) for gate in opportunity.gates)
     if any(result == "FAIL" for _, result in results):
@@ -134,7 +137,7 @@ def evaluate_opportunity(
         for signal in opportunity.fit_signals
         if signal.source_url and signal.points > 0
     )
-    return Recommendation(opportunity, eligibility, score, conditions, results)
+    return Recommendation(opportunity, eligibility, application_status, score, conditions, results)
 
 
 def build_opportunity_strategy(
