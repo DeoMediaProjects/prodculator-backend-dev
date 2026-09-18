@@ -96,6 +96,132 @@ def test_v2_request_blocks_legacy_proxy_even_with_scenario_spend():
     assert datasets["_territory_financials"] == {}
 
 
+# ── The v2 statutory path ─────────────────────────────────────────────────────
+
+
+def _v2_incentive(engine: str = "ELIGIBLE_LOCAL_SPEND", **overrides) -> dict:
+    row = _make_incentive(qualifying_spend_cap_pct=None, **overrides)
+    row["qs_engine_type"] = engine
+    row["programme_id"] = "uk-avec"
+    row["atl_exempt"] = False
+    return row
+
+
+def _v2_scenario(**amounts) -> dict:
+    return {
+        "United Kingdom": {
+            "territory": "United Kingdom",
+            "calculation_inputs": [
+                {"input_key": key, "amount": amount, "input_status": "known"}
+                for key, amount in amounts.items()
+            ],
+        }
+    }
+
+
+def test_supplied_statutory_base_produces_a_figure():
+    """The other half of the contract: given the cost base, calculate it."""
+    svc = _make_service()
+    datasets = _make_datasets(30_000_000, [_v2_incentive()])
+    datasets["_territory_scenarios"] = _v2_scenario(eligible_local_spend=4_000_000)
+
+    svc._pre_compute_territory_financials(datasets)
+
+    uk = datasets["_territory_financials"]["United Kingdom"]
+    # 34% gross of the supplied £4m base — not of the £30m budget, and with no
+    # above-the-line deduction, because the supplied figure is already the
+    # programme's own qualifying measure.
+    assert uk["qualifying_spend"] == "£4,000,000"
+    assert uk["gross_rebate"] == "£1,360,000"
+    assert uk["atl_deduction"] is None
+
+
+def test_the_figure_does_not_move_when_the_budget_does():
+    """The regression stated as an invariant of the wired path.
+
+    A production's total budget is not a term in its statutory rebate. If it
+    were, the blank-spend case would have a defensible fallback, and it does not.
+    """
+    svc = _make_service()
+    figures = []
+    for budget in (10_000_000, 30_000_000, 90_000_000):
+        datasets = _make_datasets(budget, [_v2_incentive()])
+        datasets["_territory_scenarios"] = _v2_scenario(
+            eligible_local_spend=4_000_000
+        )
+        svc._pre_compute_territory_financials(datasets)
+        figures.append(
+            datasets["_territory_financials"]["United Kingdom"]["gross_rebate"]
+        )
+
+    assert figures == ["£1,360,000"] * 3
+
+
+def test_a_territory_missing_its_base_is_absent_while_others_calculate():
+    """One blank territory does not suppress a territory that was supplied.
+
+    Nor does a supplied one lend its figures to the blank one: the blank
+    territory has no entry at all, so nothing downstream can read an amount for
+    it.
+    """
+    svc = _make_service()
+    datasets = _make_datasets(
+        30_000_000,
+        [_v2_incentive(), _v2_incentive(territory="France", program_name="TRIP")],
+    )
+    datasets["_territory_scenarios"] = _v2_scenario(eligible_local_spend=4_000_000)
+
+    svc._pre_compute_territory_financials(datasets)
+
+    assert "United Kingdom" in datasets["_territory_financials"]
+    assert "France" not in datasets["_territory_financials"]
+
+
+def test_statutory_base_is_converted_from_the_scenario_currency():
+    svc = _make_service()
+    datasets = _make_datasets(
+        15_000_000,
+        [_v2_incentive()],
+        budget_currency="USD",
+        budget_original_amount=30_000_000,
+    )
+    scenarios = _v2_scenario(eligible_local_spend=8_000_000)
+    scenarios["United Kingdom"]["scenario_currency"] = "USD"
+    datasets["_territory_scenarios"] = scenarios
+
+    svc._pre_compute_territory_financials(datasets)
+
+    uk = datasets["_territory_financials"]["United Kingdom"]
+    # $30m budget converts to £15m, so the rate is 0.5: $8m of eligible local
+    # spend is a £4m statutory base. Figures render back in the budget currency,
+    # so the base shows as the $8m the producer entered and the 34% gross rebate
+    # on it as $2.72m — the round trip has to land back where it started.
+    assert uk["qualifying_spend"] == "$8,000,000"
+    assert uk["gross_rebate"] == "$2,720,000"
+
+
+def test_capped_out_programme_produces_no_statutory_figure():
+    """A budget above the programme's cap means this programme does not apply.
+
+    The legacy path substitutes the territory's alternative programme. On the
+    statutory path it cannot: the base was supplied under this programme's
+    definition of qualifying expenditure and the alternative defines its own.
+    """
+    svc = _make_service()
+    datasets = _make_datasets(
+        30_000_000,
+        [
+            _v2_incentive(cap_amount=15_000_000),
+            _v2_incentive(program_name="AVEC standard"),
+        ],
+    )
+    datasets["_territory_scenarios"] = _v2_scenario(eligible_local_spend=4_000_000)
+
+    svc._pre_compute_territory_financials(datasets)
+
+    assert "United Kingdom" not in datasets["_territory_financials"]
+
+
 # ── Basic output shape ────────────────────────────────────────────────────────
 
 

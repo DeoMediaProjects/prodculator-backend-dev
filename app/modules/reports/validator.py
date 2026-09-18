@@ -12,7 +12,10 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # import cycle: statutory_calculation reads nothing from here
+    from app.modules.reports.statutory_calculation import StatutoryQualifyingSpend
 
 from app.core.audit_notes import contains_audit_text, split_audit_text
 from app.modules.reports.helpers import (  # noqa: F401 — re-exported for backward compat
@@ -545,6 +548,7 @@ class ReportValidator:
         production_format: str | None = None,
         project_facts: dict | None = None,
         fx_rate_to_gbp: float | None = None,
+        statutory_qualifying_spend: "StatutoryQualifyingSpend | None" = None,
     ) -> dict | None:
         """Compute the correct rebate for a single incentive programme,
         applying qualifying-spend caps, rate-tier thresholds, and ATL
@@ -552,6 +556,16 @@ class ReportValidator:
 
         All logic is driven by dataset fields — no territory names are
         referenced.
+
+        ``statutory_qualifying_spend`` is the v2 path. When supplied it replaces
+        Step 1 entirely: the base comes from the statutory cost figures the
+        producer entered for this territory rather than from ``budget_gbp``,
+        which is the substitution the Devil Wears Prada regression exists to
+        prevent. ``budget_gbp`` still carries the total budget, because the
+        programme ceilings and rate tiers below genuinely test the budget and not
+        the spend. Omitting it keeps the legacy budget-proxy behaviour for the
+        callers — the standalone calculator, the admin preview and the migration
+        comparisons — that have no scenario to read from.
         """
         # Mechanism gate, ahead of any arithmetic. A programme whose statutory
         # mechanism is not an entitlement must never produce a rebate figure, and
@@ -564,17 +578,30 @@ class ReportValidator:
         if (rate_gross is None or rate_gross == 0) and (rate_net is None or rate_net == 0):
             return None
 
-        # Step 1 — qualifying spend: type-aware calculation, for db_row.
-        #
-        # If a programme switch happens in Step 2 this is recomputed against the
-        # replacement programme, because qualifying spend is a property of the
-        # programme actually being modelled — a PDV credit and a total-spend
-        # credit do not measure the same base.
-        qs_type, qualifying_spend, qualifying_spend_pct, qualifying_spend_note = (
-            cls._qualifying_spend_for(db_row, budget_gbp)
-        )
-        if qualifying_spend is None:
-            return None
+        if statutory_qualifying_spend is not None:
+            # A supplied statutory base is already the programme's own definition
+            # of qualifying expenditure, so none of the derivations below apply to
+            # it: no assumed labour share, no percentage of budget, and — in
+            # `_finish_corrected_rebate` — no above-the-line deduction, because the
+            # producer's figure is net of the costs the programme excludes.
+            qs_type = "statutory"
+            qualifying_spend = statutory_qualifying_spend.amount
+            qualifying_spend_pct = (
+                (qualifying_spend / budget_gbp * 100) if budget_gbp > 0 else 100
+            )
+            qualifying_spend_note = statutory_qualifying_spend.note
+        else:
+            # Step 1 — qualifying spend: type-aware calculation, for db_row.
+            #
+            # If a programme switch happens in Step 2 this is recomputed against
+            # the replacement programme, because qualifying spend is a property of
+            # the programme actually being modelled — a PDV credit and a
+            # total-spend credit do not measure the same base.
+            qs_type, qualifying_spend, qualifying_spend_pct, qualifying_spend_note = (
+                cls._qualifying_spend_for(db_row, budget_gbp)
+            )
+            if qualifying_spend is None:
+                return None
 
         return cls._finish_corrected_rebate(
             db_row=db_row,
@@ -589,6 +616,7 @@ class ReportValidator:
             qualifying_spend=qualifying_spend,
             qualifying_spend_pct=qualifying_spend_pct,
             qualifying_spend_note=qualifying_spend_note,
+            statutory_base=statutory_qualifying_spend is not None,
         )
 
     @classmethod
@@ -715,6 +743,12 @@ class ReportValidator:
         qualifying_spend: float,
         qualifying_spend_pct: float,
         qualifying_spend_note: str | None,
+        #: True when ``qualifying_spend`` came from the producer's supplied
+        #: statutory cost figures rather than from a share of the budget. It
+        #: suppresses the ATL assumption and blocks the programme switch below;
+        #: both would reason about the replacement using the original
+        #: programme's statutory base, which is a different definition.
+        statutory_base: bool = False,
     ) -> dict | None:
         """Programme selection, rate tiers, ATL, caps — Steps 2 to 5.
 
@@ -740,7 +774,22 @@ class ReportValidator:
         # programme for the financial model (conservative) but append an
         # advisory note that the original programme may still apply if the
         # producer's core costs fall below the threshold.
-        if cap_amount is not None and cap_amount > 0 and budget_gbp > cap_amount:
+        #
+        # On the statutory path the switch cannot happen, and neither can the
+        # calculation. The base was supplied under THIS programme's definition of
+        # qualifying expenditure; the replacement defines its own, and the
+        # producer has not given us that one. Carrying the figure across would
+        # model the alternative's rate against the original's denominator, which
+        # reads as a precise statutory calculation and is not one — while
+        # continuing with the original programme would quote a rate the budget
+        # has already ruled out. So it declines, leaving the territory without a
+        # figure and with a reason.
+        capped_out = (
+            cap_amount is not None and cap_amount > 0 and budget_gbp > cap_amount
+        )
+        if statutory_base and capped_out:
+            return None
+        if capped_out:
             territory = db_row.get("territory", "")
             alt_rows = territory_incentives.get(territory, [])
             # Find a primary programme without a cap (or with a higher cap).
@@ -890,9 +939,16 @@ class ReportValidator:
         atl_deduction_note: str | None = None
         atl_deduction_amount: float = 0.0
         qualifying_spend_before_atl = qualifying_spend
+        # c) statutory_base: the producer supplied the qualifying figure under the
+        #    programme's own definition, which already excludes whatever that
+        #    programme excludes. The 15% assumption exists to approximate that
+        #    exclusion from a total budget; applied to a figure that has already
+        #    been through it, it discounts a real number by a ratio nobody
+        #    sourced and reports the result as the statutory amount.
         apply_atl = (
             rate_type in _TAX_CREDIT_RATE_TYPES
             and not atl_exempt
+            and not statutory_base
             and qs_type not in ("labour", "pdv")
         )
         if apply_atl:

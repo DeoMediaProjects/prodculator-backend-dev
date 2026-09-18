@@ -1172,17 +1172,20 @@ class ReportService:
         The AI copies these verbatim instead of doing its own rebate arithmetic.
         Uses the exact same calculation logic as ReportValidator._compute_corrected_rebate.
         """
-        # Current report requests always carry the v2 scenario key, even when no
-        # territory spend was entered.  The legacy calculator below applies a
-        # programme rate to the *total project budget*; it cannot establish the
-        # statutory qualifying base from those scenarios.  Fail closed rather
-        # than publish that budget proxy as a project rebate.  Direct legacy
-        # callers without the v2 key retain the old calculation for migration
-        # comparisons only.  Remove this branch only when a reviewed statutory
-        # scenario calculator replaces the budget-proxy path.
-        if "_territory_scenarios" in datasets:
-            datasets["_territory_financials"] = {}
-            return
+        # Current report requests always carry the v2 scenario key. On that path
+        # the qualifying base comes from the statutory cost figures the producer
+        # entered for each territory, never from the total project budget: those
+        # are three different quantities, and substituting the first for the
+        # third is what produced New York, UK and France rebate amounts for a
+        # production whose territory spend fields were all blank. A territory
+        # with no supplied base gets no figure and no entry here — the section
+        # then reports what is missing, which `resolve_calculation_status`
+        # already states as REQUIRES_COST_BREAKDOWN.
+        #
+        # Direct legacy callers without the v2 key keep the budget-proxy
+        # calculation below, for the standalone calculator and for migration
+        # comparisons.
+        statutory_scenarios = datasets.get("_territory_scenarios")
         from app.modules.reports.validator import (
             ReportValidator,
             _index_incentives_by_territory,
@@ -1191,6 +1194,9 @@ class ReportService:
             _format_rate,
             _currency_symbol,
             _DEFAULT_ATL_PCT,
+        )
+        from app.modules.reports.statutory_calculation import (
+            resolve_statutory_qualifying_spend,
         )
 
         budget_gbp_data = datasets.get("_budget_gbp")
@@ -1242,10 +1248,35 @@ class ReportService:
                     elif budget_currency == "GBP":
                         fx_rate_to_gbp = rate  # GBP → rebate_cap_currency
 
+            # ── The v2 statutory base ────────────────────────────────────────
+            # Built in GBP, because every figure below this line is. A territory
+            # whose statutory inputs the producer has not supplied yields None
+            # here, and the `continue` a few lines down leaves it out of the
+            # financials entirely rather than falling back to a share of the
+            # budget. That absence is the regression's required behaviour: blank
+            # spend must produce no rebate amount anywhere in the report.
+            statutory = None
+            if statutory_scenarios is not None:
+                statutory = self._statutory_base_for(
+                    best,
+                    statutory_scenarios.get(territory),
+                    declared_inputs=(
+                        datasets.get("_programme_required_inputs") or {}
+                    ).get(best.get("programme_id")),
+                    resolve=resolve_statutory_qualifying_spend,
+                    budget_currency=budget_currency,
+                    budget_original_amount=budget_original_amount,
+                    budget_gbp=budget_gbp,
+                    fx_rates_from_budget=fx_rates_from_budget,
+                )
+                if statutory is None:
+                    continue
+
             corrected = ReportValidator._compute_corrected_rebate(
                 best, budget_gbp, territory_incentives,
                 production_format=production_format,
                 fx_rate_to_gbp=fx_rate_to_gbp,
+                statutory_qualifying_spend=statutory,
             )
             if corrected is None:
                 continue
@@ -1631,6 +1662,109 @@ class ReportService:
             "weather": weather_data,
             "stacking_map": stacking_map,
         }
+
+    @staticmethod
+    def _statutory_base_for(
+        row: dict,
+        scenario: dict | None,
+        *,
+        declared_inputs: list[str] | None,
+        resolve,
+        budget_currency: str,
+        budget_original_amount: float | None,
+        budget_gbp: float,
+        fx_rates_from_budget: dict,
+    ):
+        """This programme's statutory qualifying spend, in GBP, or None.
+
+        The statutory module works in one currency and does not know which, so
+        the conversion happens here — the layer that holds the rates and their
+        dates. A supplied amount is denominated in the scenario's own currency,
+        which is usually the budget currency but need not be: a producer
+        comparing a UK and a US structure may hold each territory's cost report
+        in that territory's currency.
+
+        Returns None when the inputs are missing, when the engine is not
+        spend-derived, or when a rate needed to convert them cannot be resolved.
+        The last case matters: an unconvertible figure treated as already-GBP
+        would understate a USD base by a quarter and look entirely plausible.
+        """
+        if not scenario:
+            return None
+
+        scenario_currency = (
+            scenario.get("scenario_currency") or budget_currency or "GBP"
+        ).upper()
+
+        # scenario currency → GBP. The budget's own conversion is reused where it
+        # applies, so a figure in the budget currency and the budget itself pass
+        # through exactly the same rate rather than two separately-sourced ones.
+        if scenario_currency == "GBP":
+            to_gbp = 1.0
+        elif scenario_currency == budget_currency:
+            if not budget_original_amount or budget_original_amount <= 0:
+                return None
+            to_gbp = budget_gbp / budget_original_amount
+        else:
+            fx_info = fx_rates_from_budget.get(scenario_currency) or {}
+            rate = fx_info.get("rate")  # budget_currency → scenario_currency
+            if not rate or not budget_original_amount or budget_original_amount <= 0:
+                return None
+            # budget→scenario composed with budget→GBP gives scenario→GBP.
+            to_gbp = (budget_gbp / budget_original_amount) / rate
+
+        converted_scenario = dict(scenario)
+        inputs: list[dict] = []
+        for entry in scenario.get("calculation_inputs") or []:
+            entry = (
+                entry if isinstance(entry, dict)
+                else entry.model_dump() if hasattr(entry, "model_dump")
+                else None
+            )
+            if not entry:
+                continue
+            amount = entry.get("amount")
+            if amount is not None:
+                # An input may carry its own currency, overriding the scenario's.
+                entry_currency = (entry.get("currency") or scenario_currency).upper()
+                if entry_currency == scenario_currency:
+                    entry = {**entry, "amount": float(amount) * to_gbp}
+                elif entry_currency == "GBP":
+                    entry = {**entry, "amount": float(amount)}
+                else:
+                    # A third currency with no resolvable rate. Dropping the
+                    # amount rather than passing it through unconverted makes the
+                    # input read as unknown, which is what it is to us.
+                    entry = {**entry, "amount": None}
+            inputs.append(entry)
+        converted_scenario["calculation_inputs"] = inputs
+
+        cap_amount = row.get("qualifying_spend_cap_amount")
+        cap_currency = (row.get("qualifying_spend_cap_currency") or "GBP").upper()
+        absolute_cap: float | None = None
+        if cap_amount is not None:
+            try:
+                cap_value = float(cap_amount)
+            except (TypeError, ValueError):
+                cap_value = 0.0
+            if cap_value > 0:
+                if cap_currency == "GBP":
+                    absolute_cap = cap_value
+                else:
+                    from app.modules.reports.validator import ReportValidator
+
+                    fx = ReportValidator._REBATE_CAP_STATIC_FX.get(cap_currency)
+                    # An unconvertible cap is left unapplied rather than guessed.
+                    # The result is then uncapped and may overstate, so it is
+                    # surfaced as an absent cap rather than silently dropped.
+                    absolute_cap = (cap_value / fx) if fx else None
+
+        return resolve(
+            row,
+            converted_scenario,
+            declared_inputs=declared_inputs,
+            absolute_cap=absolute_cap,
+        )
 
     @staticmethod
     def _index_territory_scenarios(request_metadata: dict) -> dict:

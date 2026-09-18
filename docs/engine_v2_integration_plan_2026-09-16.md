@@ -149,3 +149,59 @@ This sequence is more than a wording or prompt change. Completion remains
 conditional on source maintenance, migration safety and an actual end-to-end
 report run. No production database or deployed frontend change is implied by
 these repository edits.
+
+## Statutory incentive calculation, 18 September 2026
+
+Sequence step 2 is implemented. `app/modules/reports/statutory_calculation.py`
+derives a programme's qualifying base from the statutory cost figures the
+producer supplied for that territory, dispatched on the programme's declared
+`qs_engine_type`. `CORE_LOWER_OF` takes the lower of local core expenditure and
+the recorded percentage of global core expenditure, and consumes that percentage
+once rather than reapplying it as a cap. `MULTI_BUCKET` sums only the buckets the
+programme declares in `programme_required_inputs`. The single-input engines read
+their own canonical key, so a labour credit cannot be calculated from an eligible
+local spend figure. Percentage and absolute qualifying-spend caps apply after the
+base, and an unconvertible absolute cap is left unapplied rather than guessed.
+
+The module returns no base — never a zero and never a budget-derived figure —
+when a required input is unknown, when the engine is not spend-derived, when the
+row carries no engine, or when the engine has no encoded rule. A supplied zero is
+distinct from an absent one and calculates to zero, which is the split the whole
+contract turns on.
+
+`ReportValidator._compute_corrected_rebate` takes an optional
+`statutory_qualifying_spend`. When present it replaces Step 1 entirely and
+suppresses two legacy behaviours: the 15 percent above-the-line assumption, which
+would discount a figure that is already net of the programme's exclusions, and
+the capped-out programme switch, which would model the replacement programme's
+rate against the original's statutory denominator. A capped-out programme on the
+statutory path yields no figure at all. Callers that pass no statutory base — the
+standalone calculator, the admin preview and migration comparisons — keep the
+legacy budget-proxy calculation unchanged.
+
+`ReportService._pre_compute_territory_financials` now takes the statutory path
+for any request carrying `_territory_scenarios`, replacing the interim
+fail-closed stub. Supplied amounts are converted to GBP through the same
+budget-to-GBP rate the rest of the report composes from, and an input in a
+currency with no resolvable rate is treated as unknown rather than passed through
+unconverted. A territory whose base cannot be established is absent from
+`_territory_financials` entirely, so no downstream section can read an amount for
+it; `resolve_calculation_status` already reports that state as
+`REQUIRES_COST_BREAKDOWN`.
+
+The Devil Wears Prada acceptance case passes: blank territory spend produces no
+project rebate amount, a scenario spend on its own is not accepted as a statutory
+base, and a supplied base produces the same figure at a 10m, 30m and 90m budget.
+Twenty-seven regression tests cover the engines, the caps, the zero/unknown
+split, currency conversion and the capped-out case.
+
+The wizard already collects these figures: `AnalysisWizard` sends per-territory
+`calculation_inputs` with each amount's currency and its known versus
+planning-assumption status, so the producer-facing half of the path needs no
+change. The remaining gate is data rather than engine. A live
+`incentive_programs` row without `qs_engine_type` produces no figure on the v2
+path, which is the same conservative outcome as the interim stub, and it will
+stay that way until those rows carry a reviewed statutory engine classification.
+A production inventory of how many active rows currently hold one is the next
+piece of work on this step, and it is a source-review task, not a code task.
+Sequence steps 3 to 6 are unchanged.
