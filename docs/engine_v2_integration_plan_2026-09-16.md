@@ -105,6 +105,13 @@ earlier `final_380` baseline.
 | Comparables and Sales/Distribution | 101 companies, 205 typed sourced relationships, 100-point strategic fit, access routes, group dedupe and 5/10. | The workbook is now a checksum-verified snapshot. Its prose fields and raw access labels need field-level normalization; the current isolated commercial matcher does not yet implement the frozen scoring/portfolio contract or feed the paid report. |
 | Report orchestration | One snapshot and canonical engine outputs drive 13 sections, finance buckets and Next Steps. | Current builder remains the old report shape. It cannot be called a completed v2 report until renderer, API, PDF and frontend all consume the canonical outputs. |
 
+The current builder now emits a versioned ProjectFacts snapshot and tags its
+Grants result with the same identifier. The report validator rejects a
+specialist result whose snapshot ID or version differs, or whose provenance is
+missing in a new snapshot-bearing report. This enforces one input state for the
+first integrated engine; the remaining engines must be wired before the
+13-section cutover.
+
 The regression demonstrates four required fail-safe behaviours: do not calculate
 New York/UK/France rebates from the $30m budget when spend is blank; route Film
 London Production Finance Market outside Grants; do not let a possible

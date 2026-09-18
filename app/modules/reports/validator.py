@@ -57,6 +57,31 @@ _TAX_CREDIT_RATE_TYPES = TAX_CREDIT_RATE_TYPES
 class ReportValidator:
     """Post-process a sanitised report dict against the source datasets."""
 
+    @staticmethod
+    def _assert_projectfacts_snapshot_consistency(report: dict) -> None:
+        """Never merge a specialist result from a different input snapshot."""
+        snapshot_id = report.get("projectFactsSnapshotId")
+        version = report.get("projectFactsVersion")
+        for key in ("grantsPayload", "marketsLabsWipStrategy", "festivalStrategy",
+                    "salesDistributionStrategy"):
+            result = report.get(key)
+            if not isinstance(result, dict):
+                continue
+            result_id = result.get("projectfacts_snapshot_id")
+            result_version = result.get("projectfacts_version")
+            if snapshot_id and (result_id is None or result_version is None):
+                raise ValueError(
+                    f"INCONSISTENT_INPUT_VERSION: {key} lacks ProjectFacts provenance"
+                )
+            if result_id is not None and (not snapshot_id or result_id != snapshot_id):
+                raise ValueError(
+                    f"INCONSISTENT_INPUT_VERSION: {key} uses a different ProjectFacts snapshot"
+                )
+            if result_version is not None and (not version or result_version != version):
+                raise ValueError(
+                    f"INCONSISTENT_INPUT_VERSION: {key} uses a different ProjectFacts version"
+                )
+
     @classmethod
     def assert_integrity(
         cls, report: dict, datasets: dict
@@ -74,6 +99,8 @@ class ReportValidator:
         - Patching production format (user-submitted, must be authoritative)
         """
         warnings: list[str] = []
+
+        cls._assert_projectfacts_snapshot_consistency(report)
 
         cls._assert_required_sections(report, warnings)
         cls._assert_score_bounds(report, warnings)
