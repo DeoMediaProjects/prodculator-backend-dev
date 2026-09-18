@@ -250,3 +250,61 @@ restorable backup, human resolution of the sixteen blocked rows and the three
 open source questions, and a reviewed diff all precede a separate, explicitly
 authorised import. No production database was read or written to produce any of
 this.
+
+## Commercial freeze normalisation and frozen scoring, 18 September 2026
+
+Sequence step 4's contract is implemented as two modules, separate from the
+existing isolated matcher so neither has to change while the other is reviewed.
+
+`commercial_freeze.py` translates the workbook's raw labels into engine
+vocabulary once, so no consumer re-derives them. The rule that shapes every
+mapping is the implementation note's prohibition on treating a public contact
+page as proof that unsolicited submissions are accepted: 56 of the 101 frozen
+companies carry `PUBLIC_ACQUISITIONS_CONTACT` or `PUBLIC_CONTACT_AVAILABLE`, and
+reading either as an open door would turn a directory listing into an invitation
+across more than half the catalogue. Both normalise to `CONTACT_PUBLISHED`, a
+real fact that is not permission. `DIRECT_OPEN` is the only state saying a
+producer may submit directly, and three companies hold it. A stated refusal in
+any column outranks anything permissive in another, checked across all columns
+before the ordinary precedence runs.
+
+Relationship labels normalise the same way. The eight raw variants collapse to
+sales and distribution limbs, kept apart rather than merged: a company that
+distributed a film in one territory has not thereby acted as its sales agent,
+and the note forbids inferring either from the other. An unrecognised label is
+`UNTYPED`, never defaulted. Every label in the real freeze resolves under test.
+
+`commercial_scoring.py` implements the note's section 8 weights, which total 100.
+The UNKNOWN rule is enforced in the denominator, not just the numerator: an
+unknown component scores zero against the full 100 and is never renormalised
+away. Rescaling to the components we happen to hold would let a company with two
+sourced facts outrank one with eight purely by having less known about it, so a
+thin profile scores low — which is the honest answer. `components_known` travels
+with every score, because a 40 from eight known components and a 40 from two are
+different claims.
+
+Canonical match states follow the note's section 9. `ACCESS_ROUTE_UNKNOWN` is its
+own state rather than folded into "needs confirmation", because the two send a
+producer to different work: research a route, or reconsider the company. A hard
+gate failure outranks any score, and a company scoring under a fifth of the
+available points is not offered at all — filling a slot with it is worse than
+returning fewer results.
+
+Portfolio selection applies parent/label dedupe from the freeze's own
+`portfolio_group_key`, which groups three pairs, and then diversifies across
+access routes so a producer is not left holding five names they cannot approach.
+Diversification only reorders already-eligible candidates and never promotes a
+company over a materially better-scoring one: the first pass takes the best of
+each route in rank order before any backfill. Package depth 5 and 10 are the same
+ranking truncated, asserted under test.
+
+Two bugs were found and fixed by these tests rather than by review: a component
+key nobody froze was being silently ignored instead of rejected, and a published
+acquisitions contact in the first column masked an explicit refusal in the
+third — the one fact a producer most needs to act on.
+
+This is the scoring and selection contract, not a populated paid catalogue. The
+frozen companies still need field-level source review before any of this reaches
+a report; `verification_scope` reads `FIELD_LEVEL_WHERE_SOURCED; UNKNOWN_OTHER`
+on all 101 rows, so nothing in the freeze is fully verified today. Wiring these
+modules into the live Sales/Distribution section is step 5 and 6 work.
