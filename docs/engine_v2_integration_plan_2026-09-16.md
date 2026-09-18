@@ -205,3 +205,48 @@ stay that way until those rows carry a reviewed statutory engine classification.
 A production inventory of how many active rows currently hold one is the next
 piece of work on this step, and it is a source-review task, not a code task.
 Sequence steps 3 to 6 are unchanged.
+
+## Grants v2 reconciliation, 18 September 2026
+
+Sequence step 3's reconciliation half is implemented; the import half is
+deliberately not. `scripts/prepare_grants_handoff_snapshot.py` produces a
+SHA-256-pinned snapshot holding the 253-record master and all five migration
+maps together, because the maps decide which live rows survive and separating
+them invites an import against one without the other. The script also records
+what the freeze does not settle: three duplicate canonical titles, one record
+still routed to the Incentive Engine, and four legacy mappings that resolve to no
+live ID.
+
+`app/modules/grants/v2_migration.py` answers one question per live row — does the
+freeze say what becomes of it? The mapping's `decision` column is compound, with
+eighteen distinct strings across 88 rows, so a decision parses into the set of
+actions it names rather than being matched as an enum or by prefix. Prefix
+matching is the specific trap here: it reads `CORRECT_SUSPEND` as `CORRECT` and
+leaves a suspended programme live and matchable. A token the module does not
+encode is reported rather than defaulted, and every one of the eighteen real
+decision strings parses cleanly under test.
+
+The rule every verdict obeys is that silence is not retention. An unmapped live
+row, a `NEEDS_REVIEW` decision, a mapping resolving to no live ID and a `CORRECT`
+decision redirecting to a different ID are each blocking findings, because each
+would otherwise survive cutover by default and go on matching a producer's
+project with nothing current behind it. Whether a row stays matchable and whether
+it is paid-safe are answered separately: a retained row whose rule is only
+partially verified is still live and still must not be sold as confirmed.
+
+Run against the 88 mapped rows, 23 stay matchable, 14 are paid-safe today and 16
+carry blocking findings — eight unresolved decisions, four dangling resolutions
+and four unexplained redirects. The live table holds more rows than the freeze
+maps, and every unmapped one blocks as well.
+
+`scripts/reconcile_grants_v2.py` is the dry run. It has no `--apply`, on purpose:
+the handoff requires a restorable backup and a reviewed before/after diff before
+anything is imported, and a script that can both report and import invites the
+second step to be taken on the strength of the first. It reads only `id` and
+`title` from the live table, and exits non-zero while any finding stands.
+
+What remains on this step is not code. A read-only production inventory and
+restorable backup, human resolution of the sixteen blocked rows and the three
+open source questions, and a reviewed diff all precede a separate, explicitly
+authorised import. No production database was read or written to produce any of
+this.
