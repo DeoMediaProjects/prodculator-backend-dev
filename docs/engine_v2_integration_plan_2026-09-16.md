@@ -308,3 +308,64 @@ frozen companies still need field-level source review before any of this reaches
 a report; `verification_scope` reads `FIELD_LEVEL_WHERE_SOURCED; UNKNOWN_OTHER`
 on all 101 rows, so nothing in the freeze is fully verified today. Wiring these
 modules into the live Sales/Distribution section is step 5 and 6 work.
+
+## Source verification harness and measured gate volume, 18 September 2026
+
+The cutover is blocked on individually sourced facts rather than on code. They
+are now counted rather than described.
+
+| Gate | Outstanding | Records |
+| --- | --- | --- |
+| Market hard gates (prose → typed rules) | 203 | 203 |
+| Market cycles (programme verified, cycle pending) | 132 | 132 |
+| Festival sections | 76 | 76 |
+| Commercial company profiles | 61 | 51 |
+| Grants migration decisions | 24 | 20 |
+| Incentive engine classification | 37 | 37 |
+
+496 claims from the snapshots plus 37 incentive classifications. The festival
+figure understates the work: it counts one claim per festival, and each needs
+section-level rules — feature, short and episodic windows differ — so 76
+festivals is realistically 150 to 250 section records.
+
+Measured detail behind those totals. Festivals: identity is verified on all 380,
+but current cycle on 102, eligibility on 96 and premiere rules on 78. Of the 76
+paid-eligible, 67 clear all three together, and that is the realistic starting
+universe. No record carries section data at all — the column is absent, not
+thin — and `deadline_pattern` on 121 records reads "Verify current submission
+windows on the...", which is the source saying it did not resolve them.
+Markets: 71 of 203 carry an ISO deadline and 107 are
+`PROGRAM_VERIFIED_CYCLE_PENDING`. Commercial: scope fields are in better shape
+than expected, with territory, rights, formats and content focus complete;
+the real gaps are 39 companies sourced from a directory listing rather than the
+company, 17 missing acquisition stages, and `verification_scope` reading
+`FIELD_LEVEL_WHERE_SOURCED; UNKNOWN_OTHER` on all 101. Incentives: the local
+database holds 52 active programmes, 15 classified and 37 null.
+
+`verification_ledger.py` is the contract every one of those facts passes
+through. One ledger rather than five because the claims share a shape — someone
+asserts a named field of a named record holds a value, says where they read it,
+says when — and kept per engine that shape drifts until "verified" means five
+different things. The ledger refuses a claim with no source URL, a claim citing
+our own database as proof of itself, and a claim dated in the future. None can
+be forced through, because the check is in the loader rather than in a policy.
+
+Independent QA is enforced by identity, not by convention. A market hard gate or
+a festival section is interpretation rather than transcription, so a claim on
+those gates is unreadable until a different person from its author signs it off.
+Reading a published deadline needs no second reviewer; requiring QA everywhere
+would make it noise.
+
+Migration `u0v1w2x3y4z5` adds `source_verifications`, additive and replayable,
+with one current claim per field of a subject so a correction replaces its
+predecessor rather than competing with it. It refuses to downgrade while it
+holds research.
+
+`scripts/verification_worklist.py` emits the outstanding claims by gate, with
+the official source the snapshot already points at where it has one, and writes
+CSV so the work can be split between people. It reads only snapshots and writes
+nothing.
+
+Nothing in this section verifies anything. It makes roughly 530 outstanding
+verifications countable, assignable and auditable, which is what the gates
+needed before anyone starts on them.
