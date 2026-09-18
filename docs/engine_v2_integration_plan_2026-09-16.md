@@ -369,3 +369,61 @@ nothing.
 Nothing in this section verifies anything. It makes roughly 530 outstanding
 verifications countable, assignable and auditable, which is what the gates
 needed before anyone starts on them.
+
+## Report orchestration v1 contract, 18 September 2026
+
+Sequence step 5's contract is implemented in `app/modules/reports/orchestration.py`,
+against the frozen Report Orchestration v1 logic. The live builder is not cut
+over; that is step 6 and it remains gated on source verification.
+
+The orchestrator assembles and never decides. It re-runs no matching,
+recalculates no rebate, selects no festival and chooses no company. Each of the
+regression's contradictions — a ranking counting a rebate the incentive section
+called unverified, a finance market under Grants, a narrative picking
+distributors no matcher returned — is the same defect, a section that computes
+rather than reads. Two sections cannot quote different UK rates when neither
+holds a rate.
+
+Section ownership is enforced rather than described. Each of the thirteen
+sections declares the engines it may consume, and Section 08 naming only
+`grants` is what keeps a market out of it. Executive Summary and Next Steps
+declare `owns_no_calculation`, because an Executive Summary that independently
+picks a territory is a second decision engine whose first visible symptom is
+disagreeing with Section 04.
+
+A result computed against a different ProjectFacts snapshot raises
+`INCONSISTENT_INPUT_VERSION` rather than merging. Two runs' facts in one report
+is the hardest kind of wrong to notice: every section reads plausibly and only
+the numbers disagree.
+
+Routing conflicts follow the frozen precedence — incentive, then markets, then
+festivals, then grants — and every suppression emits a conflict record, so a
+missing entry can be explained rather than silently dropped. Film London
+Production Finance Market is the regression case and is covered by test.
+
+Package entitlement is display depth and never search depth. Both the displayed
+count and the eligible universe count travel in every block, because a reader
+told "5 shown" must not infer that only five were searched, and a flat list of
+five cannot carry that number. Five and ten are asserted to be the same ranking
+truncated, so a cheaper package gets less advice rather than different advice.
+
+Six engine vocabularies map to the six report-safe umbrella states, with the
+engine's own state and reason codes preserved alongside. An unmapped state
+resolves to `UNKNOWN_OR_NEEDS_CONFIRMATION` rather than to anything actionable,
+because a state nobody mapped is a state nobody has reasoned about.
+
+The four financial buckets keep pipeline out of committed finance. Nothing
+reaches bucket one from a matcher: only documented award evidence does, which is
+a fact about paperwork rather than about matching. Documentation does not promote
+a festival selection or a distributor meeting, because neither is cash however
+well evidenced.
+
+Conformance is checked against the handoff's own schema files, vendored to
+`data/handoff_contracts/`, rather than against a restatement of them — required
+keys, enums, the `projectfacts_version` constant and the thirteen-section bound
+are all read from the frozen JSON, so a contract change fails a test instead of
+drifting unnoticed.
+
+What remains for step 6: wiring these payloads to the live builder, API,
+frontend, PDF and sample renderer, then the old-versus-v2 acceptance run. That
+cutover stays gated on the verification gates measured above.
