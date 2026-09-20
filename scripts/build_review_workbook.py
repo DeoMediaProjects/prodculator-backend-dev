@@ -267,38 +267,50 @@ def _decisions(path: Path) -> list[dict]:
 
 
 def apply_decisions(engine, path: Path, *, today: date, apply: bool):
+    """Read every filled decision and hand them to the ledger in one batch.
+
+    Batched deliberately. The per-claim path reflected the whole table twice for
+    every decision, so a file of 245 took longer to write than it had taken to
+    review. ``review_many`` validates each decision exactly as ``review`` does
+    and collects refusals rather than raising, so one self-signed QA still does
+    not discard the sound decisions filed beside it.
+    """
     from app.modules.reports import verification_store as store
     from app.modules.reports.verification_ledger import REJECTED, VERIFIED
 
+    def _where(row) -> str:
+        return (
+            f"{row['sheet']} row {row['row']} "
+            f"({row['gate']}/{row['subject_id']}/{row['field']})"
+        )
+
     applied, refused = [], []
+    decisions, sites = [], {}
     for row in _decisions(path):
-        where = f"{row['sheet']} row {row['row']} ({row['gate']}/{row['subject_id']}/{row['field']})"
         if row["decision"] not in {VERIFIED, REJECTED}:
-            refused.append((where, f"{row['decision']!r} is not VERIFIED or REJECTED"))
+            refused.append((_where(row), f"{row['decision']!r} is not VERIFIED or REJECTED"))
             continue
         if not row["reviewed_by"]:
-            refused.append((where, "records no reviewer"))
+            refused.append((_where(row), "records no reviewer"))
             continue
-        if not apply:
-            applied.append((where, row["decision"]))
-            continue
+        decision = store.ReviewDecision(
+            gate=row["gate"],
+            subject_id=row["subject_id"],
+            field=row["field"],
+            reviewer=row["reviewed_by"],
+            state=row["decision"],
+            qa_by=row["qa_by"],
+        )
+        decisions.append(decision)
+        sites[decision] = _where(row)
+
+    if decisions:
         try:
-            store.review(
-                engine,
-                gate=row["gate"],
-                subject_id=row["subject_id"],
-                field_name=row["field"],
-                reviewer=row["reviewed_by"],
-                state=row["decision"],
-                qa_by=row["qa_by"],
-                today=today,
-            )
-        except (LookupError, ValueError, store.LedgerUnavailable) as exc:
-            # Reported per row rather than aborting. One self-signed QA should
-            # not discard a hundred sound decisions in the same file.
-            refused.append((where, str(exc)))
-            continue
-        applied.append((where, row["decision"]))
+            outcome = store.review_many(engine, decisions, today=today, apply=apply)
+        except store.LedgerUnavailable as exc:
+            return applied, refused + [("the ledger", str(exc))]
+        applied += [(sites[d], d.state) for d, _ in outcome.reviewed]
+        refused += [(sites[d], why) for d, why in outcome.refused]
     return applied, refused
 
 

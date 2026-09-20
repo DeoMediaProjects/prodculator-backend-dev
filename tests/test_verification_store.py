@@ -312,3 +312,77 @@ def test_an_absent_ledger_says_which_migration_is_missing():
     bare = sa.create_engine("sqlite://")
     with pytest.raises(store.LedgerUnavailable, match="u0v1w2x3y4z5"):
         store.load_claims(bare)
+
+
+# ── Reviewing many at once ───────────────────────────────────────────────────
+
+
+def test_a_batch_review_applies_every_sound_decision(engine):
+    for subject in ("uk-avec", "ie-s481", "nz-nzspr"):
+        _record(engine, subject_id=subject)
+    result = store.review_many(
+        engine,
+        [
+            store.ReviewDecision(GATE_INCENTIVE_ENGINE, subject, "qs_engine_type", "reviewer-b")
+            for subject in ("uk-avec", "ie-s481", "nz-nzspr")
+        ],
+        today=TODAY,
+    )
+    assert len(result.reviewed) == 3 and result.refused == []
+    assert set(store.readable_values(engine, GATE_INCENTIVE_ENGINE, today=TODAY)) == {
+        "uk-avec", "ie-s481", "nz-nzspr",
+    }
+
+
+def test_a_batch_collects_a_refusal_instead_of_discarding_the_rest(engine):
+    """One self-signed QA must not undo the sound decisions filed beside it."""
+    _record(engine, subject_id="uk-avec")
+    _record(
+        engine, gate=GATE_MARKET_RULE, subject_id="mkt-1", field="hard_gates",
+        value="stage one_of development",
+    )
+    result = store.review_many(
+        engine,
+        [
+            store.ReviewDecision(GATE_INCENTIVE_ENGINE, "uk-avec", "qs_engine_type", "reviewer-b"),
+            store.ReviewDecision(
+                GATE_MARKET_RULE, "mkt-1", "hard_gates", "reviewer-b", qa_by="researcher-a"
+            ),
+        ],
+        today=TODAY,
+    )
+    assert [d.subject_id for d, _ in result.reviewed] == ["uk-avec"]
+    assert "same person" in result.refused[0][1]
+    assert set(store.readable_values(engine, GATE_INCENTIVE_ENGINE, today=TODAY)) == {"uk-avec"}
+    assert store.readable_values(engine, GATE_MARKET_RULE, today=TODAY) == {}
+
+
+def test_a_batch_preflight_writes_nothing(engine):
+    _record(engine)
+    result = store.review_many(
+        engine,
+        [store.ReviewDecision(GATE_INCENTIVE_ENGINE, "uk-avec", "qs_engine_type", "reviewer-b")],
+        today=TODAY,
+        apply=False,
+    )
+    assert len(result.reviewed) == 1
+    assert store.readable_values(engine, GATE_INCENTIVE_ENGINE, today=TODAY) == {}
+
+
+def test_a_batch_naming_an_unrecorded_claim_says_so(engine):
+    result = store.review_many(
+        engine,
+        [store.ReviewDecision(GATE_INCENTIVE_ENGINE, "nowhere", "qs_engine_type", "reviewer-b")],
+        today=TODAY,
+    )
+    assert result.reviewed == []
+    assert "No claim recorded" in result.refused[0][1]
+
+
+def test_the_single_claim_path_still_raises(engine):
+    """``review`` wraps the batch, and a caller naming one claim wants the error."""
+    with pytest.raises(LookupError):
+        store.review(
+            engine, gate=GATE_INCENTIVE_ENGINE, subject_id="nowhere",
+            field_name="qs_engine_type", reviewer="reviewer-b", today=TODAY,
+        )

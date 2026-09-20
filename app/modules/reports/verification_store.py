@@ -223,6 +223,119 @@ def record_claims(
     return result
 
 
+@dataclass(frozen=True)
+class ReviewDecision:
+    """One reviewer's verdict on one recorded claim."""
+
+    gate: str
+    subject_id: str
+    field: str
+    reviewer: str
+    state: str = VERIFIED
+    qa_by: str | None = None
+
+
+@dataclass
+class ReviewResult:
+    reviewed: list[tuple[ReviewDecision, SourceClaim]] = field(default_factory=list)
+    refused: list[tuple[ReviewDecision, str]] = field(default_factory=list)
+    applied: bool = False
+
+
+def review_many(
+    engine: sa.Engine,
+    decisions: Sequence[ReviewDecision],
+    *,
+    today: date,
+    apply: bool = True,
+) -> ReviewResult:
+    """Move many claims at once, validating each exactly as ``review`` does.
+
+    Batched because the per-claim path was not merely slower but unusable: it
+    reflected the whole table twice for every claim, so two hundred and
+    forty-five decisions meant four hundred and ninety schema reflections
+    against a remote database, and the run took longer than the review had.
+
+    The saving is in round trips and nowhere else. Every decision is still
+    turned into the claim it would become and passed through ``validate_claim``,
+    so a reviewer signing off their own market rule is refused here as it was
+    before. A refusal is collected rather than raised: one bad signature must
+    not discard the sound decisions filed beside it.
+    """
+    result = ReviewResult(applied=apply)
+
+    with engine.connect() as conn:
+        table = _table(conn)
+        recorded = {
+            (row.gate, row.subject_id, row.field): row
+            for row in conn.execute(sa.select(table))
+        }
+
+    updates: list[dict[str, Any]] = []
+    for decision in decisions:
+        if decision.state not in REVIEW_STATES or decision.state == PENDING:
+            result.refused.append((decision, f"{decision.state!r} is not a review outcome"))
+            continue
+        if not str(decision.reviewer or "").strip():
+            result.refused.append((decision, "A review records who performed it"))
+            continue
+
+        row = recorded.get((decision.gate, decision.subject_id, decision.field))
+        if row is None:
+            result.refused.append((
+                decision,
+                f"No claim recorded for {decision.gate}/{decision.subject_id}/{decision.field}",
+            ))
+            continue
+
+        reviewed = SourceClaim(
+            **{
+                **_to_claim(row).__dict__,
+                "review_state": decision.state,
+                "reviewed_by": decision.reviewer,
+                "qa_by": decision.qa_by,
+            }
+        )
+        if decision.state == VERIFIED:
+            problems = validate_claim(reviewed, today=today)
+            if problems:
+                result.refused.append(
+                    (decision, "This claim cannot be verified: " + " ".join(problems))
+                )
+                continue
+
+        result.reviewed.append((decision, reviewed))
+        updates.append({
+            "b_gate": decision.gate,
+            "b_subject": decision.subject_id,
+            "b_field": decision.field,
+            "b_state": decision.state,
+            "b_reviewer": decision.reviewer,
+            "b_qa": decision.qa_by,
+        })
+
+    if apply and updates:
+        with engine.begin() as conn:
+            table = _table(conn)
+            conn.execute(
+                table.update()
+                .where(
+                    sa.and_(
+                        table.c.gate == sa.bindparam("b_gate"),
+                        table.c.subject_id == sa.bindparam("b_subject"),
+                        table.c.field == sa.bindparam("b_field"),
+                    )
+                )
+                .values(
+                    review_state=sa.bindparam("b_state"),
+                    reviewed_by=sa.bindparam("b_reviewer"),
+                    qa_by=sa.bindparam("b_qa"),
+                ),
+                updates,
+            )
+    return result
+
+
 def review(
     engine: sa.Engine,
     *,
@@ -236,59 +349,19 @@ def review(
 ) -> SourceClaim:
     """Move one claim to VERIFIED or REJECTED, and return what it became.
 
-    The result is validated before it is written. A reviewer signing off their
-    own market rule, or verifying a claim whose source went missing, fails here
-    rather than becoming a readable fact.
+    A thin wrapper over ``review_many`` so the two paths cannot drift: a rule
+    tightened for the batch is tightened for the single claim on the same line.
+    It raises where the batch collects, because a caller naming one claim wants
+    to hear that that claim failed.
     """
-    if state not in REVIEW_STATES or state == PENDING:
-        raise ValueError(f"{state!r} is not a review outcome")
-    if not str(reviewer or "").strip():
-        raise ValueError("A review records who performed it")
-
-    with engine.connect() as conn:
-        table = _table(conn)
-        row = conn.execute(
-            sa.select(table).where(
-                sa.and_(
-                    table.c.gate == gate,
-                    table.c.subject_id == subject_id,
-                    table.c.field == field_name,
-                )
-            )
-        ).first()
-
-    if row is None:
-        raise LookupError(f"No claim recorded for {gate}/{subject_id}/{field_name}")
-
-    reviewed = SourceClaim(
-        **{
-            **_to_claim(row).__dict__,
-            "review_state": state,
-            "reviewed_by": reviewer,
-            "qa_by": qa_by,
-        }
-    )
-    if state == VERIFIED:
-        problems = validate_claim(reviewed, today=today)
-        if problems:
-            raise ValueError(
-                "This claim cannot be verified: " + " ".join(problems)
-            )
-
-    with engine.begin() as conn:
-        table = _table(conn)
-        conn.execute(
-            table.update()
-            .where(
-                sa.and_(
-                    table.c.gate == gate,
-                    table.c.subject_id == subject_id,
-                    table.c.field == field_name,
-                )
-            )
-            .values(review_state=state, reviewed_by=reviewer, qa_by=qa_by)
-        )
-    return reviewed
+    decision = ReviewDecision(gate, subject_id, field_name, reviewer, state, qa_by)
+    outcome = review_many(engine, [decision], today=today, apply=True)
+    if outcome.refused:
+        reason = outcome.refused[0][1]
+        if reason.startswith("No claim recorded"):
+            raise LookupError(reason)
+        raise ValueError(reason)
+    return outcome.reviewed[0][1]
 
 
 def progress(
