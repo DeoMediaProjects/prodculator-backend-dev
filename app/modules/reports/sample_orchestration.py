@@ -38,9 +38,22 @@ from typing import Any
 from app.modules.reports.orchestration import (
     EngineResult,
     OrchestrationResult,
+    as_payload,
     assemble,
     resolve_routing,
 )
+
+__all__ = [
+    "SAMPLE_FINANCE_ITEMS",
+    "SAMPLE_PROJECT_FACTS",
+    "SAMPLE_RUN_ID",
+    "SAMPLE_SNAPSHOT_ID",
+    "SAMPLE_SNAPSHOT_VERSION",
+    "as_payload",
+    "build_sample_orchestration",
+    "sample_engine_results",
+    "sample_routing_conflicts",
+]
 
 SAMPLE_RUN_ID = "sample-run-devil-wears-prada"
 SAMPLE_SNAPSHOT_ID = "sample-projectfacts-2026-09-18"
@@ -317,19 +330,3 @@ def build_sample_orchestration(package: str = "producer") -> OrchestrationResult
     )
     out.cross_engine_conflicts = sample_routing_conflicts()
     return out
-
-
-def as_payload(result: OrchestrationResult) -> dict[str, Any]:
-    """The result in the frozen schema's shape, for inspection or rendering."""
-    return {
-        "report_run_id": result.report_run_id,
-        "projectfacts_snapshot_id": result.projectfacts_snapshot_id,
-        "projectfacts_version": result.projectfacts_version,
-        "generated_at": result.generated_at,
-        "engine_versions": result.engine_versions,
-        "sections": result.sections,
-        "financial_readiness": result.financial_readiness,
-        "cross_engine_conflicts": result.cross_engine_conflicts,
-        "next_steps": result.next_steps,
-        "qa": result.qa,
-    }

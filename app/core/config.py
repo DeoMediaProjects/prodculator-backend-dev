@@ -269,6 +269,16 @@ class Settings(BaseSettings):
     # provider's full retry schedule before moving on.
     LLM_FALLBACK_PROVIDERS: str = "openai,gemini"
 
+    # v2 report orchestration. When on, the builder additionally assembles the
+    # canonical 13-section payload alongside the legacy report and attaches it
+    # for comparison. Nothing renders from it: the flag exists so the
+    # old-versus-v2 diff can be run against real report runs before any cutover,
+    # which is the one thing that cannot be rehearsed with fixtures.
+    #
+    # Default off. A half-wired orchestration reaching a paid report is the
+    # failure this whole sequence is designed to prevent.
+    REPORT_ORCHESTRATION_V2_ENABLED: bool = False
+
     # Script analysis chunking controls.
     SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False
     SCRIPT_CHUNK_TARGET_TOKENS: int = 1800

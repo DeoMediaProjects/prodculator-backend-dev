@@ -459,3 +459,25 @@ def assemble(
         generated_at=generated_at
         or datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
+
+
+def as_payload(result: OrchestrationResult) -> dict[str, Any]:
+    """The result in the frozen schema's shape, for storage or rendering.
+
+    Lives here rather than beside the sample, because the live builder and the
+    sample must serialise identically. Two serialisers would mean the payload a
+    reviewer approves and the payload a report stores could differ in ways the
+    review was meant to catch.
+    """
+    return {
+        "report_run_id": result.report_run_id,
+        "projectfacts_snapshot_id": result.projectfacts_snapshot_id,
+        "projectfacts_version": result.projectfacts_version,
+        "generated_at": result.generated_at,
+        "engine_versions": result.engine_versions,
+        "sections": result.sections,
+        "financial_readiness": result.financial_readiness,
+        "cross_engine_conflicts": result.cross_engine_conflicts,
+        "next_steps": result.next_steps,
+        "qa": result.qa,
+    }

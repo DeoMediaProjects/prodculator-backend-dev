@@ -460,7 +460,75 @@ class ReportBuilder:
         # Inject section explainers and scoring methodology
         self._inject_section_explainers(report)
 
+        self._attach_orchestration_v2(report)
+
         return report
+
+    def _attach_orchestration_v2(self, report: dict) -> None:
+        """Assemble the canonical 13-section payload alongside the legacy report.
+
+        Off by default, and it renders nothing when on. The flag exists for one
+        reason: the old-versus-v2 comparison has to run against real report runs
+        before any cutover, and that is the one part of this sequence fixtures
+        cannot rehearse. A sample proves the orchestrator assembles; only a real
+        run proves it assembles THIS production's engine results.
+
+        Failures here are swallowed into a warning rather than raised. A report
+        the producer paid for must not fail because a shadow payload nobody
+        reads could not be built — but the failure has to be visible, or the
+        comparison would silently be comparing against nothing.
+        """
+        from app.core.config import get_settings
+
+        if not get_settings().REPORT_ORCHESTRATION_V2_ENABLED:
+            return
+
+        from app.modules.reports.orchestration import (
+            EngineResult,
+            as_payload,
+            assemble,
+        )
+
+        snapshot = self.project_facts_snapshot
+        results: list[EngineResult] = []
+
+        # Only engines that actually ran. An engine contributing an empty result
+        # would read downstream as "searched and found nothing", which is a
+        # different claim from "did not run".
+        if self.grants_payload is not None:
+            payload = self.grants_payload.as_payload_dict()
+            results.append(
+                EngineResult(
+                    engine_name="grants",
+                    engine_version=GRANTS_ENGINE_VERSION,
+                    projectfacts_snapshot_id=snapshot.snapshot_id,
+                    projectfacts_version=snapshot.version,
+                    # The whole eligible universe, not the entitlement slice.
+                    # This is the number that lets a section say "10 shown from
+                    # 23 eligible" truthfully, and the slice cannot carry it.
+                    eligible_universe_count=int(
+                        payload.get("eligible_match_count") or 0
+                    ),
+                    recommendations=tuple(payload.get("recommendations") or ()),
+                )
+            )
+
+        try:
+            orchestration = assemble(
+                report_run_id=str(
+                    self.request_metadata.get("report_id") or snapshot.snapshot_id
+                ),
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+                engine_results=results,
+                package=self._package(),
+            )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning("v2 orchestration payload could not be assembled: %s", exc)
+            self.warnings.append(f"[orchestration-v2] not assembled: {exc}")
+            return
+
+        report["orchestrationV2"] = as_payload(orchestration)
 
     # ── Territory selection ─────────────────────────────────────────────────
 
