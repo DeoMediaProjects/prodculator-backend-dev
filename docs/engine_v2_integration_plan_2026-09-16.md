@@ -462,3 +462,81 @@ It reads no database.
 This closes the reviewable part of step 5. Step 6 — the live builder, API,
 frontend and PDF consuming these payloads, and the old-versus-v2 acceptance run
 — remains gated on the verification gates.
+
+## Connecting the contracts, 20 September 2026
+
+Five modules existed as contracts with nothing reading them. All five are now
+wired, and three defects surfaced in the wiring that review had not caught.
+
+**One scorer.** `commercial_strategy` carried its own tally — two points for
+genre, three per comparable capped at nine — alongside its own
+FIT_CONFIRMED/POTENTIAL_FIT/NOT_A_FIT vocabulary, while `commercial_scoring`
+held the frozen 100-point contract and the canonical match states and was
+imported by nothing. Two scorers drift until the number a report shows depends
+on which one the caller reached for. `match_company` now gates first, then
+scores through the frozen eight components, then resolves one canonical state.
+`CompanyMatch` carries the whole `StrategicFit` rather than a bare total.
+Reaching STRATEGIC_MATCH requires all eight components, which is deliberate: it
+is the report's strongest claim about a company.
+
+Two behaviours the wiring made visible. A worldwide rights scope scores as a
+full territory fit rather than a non-overlap, because scoring it zero would
+penalise the broadest company in the catalogue for being broad. And an absent
+comparable layer leaves that evidence UNKNOWN rather than zero — "we did not
+look" is not the claim "no history found".
+
+**FestivalStrategy and MarketsLabsWIPStrategy.** The kernel produced a ranked
+list, and a ranked list is not a strategy. Festivals compete in a way grants do
+not: a world premiere happens once, so two submissions requiring one are a
+conflict rather than two chances. The sequencing rule inverts the intuitive
+default — unknown premiere history is not proof premiere status is intact — so
+an unknown premiere fact yields NEEDS_CONFIRMATION rather than a submission
+order. Premiere requirements are read as typed data or not at all: the freeze
+carries prose on 34 of 380 records and nothing on 346, and neither is a rule.
+
+A consequence worth recording: the intake does not gather premiere history and
+must not start, because the note forbids engine-specific questions. Every
+premiere-requiring festival therefore sequences as NEEDS_CONFIRMATION in the
+live report until that fact arrives from a legitimate source.
+
+Markets get lifecycle sequencing instead, since a development lab and a
+rough-cut screening are not alternatives and ranking cannot say so. An
+opportunity whose class is unrecorded gets no lifecycle judgement rather than a
+default one. `is_committed_finance` answers a flat false so no caller decides
+for itself.
+
+**Provenance by shape.** The snapshot consistency check looked for four named
+keys, which is a convention whose failure mode is the next engine: someone adds
+a result, forgets the key, and the check passes while no longer covering
+anything. `engine_envelope` identifies an engine result by shape — a mapping
+carrying recommendations, a universe count or provenance of its own — so an
+engine added later is covered on the day. `stamped()` is now the only way a
+result acquires provenance, so the field names are written once.
+
+**The orchestrator behind a flag.** `REPORT_ORCHESTRATION_V2_ENABLED`, off by
+default, makes the builder assemble the canonical payload alongside the legacy
+report and attach it as `orchestrationV2`. Nothing renders from it. The flag
+exists because the old-versus-v2 diff has to run against real report runs, which
+is the one part of this sequence fixtures cannot rehearse. Assembly failures are
+warned rather than raised: a paid report must not fail for a shadow payload
+nobody reads, and a silent failure would mean comparing against nothing.
+
+**The ledger has traffic.** `verification_store` gives it load, record, review
+and count. Recording is not reviewing — a claim is validated as PENDING
+regardless of the state the caller asked for, so writing straight to VERIFIED
+does not make it readable. A changed value is a conflict carrying both readings
+rather than an overwrite. The worklist subtracts what the ledger holds so the
+queue shrinks, and emits the researcher columns blank so the CSV is filled in
+place: a worklist that must be reshaped first is a step where a subject_id gets
+mistyped. The round trip is verified end to end — worklist, fill, preflight,
+apply, unreadable until reviewed, then readable.
+
+Defects the tests found rather than review: an unfrozen score component was
+silently ignored instead of rejected; a published acquisitions contact in one
+column masked an explicit refusal in another; and in-batch deduplication used
+None as a sentinel, which the presence check read as absent, inserting a
+repeated claim twice.
+
+Step 6 remains: the live builder, API, frontend and PDF consuming these
+payloads, and the old-versus-v2 acceptance run. That cutover stays gated on the
+verification gates.
