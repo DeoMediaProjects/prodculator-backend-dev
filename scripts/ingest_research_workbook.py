@@ -53,6 +53,13 @@ _OPERATORS = {
     "overlaps", "manual_confirmation",
 }
 _PREMIERE = {"WORLD", "INTERNATIONAL", "NATIONAL", "NONE"}
+#: The canonical production formats. A comparable's format is compared token to
+#: token against the project's, so a phrase never matches and reads afterwards
+#: as a title nobody researched.
+_FORMATS = {"feature", "short", "documentary", "tv_series", "animation"}
+#: Gate 8's list-valued fields. Semicolon-separated because a genre or a country
+#: can contain a comma and splitting on one would invent two values from one.
+_COMPARABLE_LISTS = {"genres", "production_countries", "primary_languages"}
 
 
 def _reads_as_rule(line: str) -> bool:
@@ -131,6 +138,18 @@ def value_problems(claim) -> list[str]:
         for line in [x.strip() for x in value.splitlines() if x.strip()]:
             if not _reads_as_rule(line):
                 problems.append(f"{line[:52]!r} names no known operator")
+
+    elif claim.gate == "COMPARABLE_TITLE_PROFILE":
+        if claim.field == "format":
+            if value.lower() not in _FORMATS:
+                problems.append(
+                    f"{value!r} is not one of {', '.join(sorted(_FORMATS))}"
+                )
+        elif claim.field in _COMPARABLE_LISTS:
+            if not [part for part in value.split(";") if part.strip()]:
+                problems.append("Expected one or more semicolon-separated values")
+        else:
+            problems.append(f"{claim.field!r} is not a comparable title field")
 
     elif claim.gate == "GRANTS_SPLIT_PARENT":
         if upper != "NONE" and not [t for t in value.split(";") if t.strip()]:

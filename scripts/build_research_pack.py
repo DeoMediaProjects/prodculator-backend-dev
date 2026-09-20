@@ -183,6 +183,70 @@ def commercial_rows() -> list[dict]:
     return rows
 
 
+_CTX_COMPARABLE = ["title", "handled_by", "source_url"]
+
+#: What a comparable title needs before ``match_comparables`` will offer it.
+#: Format and genres are the pair that matters — a title needs TWO sourced
+#: similarities to a production before it counts as evidence, and those two are
+#: the cheapest to establish from a public page. Origin and language are worth
+#: one point each and are asked for in the same pass because the researcher is
+#: already on the film's page.
+COMPARABLE_FIELDS = ("format", "genres", "production_countries", "primary_languages")
+
+
+def comparable_rows(conn) -> list[dict]:
+    """One row per unclaimed attribute of each staged comparable title.
+
+    Ordered by field and then title, so the whole catalogue's formats can be
+    done in one pass rather than four fields at a time across 205 films.
+    """
+    import json
+
+    import sqlalchemy as sa
+
+    tables = set(sa.inspect(conn).get_table_names())
+    if "commercial_comparable_profiles" not in tables:
+        return []
+
+    handlers: dict[str, str] = {}
+    if {"commercial_comparable_relationships", "commercial_company_profiles"} <= tables:
+        for row in conn.execute(sa.text(
+            "SELECT r.comparable_id, c.name FROM commercial_comparable_relationships r "
+            "JOIN commercial_company_profiles c ON c.id = r.target_id "
+            "WHERE r.target_kind = 'COMPANY'"
+        )):
+            handlers.setdefault(str(row[0]), str(row[1] or ""))
+
+    titles = []
+    for row in conn.execute(sa.text(
+        "SELECT id, title, source_url, claims FROM commercial_comparable_profiles "
+        "ORDER BY title"
+    )):
+        claims = row[3]
+        if isinstance(claims, str):
+            try:
+                claims = json.loads(claims)
+            except ValueError:
+                claims = {}
+        titles.append((str(row[0]), str(row[1]), str(row[2] or ""), claims or {}))
+
+    rows = []
+    for field_name in COMPARABLE_FIELDS:
+        for identity, title, source_url, claims in titles:
+            # A field already claimed is not work. Reruns shrink.
+            if field_name in claims:
+                continue
+            rows.append({
+                "gate": "COMPARABLE_TITLE_PROFILE",
+                "subject_id": identity,
+                "field": field_name,
+                "title": title,
+                "handled_by": handlers.get(identity, ""),
+                "source_url": source_url,
+            })
+    return rows
+
+
 _CTX_MARKET = ["name", "host", "territory", "class", "current_value", "source_url"]
 
 

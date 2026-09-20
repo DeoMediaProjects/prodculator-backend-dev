@@ -72,6 +72,10 @@ SNAPSHOT_SHA256 = "ea7e1fc0cd475c78780bd64d470e380c8d33104547d863d4bdaee29792818
 APPROVED = "APPROVED_SOURCE_REVIEW"
 PENDING = "PENDING_SOURCE_REVIEW"
 
+#: Imported lazily elsewhere; named here so the gate this script consumes is
+#: visible at the top of the file rather than inside a function.
+GATE_COMPARABLE_TITLE = "COMPARABLE_TITLE_PROFILE"
+
 COMPANY_TABLE = "commercial_company_profiles"
 COMPARABLE_TABLE = "commercial_comparable_profiles"
 RELATIONSHIP_TABLE = "commercial_comparable_relationships"
@@ -104,6 +108,21 @@ _LEDGER_CLAIM_FIELDS = {
     "acquisition_stage": "acquisition_stages",
     "genre_specialties": "genres",
 }
+
+#: Gate 8's fields, and the comparable claim each becomes. The names already
+#: match ``_COMPARABLE_CLAIMS``; the mapping is written out anyway so adding a
+#: field to the research cannot silently start writing a claim the catalogue
+#: rejects.
+_TITLE_CLAIM_FIELDS = {
+    "format": "format",
+    "genres": "genres",
+    "production_countries": "production_countries",
+    "primary_languages": "primary_languages",
+}
+#: Which of those the catalogue reads as a list rather than a string.
+_TITLE_LIST_CLAIMS = frozenset(
+    {"genres", "production_countries", "primary_languages"}
+)
 
 
 @dataclass
@@ -168,8 +187,8 @@ def _claim(value: Any, source_url: str, verified_on: str | date) -> dict:
     }
 
 
-def _ledger_claims(engine: sa.Engine | None, *, today: date):
-    """VERIFIED commercial claims, keyed by company, or nothing.
+def _ledger_claims(engine: sa.Engine | None, *, today: date, gate: str | None = None):
+    """VERIFIED claims on one gate, keyed by subject, or nothing.
 
     An absent ledger yields nothing rather than an error. A database that has
     not had the research table migrated into it can still stage the freeze, and
@@ -184,7 +203,9 @@ def _ledger_claims(engine: sa.Engine | None, *, today: date):
     )
 
     try:
-        claims = verification_store.load_claims(engine, gate=GATE_COMMERCIAL_PROFILE)
+        claims = verification_store.load_claims(
+            engine, gate=gate or GATE_COMMERCIAL_PROFILE
+        )
     except verification_store.LedgerUnavailable:
         return {}
     by_subject: dict[str, dict[str, Any]] = {}
@@ -309,8 +330,38 @@ def _company_review(
     return APPROVED, reviewed_on, ""
 
 
+def _title_claims(recorded: dict, report: StageReport) -> dict:
+    """One title's verified attributes, as catalogue claims.
+
+    Gate 8 exists because the freeze records which company handled a title and
+    nothing about the title. Until these arrive a comparable carries no sourced
+    similarity, ``match_comparables`` drops it for having fewer than two, and
+    every company's 25-point comparable-evidence component stays unknown.
+    """
+    claims: dict[str, dict] = {}
+    for ledger_field, claim_field in _TITLE_CLAIM_FIELDS.items():
+        claim = recorded.get(ledger_field)
+        if claim is None:
+            continue
+        if claim_field in _TITLE_LIST_CLAIMS:
+            value = _list_from(claim.value)
+        else:
+            value = str(claim.value or "").strip().lower()
+        if not value:
+            report.ledger_claims_ignored[ledger_field] = (
+                report.ledger_claims_ignored.get(ledger_field, 0) + 1
+            )
+            continue
+        claims[claim_field] = _claim(value, claim.source_url, claim.verified_on)
+        report.ledger_claims_used[ledger_field] = (
+            report.ledger_claims_used.get(ledger_field, 0) + 1
+        )
+    return claims
+
+
 def _title_rows(
-    payload: dict, company_rows: list[dict], report: StageReport
+    payload: dict, company_rows: list[dict], report: StageReport,
+    title_ledger: dict | None = None,
 ) -> tuple[list[dict], list[dict]]:
     by_name = {str(raw["company_name"]): str(raw["company_id"]) for raw in payload["companies"]}
     verified_on = {
@@ -340,10 +391,12 @@ def _title_rows(
                 "title": title,
                 "source_url": source_url,
                 "verified_on": seen_on,
-                # Nothing. The freeze records which company handled the title
-                # and not one attribute of the title itself, so a comparable
-                # arrives with its identity sourced and its profile empty.
-                "claims": {},
+                # The freeze records which company handled the title and not
+                # one attribute of the title itself, so a comparable's profile
+                # comes entirely from gate 8. Empty until that is researched.
+                "claims": _title_claims(
+                    (title_ledger or {}).get(identity, {}), report
+                ),
                 "review_state": APPROVED if sourced else PENDING,
                 "reviewed_on": seen_on if sourced else None,
             }
@@ -381,9 +434,11 @@ def _title_rows(
     return list(comparables.values()), relationships
 
 
-def build_rows(payload: dict, ledger: dict, report: StageReport):
+def build_rows(
+    payload: dict, ledger: dict, report: StageReport, title_ledger: dict | None = None
+):
     companies = _company_rows(payload, ledger, report)
-    comparables, relationships = _title_rows(payload, companies, report)
+    comparables, relationships = _title_rows(payload, companies, report, title_ledger)
     return companies, comparables, relationships
 
 
@@ -459,7 +514,10 @@ def stage_commercial_catalogue(
     payload = payload if payload is not None else _load_snapshot()
     report = StageReport(applied=apply)
     ledger = _ledger_claims(engine, today=today)
-    companies, comparables, relationships = build_rows(payload, ledger, report)
+    titles = _ledger_claims(engine, today=today, gate=GATE_COMPARABLE_TITLE)
+    companies, comparables, relationships = build_rows(
+        payload, ledger, report, titles
+    )
 
     with engine.begin() as conn:
         tables = set(sa.inspect(conn).get_table_names())

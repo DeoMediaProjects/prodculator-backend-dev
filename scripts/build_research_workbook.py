@@ -87,7 +87,7 @@ def _sheet(wb: Workbook, title: str, rows: list[dict], context: list[str], note:
 
 
 _INSTRUCTIONS: list[tuple[str, str]] = [
-    ("", "Seven gates stand between the v2 engines and a paid cutover. Each is a "
+    ("", "Eight gates stand between the v2 engines and a paid cutover. Each is a "
          "set of facts nobody has verified yet. One sheet per gate."),
     ("How to work a sheet",
      "Fill the five shaded columns on the right of each row: value, source_url, "
@@ -174,6 +174,17 @@ _GATE_NOTES: dict[str, str] = {
         "⚠ ctx_current_deadline_prose on 121 records literally reads 'Verify current submission "
         "windows on the…'. That is the source telling you it did not resolve them."
     ),
+    "8 Comparable titles": (
+        "FIELDS, one row each: format (feature / short / documentary / tv_series / animation) · "
+        "genres (semicolon-separated) · production_countries (semicolon-separated) · "
+        "primary_languages (semicolon-separated).    "
+        "WHY: the commercial freeze records which company handled each title and nothing about "
+        "the title itself. A comparable needs TWO sourced similarities to a production before it "
+        "counts as evidence, so with no attributes every one of the 205 is dropped — and with "
+        "them goes the 25-point comparable-evidence component of every company score. "
+        "\u26a0 One format token, not a phrase. A documentary feature is format 'documentary' "
+        "with 'feature' unrecorded rather than both guessed at; record what the source states."
+    ),
     "7 Festival rules": (
         "TWO PEOPLE. FIELD: section_rules — per section, eligibility typed as in gate 5, plus the "
         "premiere requirement as WORLD / INTERNATIONAL / NATIONAL / NONE. "
@@ -186,6 +197,37 @@ _GATE_NOTES: dict[str, str] = {
 }
 
 
+def _already_recorded(engine) -> set[tuple[str, str, str]]:
+    """Claims the ledger already holds, so the pack asks for them once.
+
+    A REJECTED claim is deliberately NOT counted as settled. A reviewer
+    rejecting an answer is saying the question is still open, and leaving it out
+    of the next pack would retire the question along with the wrong answer.
+    """
+    if engine is None:
+        return set()
+    from app.modules.reports import verification_store as store
+    from app.modules.reports.verification_ledger import REJECTED
+
+    try:
+        claims = store.load_claims(engine)
+    except store.LedgerUnavailable:
+        return set()
+    return {
+        (c.gate, c.subject_id, c.field)
+        for c in claims
+        if c.review_state != REJECTED
+    }
+
+
+def _outstanding(rows: list[dict], settled: set[tuple[str, str, str]]) -> list[dict]:
+    return [
+        row
+        for row in rows
+        if (row["gate"], str(row["subject_id"]), row["field"]) not in settled
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -195,11 +237,13 @@ def main() -> None:
 
     from scripts.build_research_pack import (  # noqa: PLC0415
         _CTX_COMMERCIAL,
+        _CTX_COMPARABLE,
         _CTX_FESTIVAL,
         _CTX_INCENTIVE,
         _CTX_MARKET,
         _CTX_SPLIT,
         commercial_rows,
+        comparable_rows,
         festival_rows,
         incentive_rows,
         market_rows,
@@ -225,21 +269,28 @@ def main() -> None:
 
     counts: dict[str, int] = {}
     db_url = os.environ.get("DB_URL")
+    # One engine for both the ledger read and the gate queries. Two engines
+    # meant two connections to the Railway proxy, and it closed one of them.
+    engine = None
     if db_url:
         import sqlalchemy as sa
 
         engine = sa.create_engine(db_url)
+    settled = _already_recorded(engine)
+    if engine is not None:
         with engine.connect() as conn:
             if conn.dialect.name == "postgresql":
                 conn.execute(sa.text("SET TRANSACTION READ ONLY"))
             for title, rows, ctx in (
                 ("1 Incentive engines", incentive_rows(conn), _CTX_INCENTIVE),
                 ("2 Grants split parents", split_parent_rows(conn), _CTX_SPLIT),
+                ("8 Comparable titles", comparable_rows(conn), _CTX_COMPARABLE),
             ):
+                rows = _outstanding(rows, settled)
                 _sheet(wb, title, rows, ctx, _GATE_NOTES[title])
                 counts[title] = len(rows)
     else:
-        print("DB_URL not set — gates 1 and 2 need the live database; skipping them.")
+        print("DB_URL not set — gates 1, 2 and 8 need the live database; skipping them.")
 
     for title, rows, ctx in (
         ("3 Commercial profiles", commercial_rows(), _CTX_COMMERCIAL),
@@ -248,6 +299,7 @@ def main() -> None:
         ("6 Festival deadlines", festival_rows("deadline"), _CTX_FESTIVAL),
         ("7 Festival rules", festival_rows("rules"), _CTX_FESTIVAL),
     ):
+        rows = _outstanding(rows, settled)
         _sheet(wb, title, rows, ctx, _GATE_NOTES[title])
         counts[title] = len(rows)
 

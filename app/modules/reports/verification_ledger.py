@@ -70,6 +70,14 @@ GATE_GRANTS_MIGRATION = "GRANTS_MIGRATION_DECISION"
 #: could not find them.
 GATE_GRANTS_SPLIT_PARENT = "GRANTS_SPLIT_PARENT"
 GATE_COMMERCIAL_PROFILE = "COMMERCIAL_COMPANY_PROFILE"
+#: What a comparable title IS — format, genres, origin, language. Distinct from
+#: the profile gate above, which is about a company. The commercial freeze
+#: records which company handled each of 205 titles and not one attribute of the
+#: titles themselves, and ``match_comparables`` needs two sourced similarities
+#: before it will offer a title as evidence. Without this gate every comparable
+#: scores zero reasons, is dropped, and the 25-point comparable-evidence
+#: component of every company score stays unknown.
+GATE_COMPARABLE_TITLE = "COMPARABLE_TITLE_PROFILE"
 GATE_MARKET_RULE = "MARKET_HARD_GATE"
 GATE_MARKET_CYCLE = "MARKET_CYCLE"
 GATE_FESTIVAL_SECTION = "FESTIVAL_SECTION"
@@ -80,6 +88,7 @@ GATES: frozenset[str] = frozenset(
         GATE_GRANTS_MIGRATION,
         GATE_GRANTS_SPLIT_PARENT,
         GATE_COMMERCIAL_PROFILE,
+        GATE_COMPARABLE_TITLE,
         GATE_MARKET_RULE,
         GATE_MARKET_CYCLE,
         GATE_FESTIVAL_SECTION,
