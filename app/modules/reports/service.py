@@ -1172,6 +1172,17 @@ class ReportService:
         The AI copies these verbatim instead of doing its own rebate arithmetic.
         Uses the exact same calculation logic as ReportValidator._compute_corrected_rebate.
         """
+        # Current report requests always carry the v2 scenario key, even when no
+        # territory spend was entered.  The legacy calculator below applies a
+        # programme rate to the *total project budget*; it cannot establish the
+        # statutory qualifying base from those scenarios.  Fail closed rather
+        # than publish that budget proxy as a project rebate.  Direct legacy
+        # callers without the v2 key retain the old calculation for migration
+        # comparisons only.  Remove this branch only when a reviewed statutory
+        # scenario calculator replaces the budget-proxy path.
+        if "_territory_scenarios" in datasets:
+            datasets["_territory_financials"] = {}
+            return
         from app.modules.reports.validator import (
             ReportValidator,
             _index_incentives_by_territory,

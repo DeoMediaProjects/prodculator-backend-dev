@@ -875,6 +875,21 @@ class TestBuildComparables:
 
 
 class TestBuildFundingOpportunities:
+    def test_festival_does_not_render_in_grants_section(self):
+        ds = _make_datasets(
+            incentives=[_make_incentive()],
+            grants=[],
+            festivals=[{
+                "name": "Example Film Festival",
+                "territory": "United Kingdom",
+                "genres": ["Drama"],
+                "submission_deadline": "2027-01-01",
+            }],
+        )
+        report = _build(ds)
+
+        assert report["fundingOpportunities"] == []
+
     def test_grant_amount_is_the_source_wording_verbatim(self):
         """The amount shown is what the source published, unedited.
 
@@ -962,6 +977,8 @@ class TestBuildFundingOpportunities:
         report = _build(ds)
 
         payload = report["grantsPayload"]
+        assert payload["projectfacts_snapshot_id"] == report["projectFactsSnapshotId"]
+        assert payload["projectfacts_version"] == report["projectFactsVersion"]
         assert payload["eligible_match_count"] == 14
         # More matched than any package displays, so the summary has to say so.
         assert payload["display_limit"] <= 10

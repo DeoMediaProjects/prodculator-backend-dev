@@ -75,3 +75,70 @@ One live-path provenance error was corrected during the audit: the builder had c
 The `comparable_productions` rows and current selector also fall short of the requested defensible profile. Selection primarily uses format, territory, genre and rough budget proximity; `relevanceDescription` is left for AI to fill. The existing TMDB sync discovers top-revenue movies and stores title, year, budget, first production country and genres, not tone, themes, audience, release profile, festival/market trajectory or verified sales/distribution history. A top-revenue import is not itself evidence of commercial similarity. There are no sourced title-to-company or title-to-festival/market relationship tables. The current database counts in the baseline are local only and must not be presented as production counts.
 
 Next implementation gates: (1) add isolated, source-provenanced company-role and comparable-relationship staging tables; (2) curate and independently verify a representative cross-format set, including acquisition scope and title histories; (3) build hard gates with UNKNOWN and separate strategic fit signals, then full-universe ranking and 5/10 entitlement; (4) wire canonical ComparableProfile and SalesDistributionStrategy into the report only after sample-report, API, PDF and frontend acceptance. Do not infer an offer, revenue outcome or committed finance from a comparable or a company match.
+
+## Commercial engine foundation, 17 September 2026
+
+The first and third implementation gates above now have code and isolated acceptance tests. The additive commercial staging migration defines company profiles, comparable profiles and source-linked comparable relationships separately from legacy rows. Each structured claim stores its own value, source URL and verification date. The read-only catalogue loader admits only `APPROVED_SOURCE_REVIEW` rows, rejects malformed or future-dated evidence, and requires relationships to resolve to an approved company when the relationship names a company. No legacy row is automatically promoted.
+
+`commercial_strategy.py` matches comparables on sourced format, genre, tone, themes, form, production origin, language, audience, release profile and GBP-denominated budget where genuinely available. It requires at least two independent sourced similarities and never uses revenue as a similarity shortcut. Verified title-to-festival and title-to-market relationships can strengthen fit; verified title-to-company links support company history. The company matcher gates known format, form, technique, acquisition stage, origin, language, sales territory and budget before strategic scoring. Missing project or company evidence remains UNKNOWN. A company needs verified active status and role, plus a supported match, to be actionable. Confirmed fit additionally needs completed rule review and verified format, stage and rights-territory scope. Results are ranked across the full universe before 5/10 package depth.
+
+This is still an engine contract rather than a populated commercial catalogue. The remaining critical work is independent source curation and QA of real companies and films, a reviewed production-data inventory and migration rehearsal, canonical report orchestration, API/PDF/frontend rendering of the new strategy, and old-versus-v2 sample-report acceptance. The storefront must not imply an acquisition offer or predict revenue from these matches.
+
+## Expanded handoff and Devil Wears Prada regression, 17 September 2026
+
+The `CORRECT FILES` folder adds authoritative Grants v2, ProjectFacts v1,
+Markets/Labs/WIP v1, Festival v2.1, Sales/Distribution v1 and Report
+Orchestration v1 handoffs, plus a 13-section regression report and implementation
+note. These are specifications and source snapshots, not evidence that their
+runtime logic is already live. The duplicate Sales workbook copies are
+SHA-256-identical; the duplicate ProjectFacts schema copies are also identical.
+For festivals the `FINAL_VERIFIED_2026-09-15` dataset has priority over the
+earlier `final_380` baseline.
+
+| Component | Frozen handoff | Current application gap |
+| --- | --- | --- |
+| ProjectFacts | One versioned, provenance-aware snapshot; blank territory spend UNKNOWN; user and script facts coexist. | Existing `ProjectDNA` is partial and engine-specific adapters still reconstruct facts. A persisted snapshot ID and shared contract are now being added, but every engine does not yet consume it. |
+| Incentives | Total budget, territory spend and statutory qualifying spend are distinct. No project amount without required inputs. | The legacy precompute still derived amounts from total budget. The v2 request path now fails closed and publishes no budget-proxy financials. A reviewed statutory scenario calculator and report wiring remain. |
+| Grants | 253-record reconciled master, verification/hard gates, 5/10, no market records in grant output. | Existing Grants v2 matcher is present, but the new 253-record source and legacy migration maps have not been rehearsed against production, and report routing still needs cross-engine QA. |
+| Markets/Labs/WIP | 203 tracks, static 43 paid-safe snapshot, cycle/stage/person gates, dedicated Section 09. | Data is staged in a versioned snapshot and opportunity kernel exists; 203 prose hard gates still need typed source review. No live Section 09 or canonical strategy cutover. |
+| Festivals | 380 inventory, static 76 paid-safe snapshot, section-level verification and premiere sequence. | Additive staging and a small source-checked cycle tranche exist. Most section deadlines/rules are not structured; paid report still uses legacy recommendations. |
+| Comparables and Sales/Distribution | 101 companies, 205 typed sourced relationships, 100-point strategic fit, access routes, group dedupe and 5/10. | The workbook is now a checksum-verified snapshot. Its prose fields and raw access labels need field-level normalization; the current isolated commercial matcher does not yet implement the frozen scoring/portfolio contract or feed the paid report. |
+| Report orchestration | One snapshot and canonical engine outputs drive 13 sections, finance buckets and Next Steps. | Current builder remains the old report shape. It cannot be called a completed v2 report until renderer, API, PDF and frontend all consume the canonical outputs. |
+
+The regression demonstrates four required fail-safe behaviours: do not calculate
+New York/UK/France rebates from the $30m budget when spend is blank; route Film
+London Production Finance Market outside Grants; do not let a possible
+kids/family intake value override contradictory script evidence in festival
+matching; and distinguish production comparables from sourced commercial
+comparable relationships. Its proposed five sales targets are strategic examples,
+not acquisition-interest evidence or proof that the live matcher would select them.
+
+### Executable completion sequence
+
+1. Finish the canonical ProjectFacts snapshot and require identical snapshot
+   identifiers on every engine result. Add a mismatch regression that blocks
+   final rendering rather than silently combining runs.
+2. Replace the legacy budget-proxy incentive calculation with reviewed
+   programme-specific statutory calculations using scenario spend and exact cost
+   bases. Preserve UNKNOWN and do not publish project amounts until this passes
+   the Devil Wears Prada blank-spend regression.
+3. Reconcile Grants 253 against live IDs via the supplied migration maps and a
+   restorable backup; import only after dry-run review. Complete verified cycle
+   and typed hard-gate data for Markets and Festivals before paid cutover.
+4. Normalize the 101-company/205-relationship commercial freeze into approved
+   claims, including canonical access states and typed relationship semantics;
+   implement the frozen 100-point score, parent/label dedupe and suitable-route
+   diversification. Do not infer close commercial comparables for the regression
+   screenplay when the graph lacks them.
+5. Build/persist canonical strategy objects and the 13-section orchestrator.
+   Route Section 08 Grants, 09 Markets, 10 split Comparables, 11 Festivals and 12
+   Sales from those objects only; classify finance without counting pipeline as
+   committed cash.
+6. Wire the same payloads to API, frontend, PDF and sample renderer. Run backend,
+   frontend, data import, schema, screenshot/PDF and end-to-end regression QA.
+   Only then propose a paid/live cutover after production inventory and backup.
+
+This sequence is more than a wording or prompt change. Completion remains
+conditional on source maintenance, migration safety and an actual end-to-end
+report run. No production database or deployed frontend change is implied by
+these repository edits.
