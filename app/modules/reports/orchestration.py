@@ -48,7 +48,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 # ── The thirteen sections ────────────────────────────────────────────────────
 
@@ -315,6 +315,72 @@ class OrchestrationResult:
     generated_at: str = ""
 
 
+# ── Next Steps ───────────────────────────────────────────────────────────────
+
+#: How urgently an action needs doing. Ordered, because a sequencer that sorted
+#: these strings alphabetically would put "high" after "blocking" and before
+#: "low" by luck rather than by meaning.
+_URGENCY_ORDER: dict[str, int] = {"blocking": 0, "high": 1, "medium": 2, "low": 3}
+
+#: Actions that unblock other actions, and so come first whatever their own
+#: stated urgency. Supplying a qualifying-spend figure is the example the
+#: regression makes obvious: until it exists no incentive can be calculated, so
+#: every financial action behind it is waiting on this one. An action nobody
+#: marked as unblocking is not demoted — it simply is not promoted.
+_UNBLOCKING_MARKERS: tuple[str, ...] = (
+    "qualifying spend",
+    "cost breakdown",
+    "premiere",
+    "rights",
+)
+
+
+def _is_unblocking(step: Mapping[str, Any]) -> bool:
+    text = f"{step.get('action', '')} {step.get('why', '')}".casefold()
+    return any(marker in text for marker in _UNBLOCKING_MARKERS)
+
+
+def sequence_next_steps(
+    engine_results: Sequence["EngineResult"],
+) -> list[dict[str, Any]]:
+    """Order every engine's actions into one plan.
+
+    Section 13 is the only place in the report where cross-engine sequencing
+    happens, and it is sequencing rather than deciding: the frozen spec is
+    explicit that this section orders actions and does not change any
+    underlying eligibility. Nothing here promotes an opportunity, alters a
+    state, or adds an action no engine asked for.
+
+    The order is dependency first, then urgency, then the engine's own order.
+    Dependency leads because an action that unblocks others is worth doing
+    before a more urgent action that cannot proceed without it — a producer
+    told to approach three distributors this week, with "supply your qualifying
+    spend" ranked below, has been given the list in the wrong order.
+    """
+    collected: list[tuple[int, int, int, dict[str, Any]]] = []
+    for engine_index, result in enumerate(engine_results):
+        for step_index, step in enumerate(result.next_steps):
+            entry = dict(step, engine=result.engine_name)
+            urgency = str(entry.get("urgency") or "medium").strip().casefold()
+            collected.append(
+                (
+                    0 if _is_unblocking(entry) else 1,
+                    _URGENCY_ORDER.get(urgency, _URGENCY_ORDER["medium"]),
+                    # Engine order then step order, so an engine's own sequence
+                    # survives inside its urgency band rather than being
+                    # reshuffled by a sort that has nothing left to compare.
+                    engine_index * 1000 + step_index,
+                    entry,
+                )
+            )
+
+    collected.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [
+        dict(entry, sequence_position=position)
+        for position, (_, _, _, entry) in enumerate(collected, start=1)
+    ]
+
+
 def package_entitlement(package: str) -> int:
     """Display depth. Never a search depth.
 
@@ -438,11 +504,7 @@ def assemble(
         }
     )
 
-    next_steps = [
-        dict(step, engine=result.engine_name)
-        for result in engine_results
-        for step in result.next_steps
-    ]
+    next_steps = sequence_next_steps(engine_results)
 
     failed = [check for check in checks if check["status"] == "FAIL"]
     return OrchestrationResult(

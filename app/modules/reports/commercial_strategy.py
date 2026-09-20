@@ -38,6 +38,41 @@ CommercialStatus = Literal[
 ]
 RelationshipKind = Literal["COMPANY", "FESTIVAL", "MARKET_LAB_WIP"]
 
+#: The two roles a comparable can play, from the implementation note's section
+#: 10. They are kept apart because their evidence is different and their
+#: guardrails are opposite.
+#:
+#: A PRODUCTION comparable is evidence about making the film: territory, scale,
+#: incentive route, crew and location profile. It says nothing about who bought
+#: the film, and the note is explicit that it must not imply similar buyer
+#: interest or commercial performance.
+#:
+#: A COMMERCIAL comparable is evidence about selling it: genre, tone, audience,
+#: release trajectory and — decisively — sourced company-title relationships.
+#: Only this role may support a sales or distribution recommendation.
+#:
+#: A title can hold both roles. It holds them because each was established
+#: separately, never because holding one implies the other.
+PRODUCTION_COMPARABLE = "PRODUCTION"
+COMMERCIAL_COMPARABLE = "COMMERCIAL"
+ComparableRole = Literal["PRODUCTION", "COMMERCIAL"]
+
+#: Fields that evidence each role. A comparable earns a role by carrying sourced
+#: values in that role's dimensions, so the role is derived from the evidence
+#: rather than asserted alongside it.
+_PRODUCTION_DIMENSIONS: tuple[str, ...] = (
+    "format",
+    "budget_gbp",
+    "production_countries",
+)
+_COMMERCIAL_DIMENSIONS: tuple[str, ...] = (
+    "genres",
+    "tone",
+    "themes",
+    "target_audience",
+    "release_profile",
+)
+
 
 def _source_is_usable(source_url: str, verified_on: date, today: date) -> bool:
     if not isinstance(source_url, str):
@@ -101,6 +136,20 @@ class ComparableMatch:
     reasons: tuple[str, ...]
     unknown_dimensions: tuple[str, ...]
     verified_relationships: tuple[ComparableRelationship, ...]
+    #: Which roles this title's sourced evidence actually supports. Section 10
+    #: states each comparable's roles, so a reader can see that a title offered
+    #: as a production analogue is not also being offered as buyer evidence.
+    roles: tuple[str, ...] = ()
+
+    @property
+    def supports_commercial_evidence(self) -> bool:
+        """Whether this title may back a sales or distribution recommendation.
+
+        The note's guardrail in one property: production similarity alone can
+        never create commercial buyer evidence. A company match reads this
+        rather than re-deriving it, so the rule lives in one place.
+        """
+        return COMMERCIAL_COMPARABLE in self.roles
 
 
 @dataclass(frozen=True)
@@ -182,6 +231,36 @@ def _shared(
     return _values(fact.value) & _values(source.value)
 
 
+def _roles_for(
+    profile: ComparableProfile,
+    relationships: tuple[ComparableRelationship, ...],
+    today: date,
+) -> tuple[str, ...]:
+    """Which roles this title's sourced evidence supports.
+
+    Derived from the evidence rather than asserted alongside it, so a title
+    cannot be labelled a commercial comparable by anyone who did not first
+    source the dimensions that make it one.
+
+    A verified company relationship confers the commercial role on its own. It
+    is the strongest evidence the note recognises — this company handled this
+    film — and a title carrying one is commercial evidence whether or not its
+    tone and audience were also recorded.
+    """
+    roles: list[str] = []
+    if any(
+        getattr(profile, name) and getattr(profile, name).known(today)
+        for name in _PRODUCTION_DIMENSIONS
+    ):
+        roles.append(PRODUCTION_COMPARABLE)
+    if any(r.target_kind == "COMPANY" for r in relationships) or any(
+        getattr(profile, name) and getattr(profile, name).known(today)
+        for name in _COMMERCIAL_DIMENSIONS
+    ):
+        roles.append(COMMERCIAL_COMPARABLE)
+    return tuple(roles)
+
+
 def match_comparables(
     profiles: list[ComparableProfile],
     project: ProjectDNA,
@@ -250,7 +329,16 @@ def match_comparables(
         # comparable. Require at least two independent sourced similarities.
         if len(reasons) < 2:
             continue
-        matches.append(ComparableMatch(profile, score, tuple(reasons), tuple(unknown), relationships))
+        matches.append(
+            ComparableMatch(
+                profile,
+                score,
+                tuple(reasons),
+                tuple(unknown),
+                relationships,
+                roles=_roles_for(profile, relationships, today),
+            )
+        )
     matches.sort(key=lambda item: (-item.score, item.profile.title.casefold(), item.profile.id))
     return ComparableStrategy(
         len(profiles),
@@ -464,6 +552,13 @@ def _score_components(
     intersecting = False
     if comparables is not None:
         for item in comparables.recommendations:
+            # Section 10's guardrail, enforced rather than described: a title
+            # that is only a production analogue cannot become buyer evidence.
+            # Similar budget, territory and scale say nothing about who bought
+            # a film, and letting them through here is how production
+            # similarity turns into a commercial claim nobody sourced.
+            if not item.supports_commercial_evidence:
+                continue
             for relationship in item.verified_relationships:
                 if (
                     relationship.target_kind == "COMPANY"

@@ -61,6 +61,9 @@ from app.modules.reports.engine_envelope import stamped
 #: the result so a stored report says which engine produced it, rather than
 #: leaving a later reader to infer it from the report's date.
 GRANTS_ENGINE_VERSION = "2.0"
+FESTIVAL_ENGINE_VERSION = "2.1"
+MARKETS_ENGINE_VERSION = "1.0"
+COMMERCIAL_ENGINE_VERSION = "1.0"
 from app.modules.reports.coproduction_section import (
     build_coproduction_opportunities,
     build_coproduction_structure,
@@ -464,6 +467,177 @@ class ReportBuilder:
 
         return report
 
+    def _v2_strategy_results(self, snapshot) -> list:
+        """Build the four canonical strategies and hand them to the orchestrator.
+
+        Each is built from a loader that reads only verified, staged data, so
+        today every one of them returns an empty universe. That is the correct
+        output, not a failure: the staging tables hold no reviewed cycles and
+        the commercial catalogue holds no approved rows until the source
+        verification gates close.
+
+        It is built now regardless, because a comparison that only ever
+        exercised the grants engine would tell a reviewer nothing about the four
+        sections the rebuild actually changed. An empty universe with a real
+        count is evidence; a section the builder never attempted is not.
+
+        Each strategy is isolated. One engine failing to load leaves the others
+        reporting, because a missing commercial catalogue should not also cost
+        the reviewer the festival comparison.
+        """
+        from datetime import date as _date
+
+        from app.modules.reports.orchestration import EngineResult
+
+        today = _date.today()
+        package = self._package()
+        results: list = []
+
+        def add(name: str, version: str, universe: int, recommendations) -> None:
+            results.append(
+                EngineResult(
+                    engine_name=name,
+                    engine_version=version,
+                    projectfacts_snapshot_id=snapshot.snapshot_id,
+                    projectfacts_version=snapshot.version,
+                    eligible_universe_count=universe,
+                    recommendations=tuple(recommendations),
+                )
+            )
+
+        # The application's own pooled engine, not a new one per report: these
+        # loaders issue a handful of reads, and a fresh connection pool for each
+        # report would cost more than the queries.
+        try:
+            from app.core.db import engine
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning("v2 strategies have no database handle: %s", exc)
+            return results
+
+        # ── Festivals and markets, from the staged cycle universe ────────────
+        try:
+            from app.modules.reports.festival_strategy import build_festival_strategy
+            from app.modules.reports.markets_strategy import build_markets_strategy
+            from app.modules.reports.opportunity_catalogue import load_opportunities
+
+            festivals = build_festival_strategy(
+                load_opportunities(engine, kind="FESTIVAL", today=today),
+                self.project_dna,
+                package=package,
+                today=today,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            add(
+                "festivals",
+                FESTIVAL_ENGINE_VERSION,
+                festivals.universe_count,
+                [
+                    {
+                        "festival": item.opportunity.name,
+                        "engine_state": item.eligibility,
+                        "sequence": item.sequence,
+                        "sequence_reason": item.sequence_reason,
+                        "conditions_to_confirm": list(
+                            item.recommendation.conditions_to_confirm
+                        ),
+                    }
+                    for item in festivals.recommendations
+                ],
+            )
+
+            markets = build_markets_strategy(
+                load_opportunities(engine, kind="MARKET_LAB_WIP", today=today),
+                self.project_dna,
+                package=package,
+                today=today,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            add(
+                "markets_labs_wip",
+                MARKETS_ENGINE_VERSION,
+                markets.universe_count,
+                [
+                    {
+                        "opportunity": item.opportunity.name,
+                        "engine_state": item.eligibility,
+                        "sequence": item.sequence,
+                        "sequence_reason": item.sequence_reason,
+                    }
+                    for item in markets.recommendations
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning("v2 opportunity strategies not built: %s", exc)
+            self.warnings.append(f"[orchestration-v2] opportunities: {exc}")
+
+        # ── Comparables and sales, from the approved commercial catalogue ────
+        try:
+            from app.modules.reports.commercial_catalogue import (
+                load_commercial_catalogue,
+            )
+            from app.modules.reports.commercial_strategy import (
+                build_sales_distribution_strategy,
+                match_comparables,
+            )
+
+            catalogue = load_commercial_catalogue(engine, today=today)
+            comparables = match_comparables(
+                catalogue.comparables,
+                self.project_dna,
+                today=today,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            add(
+                "comparables",
+                COMMERCIAL_ENGINE_VERSION,
+                comparables.universe_count,
+                [
+                    {
+                        "title": item.profile.title,
+                        # Section 10 states each comparable's roles, so a title
+                        # offered as a production analogue is visibly not also
+                        # being offered as buyer evidence.
+                        "roles": list(item.roles),
+                        "reasons": list(item.reasons),
+                    }
+                    for item in comparables.recommendations
+                ],
+            )
+
+            sales = build_sales_distribution_strategy(
+                catalogue.companies,
+                self.project_dna,
+                package=package,
+                today=today,
+                comparables=comparables,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            add(
+                "sales",
+                COMMERCIAL_ENGINE_VERSION,
+                sales.universe_count,
+                [
+                    {
+                        "company": item.profile.name,
+                        "match_state": item.status,
+                        "strategic_fit_score": item.score,
+                        "components_known": item.fit.components_known,
+                        "access_route": item.profile.access_route,
+                        "conditions_to_confirm": list(item.conditions_to_confirm),
+                    }
+                    for item in sales.recommendations
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning("v2 commercial strategies not built: %s", exc)
+            self.warnings.append(f"[orchestration-v2] commercial: {exc}")
+
+        return results
+
     def _attach_orchestration_v2(self, report: dict) -> None:
         """Assemble the canonical 13-section payload alongside the legacy report.
 
@@ -491,6 +665,7 @@ class ReportBuilder:
 
         snapshot = self.project_facts_snapshot
         results: list[EngineResult] = []
+        results.extend(self._v2_strategy_results(snapshot))
 
         # Only engines that actually ran. An engine contributing an empty result
         # would read downstream as "searched and found nothing", which is a

@@ -601,3 +601,58 @@ nothing as unexplained.
 What remains is not code. A production inventory and restorable backup, the
 ~530 source verifications, a migration dry run, then a reviewed old-versus-v2
 comparison on real reports with the flag on. Only then a cutover.
+
+## Closing the wiring gap, 20 September 2026
+
+An audit found that half the v2 modules had no live caller. The contracts were
+correct and unreachable, which is a different state from done, and three things
+were missing that no list had named.
+
+**The staged universe had no reader.** `stage_curated_cycles.py` wrote reviewed
+cycles into `opportunity_cycles` and `opportunity_rules`; nothing read them
+back, so the festival and market strategies had no universe to rank.
+`opportunity_catalogue.load_opportunities` is the read side. A cycle missing a
+deadline, a source or a verification date does not become an Opportunity with
+blanks in it — it does not become one at all, because the engine's actionability
+gate would reject it a moment later and building it first puts an unverified
+record one bug away from being ranked.
+
+Two facts the strategies need are not staging columns, because neither was ever
+transcription: a festival's premiere requirement and a market's programme class
+both take source review. They are read from the verification ledger. That closes
+the chain end to end — a researcher records a claim, a reviewer verifies it, and
+the engine starts reading it — and it is covered by a test that asserts the
+engine sees nothing until the review lands.
+
+**Comparables had no roles.** Implementation note section 10 requires each
+comparable to state its role and forbids a production comparable becoming
+commercial buyer evidence. Roles are now derived from the evidence rather than
+asserted alongside it: a title earns PRODUCTION by carrying sourced territory,
+scale or format, and COMMERCIAL by carrying sourced genre, tone, audience or
+release evidence — or by carrying a verified company relationship, which is the
+strongest evidence the note recognises. The guardrail is enforced in the company
+matcher, which skips any comparable that does not support commercial evidence.
+Similar budget and territory say nothing about who bought a film.
+
+**Next Steps was a concatenation.** Section 13 is the report's only cross-engine
+sequencer, and it was collecting actions in engine order. It now orders by
+dependency, then urgency, then the engine's own sequence. Dependency leads
+because an action that unblocks others is worth doing before a more urgent one
+that cannot proceed without it: a producer told to approach three distributors
+this week, with "supply your qualifying spend" ranked below, has been given the
+list in the wrong order. It sequences and does not decide — nothing there
+promotes an opportunity, alters a state or adds an action no engine asked for.
+
+**The builder now attempts all five engines.** It built only the grants result,
+so with the flag on the orchestrator assembled sections 09 to 12 permanently
+empty and the old-versus-v2 comparison would have told a reviewer nothing about
+the four sections the rebuild actually changed. Every strategy is built from a
+loader reading only verified, staged data, so every universe is empty today —
+the correct output, and evidence, where a section the builder never attempted is
+not. Each engine is isolated: a missing commercial catalogue costs the reviewer
+the commercial comparison and not the festival one.
+
+Two sections remain deliberately empty of content. Executive Summary consumes
+engine summaries it can only assemble once those engines return something, and
+Script Intelligence reads a layer outside this sequence. Both are correctly
+declared and correctly empty rather than absent.
