@@ -245,6 +245,10 @@ def test_a_rule_for_a_section_with_no_deadline_has_nowhere_to_go():
     )
     assert cycles[0].rules == ()
     assert "no verified deadline" in problems[0].reason
+    # The sections that DO have a deadline are named. The usual cause is two
+    # names for one section across two gates, and this is what lets the person
+    # who wrote both settle it without anyone guessing.
+    assert "dated sections are: competition" in problems[0].reason
 
 
 def test_a_premiere_requirement_lands_on_its_section_not_the_festival():

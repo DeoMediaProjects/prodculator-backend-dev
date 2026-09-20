@@ -137,6 +137,11 @@ class ParseProblem:
     subject_id: str
     detail: str
     reason: str
+    #: Whether someone has to rewrite the line. False when the claim is a
+    #: correct answer that simply is not a cycle — "the next call is not
+    #: announced" is the finding the research asked for, and sending it back
+    #: for correction would be asking a researcher to invent a date.
+    needs_correction: bool = True
 
 
 def _lines(value: Any) -> list[str]:
@@ -254,6 +259,7 @@ def _festival_cycles(
                 ParseProblem(
                     GATE_FESTIVAL_SECTION, subject_id, value.upper(),
                     "no dated section, so there is no cycle to rank",
+                    needs_correction=False,
                 )
             )
             continue
@@ -374,6 +380,7 @@ def _market_cycles(
             problems.append(ParseProblem(
                 GATE_MARKET_CYCLE, subject_id, value.upper(),
                 "is a real answer and not a cycle the engine can rank",
+                needs_correction=False,
             ))
             continue
         deadline, problem = _deadline_in(value)
