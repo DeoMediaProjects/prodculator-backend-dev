@@ -540,3 +540,64 @@ repeated claim twice.
 Step 6 remains: the live builder, API, frontend and PDF consuming these
 payloads, and the old-versus-v2 acceptance run. That cutover stays gated on the
 verification gates.
+
+## Step 6 wiring and the acceptance comparison, 20 September 2026
+
+The payload now reaches API, frontend and a renderer, all behind the same flag.
+Nothing changes for a producer until the flag is on and the source data is
+verified, so this is wiring rather than cutover.
+
+**API.** One real defect found here. `_build_free_tier_report_data` filters by
+removal rather than by allowlist, so `orchestrationV2` survived into free-tier
+responses carrying the same figures that function spends its body stripping out
+of the legacy shape. A second copy of a redacted number is not less sensitive
+for being nested. It is dropped at the top of the filter, and a test asserts no
+figure survives into the serialised free response.
+
+**Renderer.** `orchestration_v2.html` is a separate template, not an addition to
+`report_base.html`. That file is 1600 lines producing the paid report, and
+threading a second shape through it would put every existing section one edit
+away from a regression — while the whole point of rendering the v2 payload today
+is to compare the two, which is impossible if either can break the other. A test
+asserts the legacy template stays free of any v2 reference. The document shows
+absences: an empty section says so, a programme with no calculable figure prints
+what it needs, and an empty finance bucket is labelled rather than omitted.
+
+**Frontend.** `festivalRecommendations` and `distributorRecommendations` were
+`any[]`, reached through `analysis as any` casts. Both are now typed against the
+fields the viewer actually reads, every field optional because the underlying
+records are unevenly populated and requiring one would push the renderer into
+printing a confident blank where nobody has checked. Typing caught a latent bug:
+`dist.scoutsRecommendedFestivals?.length > 0` does not narrow, so the indexed
+read inside that branch was unguarded — it worked only because `undefined > 0`
+is false. `orchestrationV2` is carried through both mapper paths as genuinely
+optional, since it is absent on every report generated so far.
+
+**The acceptance comparison.** `version_comparison` compares a legacy report
+against the v2 payload from the same run. The temptation was to treat that as a
+diff that should come out empty; it should not. The two shapes are expected to
+disagree, and the disagreements are the deliverable. When the legacy report
+quotes a rebate and v2 says REQUIRES_COST_BREAKDOWN for the same territory, that
+is the rebuild visible in one line, and a comparison flagging it as a failure
+would train its reader to ignore the output.
+
+So every finding carries an expected flag. Expected covers figures withdrawn for
+want of a statutory basis, records routed out of Grants, and pipeline removed
+from a committed total. Unexpected covers the two cases that need a human: v2
+carrying a figure legacy did not — the rebuild removes unsupported claims, it
+does not add them — and a section emptied with no routing or withdrawal to
+explain it. A section whose loss is already explained is not reported twice.
+
+It does not decide which version is right and does not pass or fail a cutover.
+An automated verdict there would be a machine approving its own replacement of
+the thing it is comparing against. `scripts/compare_report_versions.py` runs it
+against a stored report or the worked fixture, and refuses a report whose
+payload was computed against a different snapshot, because comparing two runs
+would attribute their input differences to the rebuild.
+
+Against the fixture it names all four regression behaviours as expected and
+nothing as unexplained.
+
+What remains is not code. A production inventory and restorable backup, the
+~530 source verifications, a migration dry run, then a reviewed old-versus-v2
+comparison on real reports with the flag on. Only then a cutover.
