@@ -107,6 +107,10 @@ class ComparableMatch:
 class ComparableStrategy:
     universe_count: int
     recommendations: tuple[ComparableMatch, ...]
+    #: The one input state this result was computed against. Refused rather
+    #: than merged when it differs from the report's own snapshot.
+    projectfacts_snapshot_id: str | None = None
+    projectfacts_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,8 @@ class SalesDistributionStrategy:
     universe_count: int
     actionable_count: int
     recommendations: tuple[CompanyMatch, ...]
+    projectfacts_snapshot_id: str | None = None
+    projectfacts_version: str | None = None
 
 
 def _values(value: Any) -> set[str]:
@@ -184,6 +190,8 @@ def match_comparables(
     festival_ids: set[str] | None = None,
     market_ids: set[str] | None = None,
     limit: int = 10,
+    projectfacts_snapshot_id: str | None = None,
+    projectfacts_version: str | None = None,
 ) -> ComparableStrategy:
     festival_ids = festival_ids or set()
     market_ids = market_ids or set()
@@ -244,7 +252,12 @@ def match_comparables(
             continue
         matches.append(ComparableMatch(profile, score, tuple(reasons), tuple(unknown), relationships))
     matches.sort(key=lambda item: (-item.score, item.profile.title.casefold(), item.profile.id))
-    return ComparableStrategy(len(profiles), tuple(matches[: max(0, limit)]))
+    return ComparableStrategy(
+        len(profiles),
+        tuple(matches[: max(0, limit)]),
+        projectfacts_snapshot_id=projectfacts_snapshot_id,
+        projectfacts_version=projectfacts_version,
+    )
 
 
 def _gate(
@@ -521,6 +534,8 @@ def build_sales_distribution_strategy(
     comparables: ComparableStrategy | None = None,
     festival_ids: set[str] | None = None,
     market_ids: set[str] | None = None,
+    projectfacts_snapshot_id: str | None = None,
+    projectfacts_version: str | None = None,
 ) -> SalesDistributionStrategy:
     """Rank the full universe, then apply package depth, dedupe and diversify.
 
@@ -553,4 +568,6 @@ def build_sales_distribution_strategy(
         universe_count=len(companies),
         actionable_count=sum(item.status != NOT_SUITABLE for item in evaluated),
         recommendations=selected,
+        projectfacts_snapshot_id=projectfacts_snapshot_id,
+        projectfacts_version=projectfacts_version,
     )

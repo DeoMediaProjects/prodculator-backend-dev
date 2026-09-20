@@ -18,6 +18,9 @@ if TYPE_CHECKING:  # import cycle: statutory_calculation reads nothing from here
     from app.modules.reports.statutory_calculation import StatutoryQualifyingSpend
 
 from app.core.audit_notes import contains_audit_text, split_audit_text
+from app.modules.reports.engine_envelope import (
+    assert_consistent as assert_engine_envelope_consistent,
+)
 from app.modules.reports.helpers import (  # noqa: F401 — re-exported for backward compat
     STALE_DAYS,
     DEFAULT_ATL_PCT,
@@ -62,28 +65,15 @@ class ReportValidator:
 
     @staticmethod
     def _assert_projectfacts_snapshot_consistency(report: dict) -> None:
-        """Never merge a specialist result from a different input snapshot."""
-        snapshot_id = report.get("projectFactsSnapshotId")
-        version = report.get("projectFactsVersion")
-        for key in ("grantsPayload", "marketsLabsWipStrategy", "festivalStrategy",
-                    "salesDistributionStrategy"):
-            result = report.get(key)
-            if not isinstance(result, dict):
-                continue
-            result_id = result.get("projectfacts_snapshot_id")
-            result_version = result.get("projectfacts_version")
-            if snapshot_id and (result_id is None or result_version is None):
-                raise ValueError(
-                    f"INCONSISTENT_INPUT_VERSION: {key} lacks ProjectFacts provenance"
-                )
-            if result_id is not None and (not snapshot_id or result_id != snapshot_id):
-                raise ValueError(
-                    f"INCONSISTENT_INPUT_VERSION: {key} uses a different ProjectFacts snapshot"
-                )
-            if result_version is not None and (not version or result_version != version):
-                raise ValueError(
-                    f"INCONSISTENT_INPUT_VERSION: {key} uses a different ProjectFacts version"
-                )
+        """Never merge a specialist result from a different input snapshot.
+
+        Delegated to ``engine_envelope``, which identifies engine results by
+        shape rather than by a list of keys. The list was a convention, and the
+        failure mode of a convention is the next engine: someone adds a result
+        to the report, forgets to add its key here, and this check goes on
+        passing while no longer covering the thing it exists for.
+        """
+        assert_engine_envelope_consistent(report)
 
     @classmethod
     def assert_integrity(

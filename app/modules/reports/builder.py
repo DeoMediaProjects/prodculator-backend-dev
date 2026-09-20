@@ -55,6 +55,12 @@ from app.modules.reports.format_eligibility import (
 )
 from app.core.formats import canonical_format
 from app.modules.reports.calculation_status import resolve_calculation_status
+from app.modules.reports.engine_envelope import stamped
+
+#: The Grants Engine version whose contract this builder consumes. Stamped onto
+#: the result so a stored report says which engine produced it, rather than
+#: leaving a later reader to infer it from the report's date.
+GRANTS_ENGINE_VERSION = "2.0"
 from app.modules.reports.coproduction_section import (
     build_coproduction_opportunities,
     build_coproduction_structure,
@@ -441,11 +447,15 @@ class ReportBuilder:
         #
         # Counts are the part the report cannot state without this: "10 shown from 23
         # eligible" needs the eligible total, and the flat list only carries the ten.
-        report["grantsPayload"] = {
-            **self.grants_payload.as_payload_dict(),
-            "projectfacts_snapshot_id": self.project_facts_snapshot.snapshot_id,
-            "projectfacts_version": self.project_facts_snapshot.version,
-        }
+        # Stamped through the shared helper rather than by hand. The four field
+        # names are written once, so an engine cannot spell one of them
+        # differently and fall silently out of the consistency check.
+        report["grantsPayload"] = stamped(
+            self.grants_payload.as_payload_dict(),
+            self.project_facts_snapshot,
+            engine_name="grants",
+            engine_version=GRANTS_ENGINE_VERSION,
+        )
 
         # Inject section explainers and scoring methodology
         self._inject_section_explainers(report)
