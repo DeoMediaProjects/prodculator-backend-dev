@@ -336,6 +336,130 @@ def review_many(
     return result
 
 
+#: Between a claim's existing notes and a new supersede note. A constant
+#: because an inline newline escape does not survive every editing path
+#: this file has been through.
+NOTE_SEPARATOR = chr(10)
+
+
+@dataclass
+class SupersedeResult:
+    """What a correction run did, or would do in preflight."""
+
+    replaced: list[tuple[SourceClaim, Any]] = field(default_factory=list)
+    refused: list[tuple[SourceClaim, tuple[str, ...]]] = field(default_factory=list)
+    #: Corrections naming a field nobody ever recorded. Not an error to fix
+    #: here — a first reading is `record_claims`' job, and quietly inserting it
+    #: would let a typo in a subject id create a claim instead of failing.
+    missing: list[SourceClaim] = field(default_factory=list)
+    unchanged: int = 0
+    applied: bool = False
+
+    @property
+    def is_clean(self) -> bool:
+        return not (self.refused or self.missing)
+
+
+def supersede_claims(
+    engine: sa.Engine, claims: Sequence[SourceClaim], *, apply: bool = False, today: date
+) -> SupersedeResult:
+    """Replace the recorded reading of a field with a corrected one.
+
+    WHY THIS EXISTS AND WHY IT IS NOT AN OVERWRITE
+    ----------------------------------------------
+    ``record_claims`` refuses to change a value and reports a conflict instead,
+    which is right for an import: a second import quietly rewriting the first is
+    how research disappears. But a researcher who wrote "Competition" where the
+    deadline says "Feature Competition" has to be able to fix it, and the unique
+    constraint means the corrected claim cannot simply sit beside the old one.
+    Migration u0v1w2x3y4z5 says so in its own words — a second claim for the
+    same field "is a correction and replaces the first, rather than both
+    standing and an engine acting on whichever it reads first."
+
+    So the replacement is deliberate and it is recorded. The previous reading is
+    written into ``notes`` before the new one lands, so the fact that someone
+    once read the source differently survives the correction.
+
+    And the claim goes back to PENDING, losing its reviewer and its QA
+    signature. A correction is a new assertion: the people who signed the old
+    reading did not sign this one, and carrying their names forward would put a
+    signature on words they never saw.
+    """
+    result = SupersedeResult(applied=apply)
+
+    with engine.connect() as conn:
+        table = _table(conn)
+        existing = {
+            (row.gate, row.subject_id, row.field): row
+            for row in conn.execute(sa.select(table))
+        }
+
+    updates: list[dict[str, Any]] = []
+    for claim in claims:
+        problems = validate_claim(
+            SourceClaim(**{**claim.__dict__, "review_state": PENDING}), today=today
+        )
+        if problems:
+            result.refused.append((claim, problems))
+            continue
+
+        prior = existing.get((claim.gate, claim.subject_id, claim.field))
+        if prior is None:
+            result.missing.append(claim)
+            continue
+        if prior.value == claim.value:
+            result.unchanged += 1
+            continue
+
+        note = (
+            f"Superseded {today.isoformat()} by {claim.verified_by}. "
+            f"Previously read: {prior.value!r}"
+        )
+        result.replaced.append((claim, prior.value))
+        updates.append({
+            "b_gate": claim.gate,
+            "b_subject": claim.subject_id,
+            "b_field": claim.field,
+            "b_value": claim.value,
+            "b_source_url": claim.source_url,
+            "b_source_basis": claim.source_basis,
+            "b_verified_on": claim.verified_on,
+            "b_verified_by": claim.verified_by,
+            "b_notes": (prior.notes + NOTE_SEPARATOR + note)
+            if prior.notes
+            else note,
+        })
+
+    if apply and updates:
+        with engine.begin() as conn:
+            table = _table(conn)
+            conn.execute(
+                table.update()
+                .where(
+                    sa.and_(
+                        table.c.gate == sa.bindparam("b_gate"),
+                        table.c.subject_id == sa.bindparam("b_subject"),
+                        table.c.field == sa.bindparam("b_field"),
+                    )
+                )
+                .values(
+                    value=sa.bindparam("b_value"),
+                    source_url=sa.bindparam("b_source_url"),
+                    source_basis=sa.bindparam("b_source_basis"),
+                    verified_on=sa.bindparam("b_verified_on"),
+                    verified_by=sa.bindparam("b_verified_by"),
+                    # Back to the start. A correction is a new assertion and
+                    # nobody has reviewed it yet.
+                    review_state=PENDING,
+                    reviewed_by=None,
+                    qa_by=None,
+                    notes=sa.bindparam("b_notes"),
+                ),
+                updates,
+            )
+    return result
+
+
 def review(
     engine: sa.Engine,
     *,

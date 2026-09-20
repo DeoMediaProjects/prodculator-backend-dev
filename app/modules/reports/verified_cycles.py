@@ -137,6 +137,11 @@ class ParseProblem:
     subject_id: str
     detail: str
     reason: str
+    #: The claim field the line came from. Carried rather than inferred: a
+    #: caller deciding which of a festival's two claims to send back was
+    #: otherwise reduced to searching the reason text for the word "date",
+    #: which is one rephrasing away from silently mis-filing every problem.
+    field: str = ""
     #: Whether someone has to rewrite the line. False when the claim is a
     #: correct answer that simply is not a cycle — "the next call is not
     #: announced" is the finding the research asked for, and sending it back
@@ -259,6 +264,7 @@ def _festival_cycles(
                 ParseProblem(
                     GATE_FESTIVAL_SECTION, subject_id, value.upper(),
                     "no dated section, so there is no cycle to rank",
+                    field="section_deadlines",
                     needs_correction=False,
                 )
             )
@@ -270,6 +276,7 @@ def _festival_cycles(
                 problems.append(ParseProblem(
                     GATE_FESTIVAL_SECTION, subject_id, line,
                     "is not 'Section name | YYYY-MM-DD'",
+                    field="section_deadlines",
                 ))
                 continue
             section, remainder = (part.strip() for part in line.split("|", 1))
@@ -278,7 +285,8 @@ def _festival_cycles(
                 problem = "names no section"
             if problem or deadline is None:
                 problems.append(ParseProblem(
-                    GATE_FESTIVAL_SECTION, subject_id, line, problem or "has no deadline"
+                    GATE_FESTIVAL_SECTION, subject_id, line,
+                    problem or "has no deadline", field="section_deadlines",
                 ))
                 continue
             key = _section_key(section)
@@ -286,6 +294,7 @@ def _festival_cycles(
                 problems.append(ParseProblem(
                     GATE_FESTIVAL_SECTION, subject_id, line,
                     f"repeats section {section!r}, which already has a deadline",
+                    field="section_deadlines",
                 ))
                 continue
             by_section[key] = (section, deadline)
@@ -323,6 +332,7 @@ def _festival_rules(
             problems.append(ParseProblem(
                 GATE_FESTIVAL_SECTION, claim.subject_id, line,
                 "is not 'Section name | rule', so it cannot reach a section",
+                field="section_rules",
             ))
             continue
         section, body = (part.strip() for part in line.split("|", 1))
@@ -338,10 +348,22 @@ def _festival_rules(
             # guess this module refuses to make; showing both lists is what lets
             # the person who wrote them settle it in a moment.
             available = ", ".join(sorted(known_sections)) or "none"
-            problems.append(ParseProblem(
-                GATE_FESTIVAL_SECTION, claim.subject_id, line,
+            reason = (
                 f"section {section!r} has no verified deadline to attach to; "
-                f"dated sections are: {available}",
+                f"dated sections are: {available}"
+            )
+            # The rule body is checked too, even though the section already
+            # failed. Reporting one problem per line would send a researcher
+            # back to rename a section, and then back again when the field it
+            # names turns out not to exist — two trips for one line.
+            body = line.split("|", 1)[1].strip()
+            if body.split()[:1] != [PREMIERE_FIELD]:
+                _, also = parse_rule_line(body)
+                if also:
+                    reason = f"{reason}. The rule also {also}"
+            problems.append(ParseProblem(
+                GATE_FESTIVAL_SECTION, claim.subject_id, line, reason,
+                field="section_rules",
             ))
             continue
 
@@ -352,6 +374,7 @@ def _festival_rules(
                 problems.append(ParseProblem(
                     GATE_FESTIVAL_SECTION, claim.subject_id, line,
                     "premiere must be WORLD, INTERNATIONAL, NATIONAL or NONE",
+                    field="section_rules",
                 ))
                 continue
             premieres[key] = requirement
@@ -360,7 +383,8 @@ def _festival_rules(
         rule, problem = parse_rule_line(body)
         if rule is None:
             problems.append(ParseProblem(
-                GATE_FESTIVAL_SECTION, claim.subject_id, line, problem or "is not a rule"
+                GATE_FESTIVAL_SECTION, claim.subject_id, line,
+                problem or "is not a rule", field="section_rules",
             ))
             continue
         rules.setdefault(key, []).append(rule)
@@ -380,13 +404,14 @@ def _market_cycles(
             problems.append(ParseProblem(
                 GATE_MARKET_CYCLE, subject_id, value.upper(),
                 "is a real answer and not a cycle the engine can rank",
-                needs_correction=False,
+                field="deadline", needs_correction=False,
             ))
             continue
         deadline, problem = _deadline_in(value)
         if deadline is None:
             problems.append(ParseProblem(
-                GATE_MARKET_CYCLE, subject_id, value, problem or "has no deadline"
+                GATE_MARKET_CYCLE, subject_id, value,
+                problem or "has no deadline", field="deadline",
             ))
             continue
 
@@ -400,7 +425,8 @@ def _market_cycles(
                 rule, why = parse_rule_line(body)
                 if rule is None:
                     problems.append(ParseProblem(
-                        GATE_MARKET_RULE, subject_id, line, why or "is not a rule"
+                        GATE_MARKET_RULE, subject_id, line,
+                        why or "is not a rule", field="hard_gates",
                     ))
                     continue
                 rules.append(rule)
