@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 import sqlalchemy as sa
 
+from app.modules.reports.commercial_freeze import ACCESS_LABELS, ACCESS_UNKNOWN
 from app.modules.reports.commercial_strategy import (
     CompanyProfile,
     ComparableProfile,
@@ -107,8 +108,17 @@ def parse_commercial_catalogue(
             raise ValueError("Approved company lacks identity, role or active evidence")
         if row.get("reviewed_on") is None or _date(row["reviewed_on"]) > today:
             raise ValueError("Approved company has invalid review date")
+        # Two fields the scorer reads that are columns rather than claims: they
+        # are normalisations of the freeze's own vocabulary, not assertions with
+        # their own source, and giving them a SourcedValue would invent a
+        # provenance nobody recorded. An unrecognised route reads as unknown —
+        # the state, not the absence — because a route nobody established is
+        # never an open door.
+        route = str(row.get("access_route") or "").strip() or ACCESS_UNKNOWN
         companies.append(CompanyProfile(
             id=row["id"], name=row["name"], rules_complete=bool(row.get("rules_complete")),
+            access_route=route if route in ACCESS_LABELS else ACCESS_UNKNOWN,
+            portfolio_group=str(row.get("portfolio_group") or "").strip() or None,
             **claims,
         ))
 
