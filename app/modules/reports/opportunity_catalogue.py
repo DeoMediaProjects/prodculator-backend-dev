@@ -12,17 +12,25 @@ evidence the engine needs, and it never manufactures the evidence it lacks.
 
 WHERE THE TYPED FACTS COME FROM
 -------------------------------
-Two facts the strategies need are not columns on the staging tables, because
-neither was ever transcription work: a festival's premiere requirement and a
-market's programme class both take source review. They are read from the
-verification ledger, which means a strategy acts on them only once a named
-reviewer has signed them off — and, for festival sections, only once a second
-reviewer independent of the author has.
+A festival's premiere requirement and a market's programme class both take
+source review rather than transcription, and each arrives by its own route.
 
-That is the whole chain closing. A researcher records a claim, a reviewer
-verifies it, and the engine starts reading it. Until then the fact is UNKNOWN,
-the festival sequences as NEEDS_CONFIRMATION and the market gets no lifecycle
-judgement, which is what those states are for.
+The premiere requirement is a column on the cycle, written by
+``stage_verified_cycles`` from a reviewed ``section_rules`` claim. It has to be
+per-cycle: one festival's claim holds several sections' requirements, and a
+Competition and a Short Film Corner do not impose the same one, so a value keyed
+by festival would apply one section's rule to all of them. The ledger is still
+read as a fallback, for a fact recorded directly against a record before the
+bridge existed.
+
+The programme class comes from ``market_tracks``, and from the ledger where a
+reviewer recorded one against the record.
+
+Either way a strategy acts on the fact only once a named reviewer has signed it
+off — and, for festival sections, only once a second reviewer independent of the
+author has. Until then the fact is UNKNOWN, the festival sequences as
+NEEDS_CONFIRMATION and the market gets no lifecycle judgement, which is what
+those states are for.
 
 WHAT IT REFUSES
 ---------------
@@ -206,7 +214,16 @@ def load_opportunities(
                 # requirement sequences as NEEDS_CONFIRMATION and an unrecorded
                 # class gets no lifecycle judgement, which is what those states
                 # exist for.
-                premiere_requirement=facts.get("premiere_requirement"),
+                #
+                # The cycle's own column wins over the ledger: it is the only
+                # one of the two that can differ between two sections of the
+                # same festival.
+                premiere_requirement=(
+                    str(mapping["premiere_requirement"]).strip().upper()
+                    if "premiere_requirement" in mapping
+                    and mapping["premiere_requirement"]
+                    else facts.get("premiere_requirement")
+                ),
                 opportunity_class=facts.get("opportunity_class")
                 or classes.get(record_id),
             )
