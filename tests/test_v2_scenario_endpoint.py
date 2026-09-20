@@ -281,3 +281,60 @@ class TestLimits:
     def test_the_limit_is_reported_so_the_form_can_show_it(self, api):
         response = api.get("/api/scenarios/questions", params={"territories": "GB"})
         assert response.json()["limit"] == 5
+
+
+# ── Status casing, found by the production inventory ─────────────────────────
+#
+# Production holds four programmes whose status reads "Active" with a capital A.
+# This service filtered with a SQL equality, which is case-sensitive in
+# Postgres, so those four contributed no questions at all — and the failure is
+# silent and expensive: the wizard renders an empty territory card, the producer
+# has nothing to fill in, and the statutory calculator then has no
+# qualifying-spend input, so that programme can never produce a figure.
+
+
+def _service_with(rows):
+    return ScenarioQuestionService(
+        _Supabase({"incentive_programs": rows, "programme_required_inputs": _INPUTS})
+    )
+
+
+def _capitalised(programme):
+    return {**programme, "status": "Active"}
+
+
+def test_a_capitalised_status_still_produces_questions():
+    rows = [_capitalised(p) for p in _PROGRAMMES]
+    result = _service_with(rows).question_sets(["United Kingdom"], plan="producer")
+    questions = result["scenarios"][0]["questions"]
+    assert questions, "A capital-A Active programme must still be asked about"
+
+
+def test_lowercase_and_capitalised_statuses_agree():
+    lower = _service_with(list(_PROGRAMMES)).question_sets(
+        ["United Kingdom"], plan="producer"
+    )
+    upper = _service_with([_capitalised(p) for p in _PROGRAMMES]).question_sets(
+        ["United Kingdom"], plan="producer"
+    )
+    assert lower["scenarios"][0]["questions"] == upper["scenarios"][0]["questions"]
+
+
+def test_a_legacy_null_status_is_treated_as_active():
+    """Rows predating the status column, handled as the report path handles them."""
+    rows = [{**p, "status": None} for p in _PROGRAMMES]
+    result = _service_with(rows).question_sets(["United Kingdom"], plan="producer")
+    assert result["scenarios"][0]["questions"]
+
+
+def test_a_suspended_programme_still_contributes_nothing():
+    """The fix widens the match on casing, not on which statuses qualify."""
+    rows = [{**p, "status": "suspended"} for p in _PROGRAMMES]
+    result = _service_with(rows).question_sets(["United Kingdom"], plan="producer")
+    assert result["scenarios"][0]["questions"] == []
+
+
+def test_surrounding_whitespace_does_not_hide_a_programme():
+    rows = [{**p, "status": " active "} for p in _PROGRAMMES]
+    result = _service_with(rows).question_sets(["United Kingdom"], plan="producer")
+    assert result["scenarios"][0]["questions"]

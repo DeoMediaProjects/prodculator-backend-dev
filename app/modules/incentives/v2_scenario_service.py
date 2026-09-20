@@ -43,14 +43,25 @@ class ScenarioQuestionService:
         A row with no ``programme_id`` has not been migrated to a v2 engine yet
         and contributes no questions, which is why the resolver tolerates it
         rather than treating it as an error.
+
+        Status is compared in Python, lowercased, rather than as a SQL equality.
+        Production holds four programmes whose status reads ``Active`` with a
+        capital A, and ``= 'active'`` is case-sensitive in Postgres, so those
+        four contributed no questions at all. That failure is silent and costly:
+        the wizard renders their territory card empty, the producer has nothing
+        to fill in, and the statutory calculator then has no qualifying-spend
+        input — so the programme can never produce a figure. Every other reader
+        of this table already lowercases; this one did not.
+
+        A NULL status is treated as active for the same reason the report path
+        treats it that way: those are legacy rows that predate the column.
         """
-        result = (
-            self.supabase.table("incentive_programs")
-            .select("*")
-            .eq("status", "active")
-            .execute()
-        )
-        return result.data or []
+        result = self.supabase.table("incentive_programs").select("*").execute()
+        return [
+            row
+            for row in (result.data or [])
+            if (row.get("status") or "").strip().lower() in ("active", "")
+        ]
 
     def _declared_inputs(self) -> list[dict[str, Any]]:
         result = (
