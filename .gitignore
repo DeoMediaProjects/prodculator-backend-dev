@@ -56,3 +56,6 @@ tmp/
 
 # Production inventory output — contains live row identifiers
 inventory.json
+
+# Research pack — generated, contains live row identifiers
+research_pack/
