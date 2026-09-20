@@ -123,3 +123,63 @@ class TestOwnIncentive:
         """Nigeria's row states the absence of a rebate. Reading it as ownership
         would let a country with nothing to model pass as a real selection."""
         assert self._by_label(ROWS)["Nigeria"]["hasOwnIncentive"] is False
+
+
+class TestAStateProgrammeMisfiledUnderTheCountry:
+    """Production carried one row that undid the whole distinction above.
+
+    Its territory was "United States" and its programme name was "New York State
+    Film Tax Credit Program (Production)" — a state credit filed against the
+    country, with no rate. One row, two consequences.
+
+    The picker read it as a national programme, so the United States stopped
+    being a grouping control: it appeared in Expected spend per territory beside
+    Illinois, asking a producer for a figure against a programme that does not
+    exist, and offered itself as a Must Film In commitment.
+
+    And the report could quote a United States rebate. There is no federal film
+    incentive in the United States. Migration x3y4z5a6b7c8 corrects the row to
+    `no_programme`, which the picker already knows how to read as an absence.
+    """
+
+    STATES_ONLY = [
+        {"territory": "California", "status": "active", "is_supplementary": False},
+        {"territory": "New York", "status": "active", "is_supplementary": False},
+    ]
+
+    def _by_label(self, rows):
+        return {o["label"]: o for o in _territory_rows_to_options(rows, include_all=True)}
+
+    def test_an_active_country_level_row_wrongly_confers_a_national_programme(self):
+        """The defect, pinned. This is what the bad row did."""
+        misfiled = self.STATES_ONLY + [
+            {"territory": "United States", "status": "active", "is_supplementary": False},
+        ]
+        assert self._by_label(misfiled)["United States"]["hasOwnIncentive"] is True
+
+    def test_the_corrected_row_leaves_the_country_a_grouping_control(self):
+        """`no_programme` states an absence, so it confers nothing."""
+        corrected = self.STATES_ONLY + [
+            {
+                "territory": "United States",
+                "status": "no_programme",
+                "is_supplementary": False,
+            },
+        ]
+        options = self._by_label(corrected)
+        assert options["United States"]["hasOwnIncentive"] is False
+        # Still selectable, because its states carry programmes — that is the
+        # whole reason the country is in the picker at all.
+        assert options["United States"]["hasActiveIncentive"] is True
+
+    def test_the_states_are_unaffected_by_the_correction(self):
+        corrected = self.STATES_ONLY + [
+            {
+                "territory": "United States",
+                "status": "no_programme",
+                "is_supplementary": False,
+            },
+        ]
+        options = self._by_label(corrected)
+        assert options["New York"]["hasOwnIncentive"] is True
+        assert options["California"]["hasOwnIncentive"] is True

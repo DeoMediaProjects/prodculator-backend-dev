@@ -310,3 +310,54 @@ class TestRequestIntegration:
                 input_key=key, amount=1.0, input_status="known",
             )
             assert supplied.input_key == key
+
+
+# ── co-production openness is derived, not asked twice ───────────────────────
+#
+# The intake used to ask "Open to Official Co-Production?" on the creative
+# screen, one step after the producer had already chosen a production structure.
+# Those are the same question, and their vocabularies line up exactly. Asking
+# twice invites the two answers to disagree, at which point grant eligibility
+# and producer eligibility — both of which read the co-production answer — are
+# acting on a value nobody can say the producer meant.
+
+
+def test_a_coproduction_structure_means_open_to_coproduction():
+    assert _request(production_structure_mode="coproduction").co_production_interest == "yes"
+
+
+def test_comparing_alternatives_means_not_open():
+    assert _request(production_structure_mode="comparison").co_production_interest == "no"
+
+
+def test_undecided_stays_undecided():
+    assert _request(production_structure_mode="undecided").co_production_interest == "undecided"
+
+
+def test_the_default_mode_derives_an_answer_rather_than_leaving_it_null():
+    """Every request reaches the engines with this populated.
+
+    Grant eligibility reads it. Leaving it None for a client that stopped
+    sending the field would silently change which grants a production matches.
+    """
+    assert _request().co_production_interest == "no"
+
+
+def test_an_explicit_answer_is_not_second_guessed():
+    """There is no way to tell a stale field from a deliberate override.
+
+    Overriding the producer's own answer is worse than accepting a redundant
+    one, so a client that still sends the field wins.
+    """
+    request = _request(
+        production_structure_mode="comparison", co_production_interest="yes"
+    )
+    assert request.co_production_interest == "yes"
+
+
+def test_the_two_vocabularies_cover_each_other_exactly():
+    """If a structure mode is ever added, this fails until it is mapped."""
+    from app.modules.incentives.v2_contracts import STRUCTURE_MODES
+
+    for mode in STRUCTURE_MODES:
+        assert _request(production_structure_mode=mode).co_production_interest is not None

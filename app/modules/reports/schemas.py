@@ -241,7 +241,15 @@ class CreateReportRequest(BaseModel):
 
     # Hard territory constraint declared by the producer ("Must Film In").
     must_film_in: str | None = None
-    # Treaty co-production openness (yes/no/undecided per the intake contract).
+    #: Treaty co-production openness. Derived from ``production_structure_mode``
+    #: when the client does not send it, because the two ask the same question.
+    #: A producer who has already said their territories are partners in one
+    #: structure has answered "are you open to co-production", and asking again
+    #: two screens later invites the two answers to disagree — at which point
+    #: nothing downstream can say which one the producer meant.
+    #:
+    #: Still accepted explicitly, so an older client that sends it keeps working
+    #: and an unusual case can override the derivation.
     co_production_interest: Literal["yes", "no", "undecided"] | None = None
     # Primary spoken languages (max 5 per contract; free-text entries today).
     primary_languages: list[str] | None = None
@@ -329,6 +337,32 @@ class CreateReportRequest(BaseModel):
             t = resolve_territory(raw)
             result.append(t.label if t else raw)
         return result
+
+    @model_validator(mode="after")
+    def derive_co_production_interest(self) -> "CreateReportRequest":
+        """Take co-production openness from the structure the producer chose.
+
+        ``production_structure_mode`` and ``co_production_interest`` are the same
+        question asked twice, two screens apart, and their vocabularies line up
+        exactly: coproduction/comparison/undecided against yes/no/undecided. The
+        intake now asks it once, and this fills in the answer the rest of the
+        system reads — grant eligibility and producer eligibility both consult
+        it, so it cannot simply be dropped.
+
+        An explicit value is left alone. A client that still sends one is not
+        second-guessed, because there is no way to tell a stale field from a
+        deliberate override, and overriding the producer's own answer is worse
+        than accepting a redundant one.
+        """
+        if self.co_production_interest is None:
+            derived = {
+                "coproduction": "yes",
+                "comparison": "no",
+                "undecided": "undecided",
+            }.get(self.production_structure_mode)
+            if derived:
+                object.__setattr__(self, "co_production_interest", derived)
+        return self
 
     @model_validator(mode="after")
     def structure_mode_matches_the_scenarios(self) -> "CreateReportRequest":
