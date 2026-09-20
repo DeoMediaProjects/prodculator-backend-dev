@@ -23,10 +23,14 @@ from app.modules.reports.commercial_freeze import (
     RELATIONSHIP_DISTRIBUTION,
     RELATIONSHIP_SALES,
     RELATIONSHIP_UNTYPED,
+    UnreviewedPhrase,
+    acquisition_formats,
+    commercial_roles,
     is_current_brand,
     normalise_access_route,
     normalise_relationship_type,
     portfolio_group,
+    rights_territories,
 )
 from app.modules.reports.commercial_scoring import (
     ACCESS_ROUTE_UNKNOWN,
@@ -488,3 +492,92 @@ def test_the_freeze_carries_one_retired_brand():
     payload = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     retired = [row for row in payload["companies"] if not is_current_brand(row)]
     assert len(retired) == 1
+
+
+# ── Roles and scope phrases ──────────────────────────────────────────────────
+
+
+def test_hybrid_companies_carry_both_roles():
+    assert commercial_roles({"company_roles": "HYBRID_SALES_DISTRIBUTION"}) == (
+        "distributor",
+        "sales_agent",
+    )
+
+
+def test_finance_and_production_contribute_no_role():
+    """A company that also finances is not thereby a third kind of route."""
+    assert commercial_roles({"company_roles": "SALES_FINANCE_PRODUCTION"}) == (
+        "sales_agent",
+    )
+
+
+def test_an_unknown_role_token_yields_nothing():
+    assert commercial_roles({"company_roles": "TALENT_AGENCY"}) == ()
+    assert commercial_roles({}) == ()
+
+
+def test_company_type_is_only_a_fallback():
+    """The reviewed column wins; the compound one answers when it is blank."""
+    row = {"company_roles": "INTERNATIONAL_SALES", "company_type": "DISTRIBUTOR_STUDIO"}
+    assert commercial_roles(row) == ("sales_agent",)
+    assert commercial_roles({"company_type": "DISTRIBUTOR_STUDIO"}) == ("distributor",)
+
+
+def test_a_worldwide_scope_types_and_a_hedged_one_does_not():
+    """The distinction the tables exist for, in one pair.
+
+    "Worldwide" is a rights scope. "Worldwide / major territories" is the same
+    word qualified into something narrower, and a prefix or substring match
+    would read them as the same claim.
+    """
+    assert rights_territories({"territory_scope": "Worldwide"}) == ("worldwide",)
+    assert rights_territories({"territory_scope": "Worldwide / major territories"}) == ()
+
+
+def test_scope_lookup_ignores_case_and_spacing_only():
+    assert rights_territories({"territory_scope": "  WORLDWIDE  "}) == ("worldwide",)
+
+
+def test_a_hedged_format_limb_is_dropped_and_the_definite_ones_kept():
+    row = {"formats": "Feature Film; Documentary; Animation where stated"}
+    assert acquisition_formats(row) == ("documentary", "feature")
+
+
+def test_a_blank_scope_is_unknown_rather_than_unreviewed():
+    assert rights_territories({"territory_scope": ""}) == ()
+    assert acquisition_formats({}) == ()
+
+
+def test_a_phrase_nobody_reviewed_stops_the_import():
+    """The pin moved and a scope nobody read is about to be imported."""
+    with pytest.raises(UnreviewedPhrase):
+        rights_territories({"territory_scope": "Mars and the outer colonies"})
+    with pytest.raises(UnreviewedPhrase):
+        acquisition_formats({"formats": "Holograms"})
+
+
+def test_every_frozen_scope_phrase_has_been_reviewed():
+    """No row in the pinned freeze reaches the importer undecided."""
+    payload = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    for row in payload["companies"]:
+        rights_territories(row)
+        acquisition_formats(row)
+
+
+def test_every_frozen_company_resolves_to_a_commercial_role():
+    payload = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    assert all(commercial_roles(row) for row in payload["companies"])
+
+
+def test_the_typed_scope_coverage_of_the_freeze():
+    """What the tables actually yield, so a silent drop is visible.
+
+    Eighty of 101 rows state a rights scope and 98 state a format. The gap is
+    not a defect — it is the prose the freeze warned about — but a change in
+    either number means a phrase was retyped, and that is a review decision
+    rather than a refactor.
+    """
+    payload = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    companies = payload["companies"]
+    assert sum(1 for row in companies if rights_territories(row)) == 80
+    assert sum(1 for row in companies if acquisition_formats(row)) == 98
