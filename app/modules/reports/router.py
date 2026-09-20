@@ -891,6 +891,14 @@ def _build_free_tier_report_data(report_data: dict) -> dict:
 
     data = copy.deepcopy(report_data)
 
+    # The v2 orchestration payload never reaches a free preview. This function
+    # filters by removal rather than by building an allowlist, so anything new
+    # in the report survives here by default — and the v2 payload carries the
+    # same figures this function spends the rest of its body stripping out of
+    # the legacy shape. Removed at the top, before any of that work, because a
+    # second copy of a redacted number is not less sensitive for being nested.
+    data.pop("orchestrationV2", None)
+
     def dict_rows(value: object) -> list[dict]:
         if not isinstance(value, list):
             return []
