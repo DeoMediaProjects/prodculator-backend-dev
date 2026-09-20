@@ -651,11 +651,27 @@ class ReportBuilder:
         the producer paid for must not fail because a shadow payload nobody
         reads could not be built — but the failure has to be visible, or the
         comparison would silently be comparing against nothing.
+
+        "Visible" used to mean appended to ``self.warnings``, which is a list
+        nothing serialises and nothing reads. A report generated with the flag
+        on and an engine failing looked identical to one generated with the flag
+        off: no payload, no trace, nothing to tell the two apart. So the
+        warnings are written onto the report, and the key is written even when
+        there are none — its presence is what says the flag was on.
         """
         from app.core.config import get_settings
 
         if not get_settings().REPORT_ORCHESTRATION_V2_ENABLED:
             return
+
+        # From here the flag is on, and the report will say so whatever happens
+        # next. An empty list beside a payload means it worked; an empty list
+        # with no payload means the orchestrator returned nothing; a populated
+        # one names what broke.
+        started = len(self.warnings)
+
+        def record() -> None:
+            report["orchestrationV2Warnings"] = list(self.warnings[started:])
 
         from app.modules.reports.orchestration import (
             EngineResult,
@@ -701,9 +717,11 @@ class ReportBuilder:
         except Exception as exc:  # noqa: BLE001 — see docstring
             logger.warning("v2 orchestration payload could not be assembled: %s", exc)
             self.warnings.append(f"[orchestration-v2] not assembled: {exc}")
+            record()
             return
 
         report["orchestrationV2"] = as_payload(orchestration)
+        record()
 
     # ── Territory selection ─────────────────────────────────────────────────
 

@@ -161,3 +161,107 @@ def test_the_flag_on_attaches_a_payload(monkeypatch):
     assert len(payload["sections"]) == 13
     assert payload["projectfacts_snapshot_id"] == instance.project_facts_snapshot.snapshot_id
     assert payload["report_run_id"] == "r-1"
+
+
+# ── Telling "flag off" from "flag on and nothing came back" ──────────────────
+
+
+def test_the_flag_off_leaves_no_trace(monkeypatch):
+    from app.modules.reports.builder import ReportBuilder
+
+    class _Off:
+        REPORT_ORCHESTRATION_V2_ENABLED = False
+
+    monkeypatch.setattr("app.core.config.get_settings", lambda: _Off(), raising=True)
+    instance = ReportBuilder.__new__(ReportBuilder)
+    instance.warnings = []
+
+    report: dict = {}
+    instance._attach_orchestration_v2(report)
+    assert report == {}
+
+
+def test_the_flag_on_marks_the_report_even_when_it_worked(monkeypatch):
+    """The key's presence is what says the flag was on.
+
+    Without it a report generated with the flag on and every engine failing is
+    indistinguishable from one generated with the flag off — no payload, no
+    trace — and the only way to answer "did the variable take?" is to read the
+    deploy logs.
+    """
+    from app.modules.reports.builder import ReportBuilder
+
+    class _On:
+        REPORT_ORCHESTRATION_V2_ENABLED = True
+
+    monkeypatch.setattr("app.core.config.get_settings", lambda: _On(), raising=True)
+    instance = ReportBuilder.__new__(ReportBuilder)
+    instance.warnings = []
+    instance.grants_payload = None
+    instance.request_metadata = {"report_id": "r-1", "_package": "producer"}
+    instance.project_facts_snapshot = _snapshot()
+
+    report: dict = {}
+    instance._attach_orchestration_v2(report)
+    # The key exists whatever happened. Its contents depend on what the engines
+    # could reach — with no staged database they report that, which is the
+    # information the key is for.
+    assert "orchestrationV2Warnings" in report
+    assert "orchestrationV2" in report
+    assert all(
+        warning.startswith("[orchestration-v2]")
+        for warning in report["orchestrationV2Warnings"]
+    )
+
+
+def test_a_failure_reaches_the_report_rather_than_a_list_nobody_reads(monkeypatch):
+    from app.modules.reports import builder as builder_module
+    from app.modules.reports.builder import ReportBuilder
+
+    class _Boom:
+        REPORT_ORCHESTRATION_V2_ENABLED = True
+
+    monkeypatch.setattr("app.core.config.get_settings", lambda: _Boom(), raising=True)
+    monkeypatch.setattr(
+        builder_module, "GRANTS_ENGINE_VERSION", "2.0", raising=False
+    )
+
+    instance = ReportBuilder.__new__(ReportBuilder)
+    instance.warnings = []
+    instance.grants_payload = None
+    instance.request_metadata = {}
+    instance.project_facts_snapshot = _snapshot()
+
+    def _explode(*args, **kwargs):
+        raise RuntimeError("assembly failed")
+
+    monkeypatch.setattr(
+        "app.modules.reports.orchestration.assemble", _explode, raising=True
+    )
+
+    report: dict = {}
+    instance._attach_orchestration_v2(report)
+
+    assert "orchestrationV2" not in report
+    recorded = report["orchestrationV2Warnings"]
+    assert any("not assembled" in warning for warning in recorded)
+
+
+def test_only_this_run_s_warnings_are_recorded(monkeypatch):
+    """A warning from earlier in the build is not a v2 failure."""
+    from app.modules.reports.builder import ReportBuilder
+
+    class _On:
+        REPORT_ORCHESTRATION_V2_ENABLED = True
+
+    monkeypatch.setattr("app.core.config.get_settings", lambda: _On(), raising=True)
+    instance = ReportBuilder.__new__(ReportBuilder)
+    instance.warnings = ["[something-else] unrelated"]
+    instance.grants_payload = None
+    instance.request_metadata = {"report_id": "r-1", "_package": "producer"}
+    instance.project_facts_snapshot = _snapshot()
+
+    report: dict = {}
+    instance._attach_orchestration_v2(report)
+    assert "[something-else] unrelated" not in report["orchestrationV2Warnings"]
+    assert instance.warnings[0] == "[something-else] unrelated"
