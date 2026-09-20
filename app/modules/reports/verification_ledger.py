@@ -63,6 +63,12 @@ READABLE_STATES: frozenset[str] = frozenset({VERIFIED})
 
 GATE_INCENTIVE_ENGINE = "INCENTIVE_ENGINE_CLASSIFICATION"
 GATE_GRANTS_MIGRATION = "GRANTS_MIGRATION_DECISION"
+#: Which records in the v2 master replace a retired generic parent. Distinct
+#: from the migration decision above: that one asks what the freeze decided
+#: about a live row, this one asks what a retired row's successors are — a
+#: question the freeze could not answer, because automatic title matching
+#: could not find them.
+GATE_GRANTS_SPLIT_PARENT = "GRANTS_SPLIT_PARENT"
 GATE_COMMERCIAL_PROFILE = "COMMERCIAL_COMPANY_PROFILE"
 GATE_MARKET_RULE = "MARKET_HARD_GATE"
 GATE_MARKET_CYCLE = "MARKET_CYCLE"
@@ -72,6 +78,7 @@ GATES: frozenset[str] = frozenset(
     {
         GATE_INCENTIVE_ENGINE,
         GATE_GRANTS_MIGRATION,
+        GATE_GRANTS_SPLIT_PARENT,
         GATE_COMMERCIAL_PROFILE,
         GATE_MARKET_RULE,
         GATE_MARKET_CYCLE,

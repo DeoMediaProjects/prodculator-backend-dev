@@ -287,3 +287,30 @@ def test_one_current_claim_per_field_of_a_subject():
         pass
     else:  # pragma: no cover - the constraint is the point of the test
         raise AssertionError("A second claim for the same field must not stand")
+
+
+# ── Split parents are their own gate ─────────────────────────────────────────
+
+
+def test_the_split_parent_gate_is_registered():
+    """Its own question, not the freeze's migration decision.
+
+    That one asks what the freeze decided about a live row. This asks what a
+    retired row's successors are — which the freeze could not answer, because
+    automatic title matching could not find them.
+    """
+    from app.modules.reports.verification_ledger import (
+        GATES,
+        GATE_GRANTS_SPLIT_PARENT,
+    )
+
+    assert GATE_GRANTS_SPLIT_PARENT in GATES
+    claim = _claim(gate=GATE_GRANTS_SPLIT_PARENT, field="successor_titles")
+    assert validate_claim(claim, today=TODAY) == ()
+
+
+def test_a_split_parent_claim_needs_no_second_reviewer():
+    """Checkable by anyone against the master, so not interpretation."""
+    from app.modules.reports.verification_ledger import GATE_GRANTS_SPLIT_PARENT
+
+    assert not _claim(gate=GATE_GRANTS_SPLIT_PARENT).needs_independent_qa
