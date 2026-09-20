@@ -427,3 +427,38 @@ drifting unnoticed.
 What remains for step 6: wiring these payloads to the live builder, API,
 frontend, PDF and sample renderer, then the old-versus-v2 acceptance run. That
 cutover stays gated on the verification gates measured above.
+
+## Worked 13-section sample, 18 September 2026
+
+`app/modules/reports/sample_orchestration.py` assembles one complete
+orchestration result from fixture engine outputs, and the fixture is the
+regression itself: the $30m production with every territory spend field blank.
+
+A sample whose every fact is known proves the happy path and nothing else. This
+one makes each added behaviour visible in the output rather than described in a
+comment. Territory spend is absent, so no section carries a rebate figure, while
+all three programmes are still named with what they would need in order to be
+calculated — a producer needs to know the New York credit exists, just not a
+number for it. Film London Production Finance Market is claimed by both Grants
+and Markets, exactly as it arrives in the source data, and routing sends it to
+Section 09 with a conflict record explaining its absence from Section 08.
+Committed finance is empty, which is the correct state for a production that has
+matched opportunities and secured none of them. Sales companies carry explicit
+access routes, and the one with a published contact says so rather than reading
+as an open door.
+
+Twenty-two tests assert those behaviours, including two whole-payload checks: no
+figure from the regression appears anywhere in the serialised result, and none
+of the forbidden acquisition phrases does either. Both are cheap and catch a
+regression reintroduced anywhere in the assembly rather than only in the section
+someone thought to check.
+
+`scripts/render_sample_orchestration.py` writes the payload as JSON and as a
+developer review page into a gitignored `tmp/`. It is not the paid report
+template and not a marketing sample. It shows empty sections and absent figures
+deliberately: a review view that hid them would look finished and prove nothing.
+It reads no database.
+
+This closes the reviewable part of step 5. Step 6 — the live builder, API,
+frontend and PDF consuming these payloads, and the old-versus-v2 acceptance run
+— remains gated on the verification gates.
