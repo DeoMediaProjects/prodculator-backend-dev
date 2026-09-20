@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prodculator.com/schemas/report_section_payload_v1.schema.json",
+  "title": "ReportSectionPayloadV1",
+  "type": "object",
+  "required": ["section_number", "section_key", "title", "source_engines", "blocks"],
+  "properties": {
+    "section_number": {"type": "integer", "minimum": 1, "maximum": 13},
+    "section_key": {"type": "string"},
+    "title": {"type": "string"},
+    "source_engines": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "summary": {"type": ["string", "null"]},
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["block_type", "data"],
+        "properties": {
+          "block_type": {"type": "string"},
+          "data": {},
+          "provenance": {"type": "array", "items": {"type": "string"}},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "engine_reason_codes": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

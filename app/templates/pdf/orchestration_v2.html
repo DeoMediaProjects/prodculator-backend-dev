@@ -1,0 +1,227 @@
+{# The v2 orchestration payload, rendered as thirteen sections.
+
+   A separate template from report_base.html on purpose. The legacy template is
+   1600 lines that produce the report a producer has paid for, and threading a
+   second shape through it would put every existing section one edit away from a
+   regression. This renders only the canonical payload, so the two can be
+   compared side by side without either one being able to break the other.
+
+   It shows absences. A section with no engine output says so, and a programme
+   with no calculable figure prints what it needs instead of a number. A
+   renderer that hid those would make an incomplete run look finished, which is
+   the thing the whole v2 rebuild exists to stop.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ script_title }} — v2 Orchestration</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Source+Serif+4:ital,wght@0,400;0,600&display=swap');
+
+:root{
+  --paper:#FDFCFA;
+  --ink:#141414;
+  --gold:#B8941F;
+  --gold-wash:#F7F2E4;
+  --grey:#6E6A61;
+  --hairline:#E7E3DA;
+  --green:#2E7D4F;
+  --amber:#B87A1F;
+  --red:#B3402E;
+  --mont:'Montserrat',-apple-system,sans-serif;
+  --serif:'Source Serif 4',Georgia,serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+
+@page{
+  size:A4;
+  margin:52px 56px 58px;
+  @bottom-left{
+    content:"Prodculator · v2 orchestration";
+    font-family:'Montserrat',sans-serif;font-size:8px;letter-spacing:.14em;
+    color:#6E6A61;font-weight:500;text-transform:uppercase;
+  }
+  @bottom-right{
+    content:counter(page) " / " counter(pages);
+    font-family:'Montserrat',sans-serif;font-size:8px;letter-spacing:.14em;
+    color:#6E6A61;font-weight:600;
+  }
+}
+
+html{background:var(--paper)}
+body{
+  font-family:var(--serif);color:var(--ink);background:var(--paper);
+  font-size:10.5px;line-height:1.6;
+}
+h1{font-family:var(--mont);font-size:22px;font-weight:800;letter-spacing:-.01em}
+h2{
+  font-family:var(--mont);font-size:12px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;
+  border-top:1px solid var(--hairline);padding-top:10px;margin-top:22px;
+}
+.lede{font-family:var(--mont);font-size:9px;color:var(--grey);letter-spacing:.04em}
+.meta{font-family:var(--mont);font-size:8.5px;color:var(--grey);margin-top:6px}
+.meta span{margin-right:16px}
+
+.banner{
+  border:1px solid var(--amber);background:#FDF7EC;color:var(--amber);
+  font-family:var(--mont);font-size:8.5px;line-height:1.5;
+  padding:9px 11px;margin:14px 0 4px;
+}
+.counts{font-family:var(--mont);font-size:8.5px;color:var(--grey);margin:6px 0}
+.empty{color:var(--grey);font-style:italic}
+.sources{font-family:var(--mont);font-size:8px;color:var(--grey);letter-spacing:.05em;text-transform:uppercase}
+
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{
+  font-family:var(--mont);font-size:7.5px;font-weight:700;color:var(--grey);
+  letter-spacing:.07em;text-transform:uppercase;text-align:left;
+  border-bottom:1px solid var(--hairline);padding:4px 6px;
+}
+td{
+  padding:5px 6px;border-bottom:1px solid var(--hairline);
+  vertical-align:top;font-size:9.5px;
+}
+.bucket{margin:4px 0;font-size:9.5px}
+.bucket b{font-family:var(--mont);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase}
+.pass{color:var(--green);font-weight:600}
+.fail{color:var(--red);font-weight:600}
+.section{break-inside:avoid}
+</style>
+</head>
+<body>
+
+<h1>{{ script_title }}</h1>
+<p class="lede">v2 orchestration payload — thirteen canonical sections</p>
+<div class="meta">
+  <span>Run {{ payload.report_run_id }}</span>
+  <span>ProjectFacts {{ payload.projectfacts_snapshot_id }} v{{ payload.projectfacts_version }}</span>
+  <span>{{ payload.generated_at }}</span>
+</div>
+
+<div class="banner">
+  Engine output rendered directly from the canonical payload. Empty sections and
+  absent figures are shown as they are: a section with no engine output says so,
+  and a programme with no calculable figure states what it needs rather than a
+  number. This is not the paid report.
+</div>
+
+<h2>QA — <span class="{{ 'pass' if payload.qa.status == 'PASS' else 'fail' }}">{{ payload.qa.status }}</span></h2>
+<table>
+  <tbody>
+  {% for check in payload.qa.checks %}
+    <tr>
+      <td>{{ check.check }}</td>
+      <td class="{{ 'pass' if check.status == 'PASS' else 'fail' }}">{{ check.status }}</td>
+      <td>{{ check.detail }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% for section in payload.sections %}
+<div class="section">
+  <h2>{{ "%02d"|format(section.section_number) }} · {{ section.title }}</h2>
+  <p class="sources">
+    From {{ section.source_engines|join(', ') }}{% if section.owns_no_calculation %} · owns no calculation{% endif %}
+  </p>
+
+  {% if not section.blocks %}
+    <p class="counts empty">No engine output for this section in this run.</p>
+  {% endif %}
+
+  {% for block in section.blocks %}
+    <p class="counts">
+      {{ block.data.displayed_count }} shown of {{ block.data.eligible_universe_count }} eligible
+      (package depth {{ block.data.package_entitlement }})
+    </p>
+    {% if not block.data.recommendations %}
+      <p class="counts empty">Nothing met this section's gates in this run.</p>
+    {% else %}
+      {% set rows = block.data.recommendations %}
+      {% if rows[0] is mapping %}
+        {% set columns = [] %}
+        {% for row in rows %}{% for key in row %}
+          {% if key not in columns %}{% set _ = columns.append(key) %}{% endif %}
+        {% endfor %}{% endfor %}
+        <table>
+          <thead><tr>{% for c in columns %}<th>{{ c|replace('_',' ') }}</th>{% endfor %}</tr></thead>
+          <tbody>
+          {% for row in rows %}
+            <tr>
+            {% for c in columns %}
+              {% set value = row.get(c) %}
+              <td>
+                {%- if value is none -%}<span class="empty">not calculated</span>
+                {%- elif value is string -%}{{ value }}
+                {%- elif value is sequence -%}{{ value|join(', ') }}
+                {%- else -%}{{ value }}{%- endif -%}
+              </td>
+            {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>{{ rows|join(', ') }}</p>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+</div>
+{% endfor %}
+
+<div class="section">
+<h2>Financial readiness</h2>
+{% for bucket, items in payload.financial_readiness.items() %}
+  <p class="bucket">
+    <b>{{ bucket|replace('_',' ') }}</b> —
+    {% if items %}
+      {{ items|map(attribute='label')|join(', ') }}
+    {% else %}
+      <span class="empty">empty</span>
+    {% endif %}
+  </p>
+{% endfor %}
+</div>
+
+{% if payload.cross_engine_conflicts %}
+<div class="section">
+<h2>Cross-engine routing</h2>
+<table>
+  <thead><tr><th>Record</th><th>Claimed by</th><th>Routed to</th><th>Rule</th></tr></thead>
+  <tbody>
+  {% for conflict in payload.cross_engine_conflicts %}
+    <tr>
+      <td>{{ conflict.subject_name or conflict.subject_id }}</td>
+      <td>{{ conflict.claimed_by|join(', ') }}</td>
+      <td>{{ conflict.routed_to }}</td>
+      <td>{{ conflict.rule }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if payload.next_steps %}
+<div class="section">
+<h2>Next steps</h2>
+<table>
+  <thead><tr><th>Action</th><th>Urgency</th><th>Why</th><th>From</th></tr></thead>
+  <tbody>
+  {% for step in payload.next_steps %}
+    <tr>
+      <td>{{ step.action }}</td>
+      <td>{{ step.urgency or '—' }}</td>
+      <td>{{ step.why or '' }}</td>
+      <td>{{ step.engine }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+</body>
+</html>

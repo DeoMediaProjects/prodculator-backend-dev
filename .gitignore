@@ -50,3 +50,9 @@ seed_admin.py
 # Local .env backups. These carry live secrets and are not ignored by the
 # bare ".env" rule above, so name them explicitly.
 .env.bak*
+
+# Review artifacts rendered by scripts/render_sample_orchestration.py
+tmp/
+
+# Production inventory output — contains live row identifiers
+inventory.json

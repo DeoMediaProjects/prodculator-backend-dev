@@ -9,8 +9,35 @@ Covers:
 """
 from __future__ import annotations
 
+import pytest
 
 from app.modules.reports.validator import ReportValidator, _best_incentive
+
+
+def test_report_rejects_engine_result_from_another_projectfacts_snapshot():
+    report = {
+        "projectFactsSnapshotId": "snapshot-a",
+        "projectFactsVersion": "1",
+        "grantsPayload": {
+            "projectfacts_snapshot_id": "snapshot-b",
+            "projectfacts_version": "1",
+        },
+    }
+    with pytest.raises(ValueError, match="INCONSISTENT_INPUT_VERSION"):
+        ReportValidator.assert_integrity(report, {})
+
+
+def test_report_rejects_engine_result_from_another_projectfacts_version():
+    report = {
+        "projectFactsSnapshotId": "snapshot-a",
+        "projectFactsVersion": "1",
+        "festivalStrategy": {
+            "projectfacts_snapshot_id": "snapshot-a",
+            "projectfacts_version": "2",
+        },
+    }
+    with pytest.raises(ValueError, match="INCONSISTENT_INPUT_VERSION"):
+        ReportValidator.assert_integrity(report, {})
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

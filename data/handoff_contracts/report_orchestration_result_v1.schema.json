@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prodculator.com/schemas/report_orchestration_result_v1.schema.json",
+  "title": "ReportOrchestrationResultV1",
+  "type": "object",
+  "required": ["report_run_id", "projectfacts_snapshot_id", "projectfacts_version", "engine_versions", "sections", "financial_readiness", "qa"],
+  "properties": {
+    "report_run_id": {"type": "string"},
+    "projectfacts_snapshot_id": {"type": "string"},
+    "projectfacts_version": {"const": "1"},
+    "generated_at": {"type": "string"},
+    "engine_versions": {"type": "object", "additionalProperties": {"type": "string"}},
+    "sections": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "items": {"$ref": "report_section_payload_v1.schema.json"}
+    },
+    "financial_readiness": {
+      "type": "object",
+      "required": ["documented_committed_finance", "conditional_statutory_benefits", "selective_pipeline_opportunities", "strategic_access_opportunities"],
+      "properties": {
+        "documented_committed_finance": {"type": "array"},
+        "conditional_statutory_benefits": {"type": "array"},
+        "selective_pipeline_opportunities": {"type": "array"},
+        "strategic_access_opportunities": {"type": "array"}
+      }
+    },
+    "cross_engine_conflicts": {"type": "array", "items": {"type": "object"}},
+    "next_steps": {"type": "array", "items": {"type": "object"}},
+    "qa": {
+      "type": "object",
+      "required": ["status", "checks"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL", "PASS_WITH_WARNINGS"]},
+        "checks": {"type": "array", "items": {"type": "object"}}
+      }
+    }
+  },
+  "additionalProperties": true
+}

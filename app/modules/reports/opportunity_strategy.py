@@ -58,6 +58,16 @@ class Opportunity:
     fit_signals: tuple[FitSignal, ...] = ()
     observed_open_on: date | None = None
     record_id: str | None = None
+    #: Festivals only. A TYPED requirement — WORLD, INTERNATIONAL, NATIONAL or
+    #: NONE — read by ``festival_strategy`` for premiere sequencing. The freeze
+    #: carries prose on 34 of 380 records and nothing on the rest, and prose is
+    #: not a rule this engine can act on, so anything untyped stays None and
+    #: sequences as NEEDS_CONFIRMATION.
+    premiere_requirement: str | None = None
+    #: Markets/labs/WIP only. The frozen class vocabulary — DEVELOPMENT_LAB,
+    #: COPRODUCTION_MARKET, WIP_ROUGH_CUT and the rest — which decides what
+    #: lifecycle stage an opportunity suits.
+    opportunity_class: str | None = None
 
 
 @dataclass(frozen=True)

@@ -141,6 +141,30 @@ class PDFService:
         )
         return html
 
+    def render_orchestration_html(
+        self,
+        payload: dict[str, Any],
+        *,
+        script_title: str = "Untitled",
+    ) -> str:
+        """Render the canonical v2 payload as its own document.
+
+        A separate template from ``report_base.html``, which is 1600 lines
+        producing the report a producer has paid for. Threading a second shape
+        through it would put every existing section one edit away from a
+        regression, and the point of rendering the v2 payload today is to
+        compare the two — which is impossible if either can break the other.
+
+        Raises rather than returning None on a malformed payload. Unlike PDF
+        generation, which degrades to no file, a renderer that silently produced
+        an empty document would look like a payload with nothing in it.
+        """
+        if not isinstance(payload, dict) or "sections" not in payload:
+            raise ValueError("Not a v2 orchestration payload")
+        template = self.env.get_template("orchestration_v2.html")
+        html = template.render(payload=payload, script_title=script_title)
+        return strip_em_dashes(html)
+
     def generate_pdf_bytes(self, html: str) -> bytes | None:
         """
         Generate PDF bytes from HTML.
