@@ -31,7 +31,7 @@ SNAPSHOT = ROOT / "data" / "handoff_snapshots" / "grants_v2_2026-09-04.json"
 
 #: The snapshot this reconciliation was written against. A regenerated snapshot
 #: from a different master is a different migration.
-SNAPSHOT_SHA256 = "c10eea198e0ba15947e678a72779818fd6f445bce3ede5bdadb4ca057af94237"
+SNAPSHOT_SHA256 = "7c26353b659601033048424d1b5e7e18012060574c3227830460b0954e977f18"
 
 LIVE_TABLE = "grant_opportunities"
 

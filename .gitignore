@@ -53,3 +53,6 @@ seed_admin.py
 
 # Review artifacts rendered by scripts/render_sample_orchestration.py
 tmp/
+
+# Production inventory output — contains live row identifiers
+inventory.json

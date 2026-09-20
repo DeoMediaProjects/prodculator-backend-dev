@@ -1,0 +1,24 @@
+# Reviewed data files are byte-exact artifacts, not text.
+#
+# Their SHA-256 is pinned in code — stage_engine_handoffs, stage_curated_cycles
+# and reconcile_grants_v2 all refuse to load a snapshot whose content hash has
+# changed, which is the point: a reviewed dataset must not drift silently.
+#
+# Git's line-ending conversion breaks that guarantee across platforms. With the
+# default `text=auto`, a checkout on Windows rewrites LF to CRLF, so the bytes
+# on disk differ from the bytes in the repository and the file hashes
+# differently on Windows than on Linux. The hashes were generated on Windows and
+# CI runs on Linux, so every snapshot load failed there and passed locally —
+# which is the worst shape for a bug, because the machine that would have caught
+# it is the only one that cannot.
+#
+# `-text` tells Git never to convert these files in either direction. They are
+# stored and checked out as the exact bytes that were reviewed, on every
+# platform, and their hash means the same thing everywhere.
+data/handoff_snapshots/*.json -text
+data/curated_opportunities/*.json -text
+
+# The frozen handoff contracts, for the same reason: they are vendored from the
+# handoff so a schema change fails a test rather than drifting, and that only
+# works if the bytes are stable.
+data/handoff_contracts/*.json -text

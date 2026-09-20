@@ -22,9 +22,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOTS = ROOT / "data" / "handoff_snapshots"
 FESTIVAL_VERSION = "festival_v2.1_2026-09-15"
 MARKETS_VERSION = "markets_v1_2026-09-16"
+#: Content hashes of the reviewed snapshots, over the exact bytes the
+#: repository stores. `.gitattributes` marks these files `-text` so Git
+#: never rewrites their line endings — without that they hash differently
+#: on Windows and Linux, and the pinned value is only ever right on the
+#: platform it was generated on.
 SNAPSHOT_HASHES = {
-    "festivals_v2_1_2026-09-15.json": "c65263c7a021067efe2021827bfa8ec40d7616380cd564d309b0d7d3a10ec470",
-    "markets_labs_wip_v1_2026-09-16.json": "8bd2ac46a7af62a750507618c85923d46adaddef98693cccfdbbe13ef7b247aa",
+    "festivals_v2_1_2026-09-15.json": "845838c861d1987189d977b98654c75d916277ddfd62951c3f9ccb2a271f87c3",
+    "markets_labs_wip_v1_2026-09-16.json": "7569850b80d4d1e3d2dfa567cf9777a1039e9b86b245de4e0021ac64fb7132a3",
 }
 
 
