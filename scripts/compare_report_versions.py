@@ -3,6 +3,7 @@
 Usage::
 
     python scripts/compare_report_versions.py --report-id <uuid>
+    python scripts/compare_report_versions.py --latest
     python scripts/compare_report_versions.py --sample
 
 The report must have been generated with REPORT_ORCHESTRATION_V2_ENABLED on, so
@@ -45,6 +46,42 @@ def load_stored_report(engine: sa.Engine, report_id: str) -> dict:
     return data
 
 
+def latest_with_payload(engine: sa.Engine, *, scan: int = 50) -> tuple[str, dict]:
+    """The newest stored report that carries a v2 payload.
+
+    The payload is looked for in Python rather than with a JSON operator:
+    ``report_data`` is ``json`` on this database and ``jsonb`` elsewhere, and
+    the isolated tests run on SQLite where neither exists. Fifty rows is a cheap
+    scan, and a dialect-specific query is a query that fails somewhere.
+    """
+    import json
+
+    with engine.connect() as conn:
+        if not sa.inspect(conn).has_table("reports"):
+            raise RuntimeError("reports table is not present in this database")
+        rows = conn.execute(
+            sa.text(
+                "SELECT id, report_data FROM reports "
+                "ORDER BY created_at DESC LIMIT :scan"
+            ),
+            {"scan": scan},
+        ).all()
+
+    for identity, data in rows:
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                continue
+        if isinstance(data, dict) and data.get("orchestrationV2"):
+            return str(identity), data
+    raise LookupError(
+        f"None of the {len(rows)} most recent reports carries a v2 payload. "
+        "Turn REPORT_ORCHESTRATION_V2_ENABLED on and generate one — the flag "
+        "only affects reports produced after it is set."
+    )
+
+
 def _sample_pair() -> tuple[dict, dict]:
     """The worked fixture, so the comparison can be exercised without a database."""
     from app.modules.reports.sample_orchestration import (
@@ -70,6 +107,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report-id", help="A stored report to compare")
     parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="Use the newest stored report that carries a v2 payload",
+    )
+    parser.add_argument(
         "--sample", action="store_true", help="Compare the worked fixture instead"
     )
     args = parser.parse_args()
@@ -79,12 +121,16 @@ def main() -> None:
 
     if args.sample:
         legacy, payload = _sample_pair()
-    elif args.report_id:
+    elif args.report_id or args.latest:
         from app.core.config import get_settings
 
         try:
             engine = sa.create_engine(get_settings().DB_URL)
-            legacy = load_stored_report(engine, args.report_id)
+            if args.latest:
+                report_id, legacy = latest_with_payload(engine)
+                print(f"Comparing report {report_id}")
+            else:
+                legacy = load_stored_report(engine, args.report_id)
         except (RuntimeError, LookupError, ValueError) as exc:
             parser.exit(2, f"{exc}\n")
         payload = legacy.get("orchestrationV2")
@@ -104,7 +150,7 @@ def main() -> None:
                 "input differences to the rebuild.\n",
             )
     else:
-        parser.exit(2, "Give --report-id or --sample\n")
+        parser.exit(2, "Give --report-id, --latest or --sample\n")
 
     result = compare(legacy, payload)
     print(render(result))
