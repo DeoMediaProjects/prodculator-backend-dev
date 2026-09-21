@@ -1,4 +1,4 @@
-"""y6z7a8b9c0d1 moves distributor audit annotations out of client-facing prose.
+"""a9b8c7d6e5f4 moves distributor audit annotations out of client-facing prose.
 
 PROD-FIX-006 one table over. `g7b8c9d0e1f2` did this for `incentive_programs`
 and gave them `internal_audit_notes`; `distributors` had no such column, so the
@@ -24,7 +24,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 _VERSIONS = Path(__file__).resolve().parent.parent / "alembic" / "versions"
-_MIGRATION = _VERSIONS / "y6z7a8b9c0d1_distributor_audit_notes.py"
+_MIGRATION = _VERSIONS / "a9b8c7d6e5f4_distributor_audit_notes.py"
 
 _ANNOTATION = (
     "[FLAGGED 2026-08: submission route taken from a 2023 interview, needs "
@@ -49,7 +49,7 @@ def _run(engine, direction: str):
     # `from alembic import op` binds at load time, so each direction needs its
     # own spec/module/exec — same constraint the Australia test documents.
     spec = importlib.util.spec_from_file_location(
-        f"_run_y6z7a8b9c0d1_{direction}", _MIGRATION
+        f"_run_a9b8c7d6e5f4_{direction}", _MIGRATION
     )
     module = importlib.util.module_from_spec(spec)
     with engine.begin() as conn:

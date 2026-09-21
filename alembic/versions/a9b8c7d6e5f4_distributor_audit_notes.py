@@ -25,7 +25,7 @@ Written to find the row rather than name it. The offending record is not in
 every environment, and a migration that hardcoded one distributor's id would
 be a migration that silently did nothing wherever the data differed.
 
-Revision ID: y6z7a8b9c0d1
+Revision ID: a9b8c7d6e5f4
 Revises: x3y4z5a6b7c8
 """
 
@@ -40,7 +40,7 @@ from app.core.audit_notes import (
     split_audit_text as _split_audit_text,
 )
 
-revision = "y6z7a8b9c0d1"
+revision = "a9b8c7d6e5f4"
 down_revision = "x3y4z5a6b7c8"
 branch_labels = None
 depends_on = None

@@ -134,3 +134,33 @@ def test_checker_accepts_valid_references(tmp_path: Path) -> None:
         encoding="utf8",
     )
     assert _unresolved(good) == []
+
+
+def test_every_revision_id_is_unique() -> None:
+    """Two files claiming one revision id break `alembic upgrade head`.
+
+    Alembic does not merge them or pick one. It warns "Revision <id> is
+    present more than once", reports two heads, and then refuses to resolve a
+    path between them — so the upgrade fails outright, in the deploy window,
+    for a migration that is individually correct.
+
+    Ids here are hand-written in a rhyming style (`x3y4z5a6b7c8`), which makes
+    a collision easy: the next id looks like one already used and nothing
+    checks. This is that check. It costs a directory read.
+    """
+    seen: dict[str, list[str]] = {}
+    for path in sorted(_VERSIONS.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf8"))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = {t.id for t in node.targets if isinstance(t, ast.Name)}
+            if "revision" not in targets:
+                continue
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                seen.setdefault(node.value.value, []).append(path.name)
+
+    duplicates = {rev: files for rev, files in seen.items() if len(files) > 1}
+    assert not duplicates, "revision ids claimed by more than one migration: " + "; ".join(
+        f"{rev} -> {', '.join(files)}" for rev, files in sorted(duplicates.items())
+    )
