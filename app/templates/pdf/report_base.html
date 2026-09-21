@@ -413,6 +413,10 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
    empty section reads as something gone missing. #}
 {% if report.coProductionStructure and not lock_incentives %}{% set _ = secs.append({'id': 'coproduction', 'title': 'Co-Production Structure', 'locked': false}) %}{% endif %}
 {% if grants_only %}{% set _ = secs.append({'id': 'grants', 'title': 'Grant & Funding Opportunities', 'locked': false}) %}{% endif %}
+{# Section 09. Registered only when the engine ran: an absent key means it
+   could not, and a header over that says less than no header. An engine that
+   ran and found nothing open still appears, and says so in its counts. #}
+{% if report.marketsLabsWip %}{% set _ = secs.append({'id': 'markets', 'title': 'Industry Development & Market Strategy', 'locked': false}) %}{% endif %}
 {% if report.comparables %}{% set _ = secs.append({'id': 'comparables', 'title': 'Comparable Productions', 'locked': false}) %}{% endif %}
 {% if report.festivalRecommendations and not lock_festivals %}{% set _ = secs.append({'id': 'festivals', 'title': 'Where Your Film Could Be Seen — Festival Recommendations', 'locked': false}) %}{% elif lock_festivals %}{% set _ = secs.append({'id': 'festivals', 'title': 'Festival Recommendations', 'locked': true}) %}{% endif %}
 {% if report.distributorRecommendations %}{% set _ = secs.append({'id': 'distributors', 'title': 'Who Could Buy Your Film — Distributor Recommendations', 'locked': false}) %}{% elif is_preview %}{% set _ = secs.append({'id': 'distributors', 'title': 'Distributor Recommendations', 'locked': true}) %}{% endif %}
@@ -1454,6 +1458,56 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
 </div>
 {% endif %}
 
+<!-- ═══════════════ MARKETS / LABS / WIP ═══════════════ -->
+{% if report.marketsLabsWip %}
+{% set mk = report.marketsLabsWip %}
+<div class="page" id="sec-markets">
+  {{ runhead(rh) }}
+  <div class="eyebrow">{{ num_map['markets'] }} — Industry Development &amp; Market Strategy</div>
+  <div class="sectitle">Markets, labs and work-in-progress routes</div>
+  <p class="secsub">Matched on project stage, format and territory. Selection and market access are strategic opportunities, never committed finance.</p>
+
+  {% if descriptions_only %}
+  {{ section_desc('markets') }}
+  {% else %}
+  {#- The counts before the list. Most of a labs calendar is unannounced at any
+      moment, so "known, none currently open" is the commonest true thing this
+      section says, and stating it is the difference between a reader knowing
+      nothing is open and not knowing whether anyone looked. -#}
+  <p class="secsub" style="margin-top:-4px">
+    {{ mk.universeCount }} opportunit{{ 'y' if mk.universeCount == 1 else 'ies' }} on record for this project&rsquo;s profile;
+    {{ mk.actionableCount }} currently actionable.
+  </p>
+
+  {% if mk.opportunities %}
+  <table class="rowtable">
+    <tr><th style="width:34%">Opportunity</th><th>Route</th><th>Standing</th><th>When</th></tr>
+    {% for opp in mk.opportunities %}
+    <tr>
+      <td style="font-weight:600">{{ opp.name }}</td>
+      <td>{{ (opp.opportunityClass or '—') | replace('_', ' ') | title }}</td>
+      <td>{{ opp.eligibility | replace('_', ' ') | title }}</td>
+      <td>
+        {%- if opp.deadline %}{{ opp.deadline }}
+        {%- elif opp.cycleState == 'ROLLING' %}Rolling
+        {%- elif opp.cycleState == 'NOT_ANNOUNCED' %}Next call not announced
+        {%- else %}Not established{% endif -%}
+      </td>
+    </tr>
+    {% if opp.conditionsToConfirm %}
+    <tr><td colspan="4" class="meta" style="padding-top:0">To confirm: {{ opp.conditionsToConfirm | join('; ') }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="secsub">No market, lab or work-in-progress call is open to this production today. Those on record are listed above by count; their next cycles are either unannounced or outside this project&rsquo;s current stage.</p>
+  {% endif %}
+
+  <p class="secsub" style="margin-top:10px">Selection or market access is not finance. Nothing in this section is counted towards the financial position in Section {{ num_map.get('readiness', '06') }}.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- ═══════════════ COMPARABLES ═══════════════ -->
 {% if report.comparables %}
 <div class="page" id="sec-comparables">
@@ -1536,7 +1590,16 @@ body{background:var(--paper);font-family:var(--mont);color:var(--ink);font-size:
     <div class="fcard-top">
       <div>
         <h4>{{ dist.name }}</h4>
-        <div class="meta">{{ dist.primaryMarket }}{% if dist.rightsType %} · {{ dist.rightsType | replace('_', ' ') }}{% endif %}{% if dist.verified %} · Verified{% endif %}</div>
+        {#- Assembled from the parts that exist. This printed the word "None"
+            for every company the v2 Sales/Distribution engine returned: it
+            states a canonical access route rather than a primary market, so
+            the field is legitimately absent and was being rendered anyway. -#}
+        {%- set meta_bits = [] %}
+        {%- if dist.primaryMarket %}{% set _ = meta_bits.append(dist.primaryMarket) %}{% endif %}
+        {%- if dist.rightsType %}{% set _ = meta_bits.append(dist.rightsType | replace('_', ' ')) %}{% endif %}
+        {%- if dist.accessRoute %}{% set _ = meta_bits.append(dist.accessRoute | replace('_', ' ') | lower) %}{% endif %}
+        {%- if dist.verified %}{% set _ = meta_bits.append('Verified') %}{% endif %}
+        {%- if meta_bits %}<div class="meta">{{ meta_bits | join(' · ') }}</div>{% endif %}
       </div>
     </div>
     {% if dist.whyMatched %}<div class="whym">{{ dist.whyMatched }}{% if dist.submissionProcess %} <span class="sig">{{ dist.submissionProcess }}</span>{% endif %}</div>{% endif %}
