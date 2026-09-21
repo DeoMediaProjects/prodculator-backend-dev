@@ -575,6 +575,47 @@ class Attribution(BaseModel):
     text: str
 
 
+class MarketOpportunityEntry(BaseModel):
+    """One market, lab or WIP call the engine ranked.
+
+    Selection and access are never committed finance — locked decision A.7 —
+    and this entry carries no amount for that reason.
+    """
+
+    name: str
+    eligibility: str
+    sequence: str
+    sequenceLabel: str
+    sequenceReason: str
+    applicationStatus: str
+    #: DATED, ROLLING, NOT_ANNOUNCED or UNKNOWN. ROLLING is not OPEN: a
+    #: producer reading "open" asks until when, and a rolling call has no until.
+    cycleState: str
+    verifiedOn: str
+    sourceUrl: str
+    opportunityClass: str | None = None
+    deadline: str | None = None
+    conditionsToConfirm: list[str] = Field(default_factory=list)
+
+
+class MarketsLabsWIPSection(BaseModel):
+    """Section 09 — Industry Development & Market Strategy.
+
+    The counts matter as much as the list. "Twelve known, none currently open"
+    is a true and useful statement, and it is what most of a labs calendar says
+    at any given moment.
+    """
+
+    universeCount: int
+    actionableCount: int
+    eligibleCount: int
+    potentialCount: int
+    opportunities: list[MarketOpportunityEntry] = Field(default_factory=list)
+    #: Always false. Present so no consumer has to decide for itself, beside a
+    #: Financial Readiness section that totals what the report calls money.
+    isCommittedFinance: bool = False
+
+
 class ComparableProductionEntry(BaseModel):
     title: str
     genre: str
@@ -940,6 +981,10 @@ class ScriptAnalysis(BaseModel):
     territoryDeepDives: list[TerritoryDeepDive] | None = None
     alternativeStrategy: str | None = None
     scoringMethodology: ScoringMethodology | None = None
+    #: Section 09. Absent when the Markets/Labs/WIP engine could not run, which
+    #: is not the same as running and finding nothing — an empty universe is
+    #: reported through the counts inside.
+    marketsLabsWip: MarketsLabsWIPSection | None = None
     attributions: list[Attribution] | None = None
     # v3 additions
     sectionExplainers: dict[str, str] | None = None  # hardcoded, not AI-generated

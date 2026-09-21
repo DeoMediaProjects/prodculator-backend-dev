@@ -225,6 +225,8 @@ class ReportBuilder:
     #: section that reads this raise AttributeError there — a failure about
     #: test construction rather than about the behaviour being tested.
     _commercial_cache: Any = None
+    #: Same reason as above: tests build instances with ``__new__``.
+    _opportunity_cache: Any = None
 
     def __init__(
         self,
@@ -247,6 +249,8 @@ class ReportBuilder:
             request_metadata, self.project_dna
         )
         self.warnings: list[str] = []
+        #: Festivals + Markets/Labs/WIP, built once by _opportunity_strategies.
+        self._opportunity_cache: Any = None
         #: Comparables + Sales/Distribution, built once by _commercial_strategies.
         #: None = not attempted, False = attempted and unavailable. The two are
         #: kept apart so a catalogue that cannot load is not retried per section.
@@ -460,6 +464,15 @@ class ReportBuilder:
             )
             report["scriptOriginCallout"] = self._build_script_origin_callout(territories)
 
+            # Section 09 — Industry Development & Market Strategy. Paid tiers
+            # only, like the two above. Omitted entirely when the engine could
+            # not run, because a section header over nothing tells a reader
+            # less than no section: an engine that ran and found no open call
+            # says so in its counts.
+            markets = self._build_markets_labs_wip()
+            if markets is not None:
+                report["marketsLabsWip"] = markets
+
             # Financial readiness (handoff §4.1). Deterministic — no AI. Computed
             # last because it reads the sections above. Paid tiers only: the free
             # preview is stripped of every monetary figure, so there is nothing
@@ -522,12 +535,8 @@ class ReportBuilder:
         reporting, because a missing commercial catalogue should not also cost
         the reviewer the festival comparison.
         """
-        from datetime import date as _date
-
         from app.modules.reports.orchestration import EngineResult
 
-        today = _date.today()
-        package = self._package()
         results: list = []
 
         def add(name: str, version: str, universe: int, recommendations) -> None:
@@ -542,29 +551,19 @@ class ReportBuilder:
                 )
             )
 
-        # The application's own pooled engine, not a new one per report: these
-        # loaders issue a handful of reads, and a fresh connection pool for each
-        # report would cost more than the queries.
-        try:
-            from app.core.db import engine
-        except Exception as exc:  # noqa: BLE001 — see docstring
-            logger.warning("v2 strategies have no database handle: %s", exc)
-            return results
+        # No database handle is taken here any more. Both pairs of strategies
+        # are built by the memoised helpers, which own their own connection
+        # and their own failure handling.
 
         # ── Festivals and markets, from the staged cycle universe ────────────
+        # The same objects Section 09 renders, not a second build, for the same
+        # reason the commercial block below shares its own.
         try:
-            from app.modules.reports.festival_strategy import build_festival_strategy
-            from app.modules.reports.markets_strategy import build_markets_strategy
-            from app.modules.reports.opportunity_catalogue import load_opportunities
-
-            festivals = build_festival_strategy(
-                load_opportunities(engine, kind="FESTIVAL", today=today),
-                self.project_dna,
-                package=package,
-                today=today,
-                projectfacts_snapshot_id=snapshot.snapshot_id,
-                projectfacts_version=snapshot.version,
-            )
+            strategies = self._opportunity_strategies()
+            if strategies is None:
+                raise RuntimeError("opportunity catalogue unavailable")
+            festivals = strategies.festivals
+            markets = strategies.markets
             add(
                 "festivals",
                 FESTIVAL_ENGINE_VERSION,
@@ -583,14 +582,6 @@ class ReportBuilder:
                 ],
             )
 
-            markets = build_markets_strategy(
-                load_opportunities(engine, kind="MARKET_LAB_WIP", today=today),
-                self.project_dna,
-                package=package,
-                today=today,
-                projectfacts_snapshot_id=snapshot.snapshot_id,
-                projectfacts_version=snapshot.version,
-            )
             add(
                 "markets_labs_wip",
                 MARKETS_ENGINE_VERSION,
@@ -3577,6 +3568,126 @@ class ReportBuilder:
             return None
 
         return self._commercial_cache
+
+    def _opportunity_strategies(self):
+        """Festivals and markets/labs/WIP, built once per report.
+
+        The same memoisation and the same failure contract as
+        ``_commercial_strategies``: ``False`` is the cached failure, distinct
+        from ``None`` meaning not yet attempted, and nothing here may fail a
+        report.
+
+        Two readers — Section 09 and the orchestration payload — so building
+        twice would let them disagree about the same universe.
+        """
+        if self._opportunity_cache is not None:
+            return self._opportunity_cache or None
+
+        from datetime import date as _date
+        from types import SimpleNamespace
+
+        snapshot = getattr(self, "project_facts_snapshot", None)
+        if snapshot is None:
+            self._opportunity_cache = False
+            return None
+
+        try:
+            from app.core.db import engine
+            from app.modules.reports.festival_strategy import build_festival_strategy
+            from app.modules.reports.markets_strategy import build_markets_strategy
+            from app.modules.reports.opportunity_catalogue import load_opportunities
+
+            today = _date.today()
+            package = self._package()
+            festivals = build_festival_strategy(
+                load_opportunities(engine, kind="FESTIVAL", today=today),
+                self.project_dna,
+                package=package,
+                today=today,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            markets = build_markets_strategy(
+                load_opportunities(engine, kind="MARKET_LAB_WIP", today=today),
+                self.project_dna,
+                package=package,
+                today=today,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            self._opportunity_cache = SimpleNamespace(
+                festivals=festivals, markets=markets
+            )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning("opportunity strategies unavailable: %s", exc)
+            warnings = getattr(self, "warnings", None)
+            if warnings is not None:
+                warnings.append(f"[opportunities] {exc}")
+            self._opportunity_cache = False
+            return None
+
+        return self._opportunity_cache
+
+    def _build_markets_labs_wip(self) -> dict | None:
+        """Section 09 — Industry Development & Market Strategy.
+
+        The frozen Markets/Labs/WIP engine has existed since its handoff and
+        has never had a section to render into, so 203 staged tracks reached
+        no producer. This is that section.
+
+        Returns None when the engine could not run at all, which is different
+        from running and finding nothing: an empty universe is a fact worth
+        printing, a failed load is not a fact about the producer's project.
+
+        The counts are the point as much as the list. "Twelve known, none
+        currently open" is a true and useful thing to tell someone, and it is
+        what the great majority of these will say while the next calls are
+        unannounced — that is the honest state of a labs calendar, not a gap
+        in the data.
+
+        Selection is never finance. The strategy object says so itself via
+        ``is_committed_finance``, and this section states it in words too,
+        because Section 06 sums what the report presents as money.
+        """
+        strategies = self._opportunity_strategies()
+        if strategies is None:
+            return None
+        markets = strategies.markets
+
+        entries: list[dict] = []
+        for item in markets.recommendations:
+            opportunity = item.opportunity
+            entries.append({
+                "name": opportunity.name,
+                "opportunityClass": item.opportunity_class,
+                "eligibility": item.eligibility,
+                "sequence": item.sequence,
+                "sequenceLabel": item.sequence_label,
+                "sequenceReason": item.sequence_reason,
+                "applicationStatus": item.recommendation.application_status,
+                # ROLLING is not OPEN. A producer reading "open" asks until
+                # when, and a rolling call has no until.
+                "cycleState": opportunity.cycle_state,
+                "deadline": (
+                    opportunity.cycle_deadline.isoformat()
+                    if opportunity.cycle_deadline else None
+                ),
+                "conditionsToConfirm": list(item.recommendation.conditions_to_confirm),
+                "sourceUrl": opportunity.source_url,
+                "verifiedOn": opportunity.verified_on.isoformat(),
+            })
+
+        return {
+            "universeCount": markets.universe_count,
+            "actionableCount": markets.actionable_count,
+            "eligibleCount": markets.eligible_count,
+            "potentialCount": markets.potential_count,
+            "opportunities": entries,
+            # Stated, not implied. Locked decision A.7: a match, an eligibility
+            # and an application are not committed finance, and this section
+            # sits beside one that totals money.
+            "isCommittedFinance": markets.is_committed_finance,
+        }
 
     def _v2_distributor_recommendations(self) -> list[dict]:
         """Section 12 from the frozen Sales/Distribution engine, or nothing.
