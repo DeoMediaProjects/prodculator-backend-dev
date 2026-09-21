@@ -144,6 +144,28 @@ class SourceClaim:
     requires_independent_qa: bool | None = None
     qa_by: str | None = None
     notes: str | None = None
+    #: Why this claim's QA was signed by the person who made it.
+    #:
+    #: Prodculator has one owner and the client cannot review, so the
+    #: two-person rule on market hard gates and festival sections is
+    #: unsatisfiable rather than merely demanding. A rule nobody can meet does
+    #: not raise the standard; it leaves the research unsigned.
+    #:
+    #: Set, it permits a self-signed QA. Unset, the original refusal stands.
+    #: The exception therefore has to be taken deliberately and in writing —
+    #: never by leaving a column blank — and an audit can tell a two-person
+    #: claim from a one-person one and read the reason behind every one of the
+    #: latter.
+    sole_owner_attestation: str | None = None
+
+    @property
+    def qa_was_self_signed(self) -> bool:
+        """Whether one person made and checked this claim.
+
+        Exposed so a reader does not have to compare two strings to find out.
+        """
+        qa = str(self.qa_by or "").strip()
+        return bool(qa) and qa == str(self.verified_by or "").strip()
 
     @property
     def needs_independent_qa(self) -> bool:
@@ -197,10 +219,12 @@ def validate_claim(claim: SourceClaim, *, today: date) -> tuple[str, ...]:
                 problems.append(
                     "This gate requires independent QA and none is recorded"
                 )
-            elif qa == str(claim.verified_by).strip():
+            elif qa == str(claim.verified_by).strip() and not str(
+                claim.sole_owner_attestation or ""
+            ).strip():
                 problems.append(
                     "Independent QA was signed by the same person who made the "
-                    "claim"
+                    "claim, and no sole-owner attestation records why"
                 )
 
     return tuple(problems)

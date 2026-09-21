@@ -70,7 +70,9 @@ CONTEXT_COLUMNS = (
     "engine_outcome",
 )
 #: What a reviewer fills in.
-DECISION_COLUMNS = ("decision", "reviewed_by", "qa_by", "review_note")
+DECISION_COLUMNS = (
+    "decision", "reviewed_by", "qa_by", "sole_owner_attestation", "review_note"
+)
 
 _HEADER = PatternFill("solid", fgColor="1F3B57")
 _DECISION = PatternFill("solid", fgColor="FFF3CD")
@@ -87,6 +89,14 @@ INSTRUCTIONS = [
     ("  qa_by          A second person, for the gates marked needs_second_reviewer.", False),
     ("                 It cannot be the person in verified_by. The ledger checks", False),
     ("                 that by identity when the decision is applied.", False),
+    ("  sole_owner_attestation", False),
+    ("                 Only when there is no second person. Put qa_by as", False),
+    ("                 yourself and write here why: the ledger then accepts the", False),
+    ("                 self-signed QA and keeps your reason on the row.", False),
+    ("                 Leave it blank and the refusal stands, so the exception", False),
+    ("                 is always taken in writing rather than by omission.", False),
+    ("                 An audit can then separate a two-person claim from a", False),
+    ("                 one-person one, and read why each of the latter was made.", False),
     ("  review_note    Optional. Why, when you reject.", False),
     ("", False),
     ("Two columns are worth reading before you decide:", False),
@@ -278,6 +288,9 @@ def _decisions(path: Path) -> list[dict]:
                 "decision": decision,
                 "reviewed_by": str(raw[index["reviewed_by"]] or "").strip(),
                 "qa_by": str(raw[index["qa_by"]] or "").strip() or None,
+                "sole_owner_attestation": (
+                    str(raw[index["sole_owner_attestation"]] or "").strip() or None
+                ),
             })
     return rows
 
@@ -316,6 +329,7 @@ def apply_decisions(engine, path: Path, *, today: date, apply: bool):
             reviewer=row["reviewed_by"],
             state=row["decision"],
             qa_by=row["qa_by"],
+            sole_owner_attestation=row["sole_owner_attestation"],
         )
         decisions.append(decision)
         sites[decision] = _where(row)

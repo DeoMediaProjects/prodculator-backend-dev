@@ -103,6 +103,14 @@ def _to_claim(row: Any) -> SourceClaim:
         requires_independent_qa=bool(mapping["requires_independent_qa"]),
         qa_by=mapping["qa_by"],
         notes=mapping["notes"],
+        # Tolerated absent: a database that predates the column has no
+        # attested claims by definition, and reading None there is correct
+        # rather than a compatibility shim.
+        sole_owner_attestation=(
+            mapping["sole_owner_attestation"]
+            if "sole_owner_attestation" in mapping
+            else None
+        ),
     )
 
 
@@ -233,6 +241,10 @@ class ReviewDecision:
     reviewer: str
     state: str = VERIFIED
     qa_by: str | None = None
+    #: Why the QA was self-signed, where it was. Only read when qa_by matches
+    #: the claim's author; supplying it otherwise records a reason for an
+    #: exception that was not taken.
+    sole_owner_attestation: str | None = None
 
 
 @dataclass
@@ -294,6 +306,7 @@ def review_many(
                 "review_state": decision.state,
                 "reviewed_by": decision.reviewer,
                 "qa_by": decision.qa_by,
+                "sole_owner_attestation": decision.sole_owner_attestation,
             }
         )
         if decision.state == VERIFIED:
@@ -312,6 +325,7 @@ def review_many(
             "b_state": decision.state,
             "b_reviewer": decision.reviewer,
             "b_qa": decision.qa_by,
+            "b_attestation": decision.sole_owner_attestation,
         })
 
     if apply and updates:
@@ -330,6 +344,11 @@ def review_many(
                     review_state=sa.bindparam("b_state"),
                     reviewed_by=sa.bindparam("b_reviewer"),
                     qa_by=sa.bindparam("b_qa"),
+                    **(
+                        {"sole_owner_attestation": sa.bindparam("b_attestation")}
+                        if "sole_owner_attestation" in table.c
+                        else {}
+                    ),
                 ),
                 updates,
             )
