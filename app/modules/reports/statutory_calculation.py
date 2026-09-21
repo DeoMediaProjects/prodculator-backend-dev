@@ -87,6 +87,83 @@ _SINGLE_INPUT_ENGINES: dict[str, str] = {
     "PDV_ONLY": "pdv_expenditure",
 }
 
+#: Engines whose statutory base *is* the production's qualifying spend in the
+#: territory, so the expected spend the producer already stated can stand in for
+#: it as a planning assumption rather than the report showing nothing.
+#:
+#: Deliberately not every spend-shaped engine:
+#:
+#:   ``QUALIFIED_LABOUR``  pays on labour alone. Canada's CPTC counts Canadian
+#:                         labour expenditure, a fraction of territory spend and
+#:                         not a predictable one.
+#:   ``CORE_LOWER_OF``     compares two figures. One number cannot answer it,
+#:                         and substituting the same number for both would make
+#:                         the comparison vacuous.
+#:   ``QAPE`` / ``QNZPE``  are statutory definitions with their own exclusions.
+#:   ``MULTI_BUCKET``      is a sum of programme-specific buckets.
+#:
+#: Seeding any of those from a single spend figure would produce a confident
+#: number wrong by a large and predictable margin, which is worse than the
+#: report saying it has not been told.
+SPEND_SEEDABLE_ENGINES: frozenset[str] = frozenset(
+    {"ELIGIBLE_LOCAL_SPEND", "TIERED_SPEND"}
+)
+
+
+def seed_spend_from_scenario(
+    engine: str,
+    scenario: dict[str, Any] | None,
+    supplied: dict[str, Any],
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Stand the producer's stated territory spend in for an absent base.
+
+    Returns the inputs to calculate from, and the keys that were seeded rather
+    than supplied. A seeded key is recorded as a ``planning_assumption`` by the
+    caller, which is what stops the resulting figure being presented with the
+    confidence of a certified cost statement.
+
+    Until the statutory engines were classified, these programmes ran through
+    the legacy estimator, which derived a qualifying base from the budget and a
+    percentage. That is the substitution this module exists to remove, and this
+    is not a return to it: the figure used here is one the producer typed, for
+    this territory, in answer to "expected spend here".
+
+    Seeding happens only when every one of these holds:
+
+    * the engine's base is the territory's qualifying spend (see
+      ``SPEND_SEEDABLE_ENGINES``);
+    * no statutory figure was supplied for that key, so nothing is overwritten;
+    * ``scenario_spend_source`` is ``user_entered``. An imported budget line or
+      an unknown provenance is not the producer answering the question, and
+      ``unknown`` is what the wizard sends for a field left blank.
+
+    No currency conversion happens here, for the same reason ``absolute_cap`` is
+    a parameter: the scenario spend and the statutory inputs are both entered in
+    the production's budget currency, and a rate this module invented would be
+    the least visible way to be wrong.
+    """
+    normalised = (engine or "").strip().upper()
+    if normalised not in SPEND_SEEDABLE_ENGINES or not scenario:
+        return supplied, ()
+    key = _SINGLE_INPUT_ENGINES.get(normalised)
+    if key is None or resolve_statutory_amount(supplied.get(key)) is not None:
+        return supplied, ()
+
+    source = (
+        scenario.get("scenario_spend_source")
+        or scenario.get("scenarioSpendSource")
+    )
+    if source != "user_entered":
+        return supplied, ()
+
+    raw = scenario.get("scenario_spend")
+    if raw is None:
+        raw = scenario.get("scenarioSpend")
+    amount = resolve_statutory_amount(raw)
+    if amount is None:
+        return supplied, ()
+    return {**supplied, key: amount}, (key,)
+
 
 @dataclass(frozen=True)
 class StatutoryQualifyingSpend:
@@ -182,6 +259,7 @@ def resolve_statutory_qualifying_spend(
         return None
 
     supplied = supplied_inputs(scenario)
+    supplied, seeded = seed_spend_from_scenario(engine, scenario, supplied)
     if missing_required_inputs(engine, supplied, declared_inputs):
         return None
 
@@ -266,6 +344,18 @@ def resolve_statutory_qualifying_spend(
             return None
         used = {key: value}
         amount = value
+
+    # Said before the caps, because it qualifies the base every later line
+    # works from. A reader who sees only "qualifying spend $8,000,000" cannot
+    # tell a certified cost statement from a figure typed into an intake form.
+    if seeded:
+        notes.append(
+            "No statutory cost breakdown was supplied for this programme, so "
+            "the expected spend stated for this territory is used as the "
+            "qualifying base. That is a planning assumption rather than "
+            "certified eligible spend, and the figure will move once the "
+            "actual qualifying costs are known."
+        )
 
     # ── The programme's own caps on that base ────────────────────────────────
     if cap_pct is not None and 0 < cap_pct < 100:

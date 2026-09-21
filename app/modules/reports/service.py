@@ -1714,6 +1714,20 @@ class ReportService:
             to_gbp = (budget_gbp / budget_original_amount) / rate
 
         converted_scenario = dict(scenario)
+        # Converted on the same rate as the inputs below, because the resolver
+        # may now use it as the qualifying base when no statutory figure was
+        # supplied. It was copied through unconverted while nothing downstream
+        # read it, which would have made a USD scenario spend arrive in a GBP
+        # calculation and overstate the rebate by the whole exchange rate.
+        scenario_spend = scenario.get("scenario_spend")
+        if scenario_spend is not None:
+            try:
+                converted_scenario["scenario_spend"] = float(scenario_spend) * to_gbp
+            except (TypeError, ValueError):
+                # Unreadable rather than absent. Dropping it makes the figure
+                # read as unknown, which is what it is to us, and matches how an
+                # unconvertible input amount is handled below.
+                converted_scenario["scenario_spend"] = None
         inputs: list[dict] = []
         for entry in scenario.get("calculation_inputs") or []:
             entry = (

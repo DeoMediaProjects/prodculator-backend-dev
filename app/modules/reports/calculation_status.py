@@ -48,6 +48,7 @@ from app.modules.reports.helpers import (
     NON_ENTITLEMENT_ENGINES,
     mechanism_no_figure_reason,
 )
+from app.modules.reports.statutory_calculation import seed_spend_from_scenario
 
 #: Reader-facing label per status. Written for a producer rather than an
 #: engineer: the status name is a contract term, the label is what appears on the
@@ -236,6 +237,13 @@ def resolve_calculation_status(
     # falls back to the engine's default input list, which is right for a
     # programme that declares nothing unusual.
     supplied = _supplied_inputs(scenario)
+    # Seeded through the same function the calculator uses, not a second copy of
+    # the rule. If this module decided a programme could calculate and
+    # ``statutory_calculation`` then declined to, the report would carry a
+    # status promising a figure beside a chart that has none.
+    seeded: tuple[str, ...] = ()
+    if engine:
+        supplied, seeded = seed_spend_from_scenario(engine, scenario, supplied)
     missing = (
         missing_required_inputs(engine, supplied, declared_inputs) if engine else []
     )
@@ -245,6 +253,10 @@ def resolve_calculation_status(
 
     # 6. Held, but resting on something unresolved.
     provenance = _provenance(scenario)
+    # A seeded base is an assumption whatever the producer marked their other
+    # figures as, so it is written after them and cannot be overridden by one.
+    for key in seeded:
+        provenance[key] = "planning_assumption"
     if any(v == "planning_assumption" for v in provenance.values()):
         return result(
             "CONDITIONAL",
