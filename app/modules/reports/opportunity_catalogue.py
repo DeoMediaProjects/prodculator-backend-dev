@@ -182,10 +182,25 @@ def load_opportunities(
         verified_on = _as_date(mapping["verified_on"])
         source_url = str(mapping["source_url"] or "")
 
-        # Refused rather than loaded with blanks. The engine's actionability
-        # gate would reject these a moment later, and building the object first
-        # puts an unverified cycle one bug away from being ranked.
-        if not deadline or not verified_on or not source_url:
+        # A cycle with no date is loaded now, carrying the state that says
+        # why. It used to be refused here alongside genuinely blank rows, so a
+        # rolling call — always open, always applicable — was indistinguishable
+        # from a row with no provenance.
+        #
+        # `verified_on` and `source_url` are still required. Those are blanks,
+        # not answers: without them nothing establishes that anyone read this
+        # off an official page, and the actionability gate rejecting it a
+        # moment later is one bug away from it being ranked.
+        state = (
+            str(mapping["cycle_state"]).strip().upper()
+            if "cycle_state" in mapping and mapping["cycle_state"]
+            # Older rows predate the column and every one of them was written
+            # by a path that required a date.
+            else "DATED"
+        )
+        if not verified_on or not source_url:
+            continue
+        if not deadline and state == "DATED":
             continue
 
         section = str(mapping["section_name"] or "").strip()
@@ -201,6 +216,7 @@ def load_opportunities(
                 verified_on=verified_on,
                 cycle_open=_as_date(mapping["cycle_open"]),
                 cycle_deadline=deadline,
+                cycle_state=state,
                 cycle_verified=bool(mapping["cycle_verified"]),
                 rules_complete=bool(mapping["rules_complete"]),
                 gates=_gates_for(rules_by_cycle.get(cycle_id, [])),

@@ -75,7 +75,7 @@ class CycleStageResult:
     applied: bool = False
 
 
-def cycle_id(kind: str, record_id: str, section_name: str, deadline: date) -> str:
+def cycle_id(kind: str, record_id: str, section_name: str, deadline: date | None) -> str:
     """The same identity ``stage_curated_cycles`` builds, so the two agree.
 
     A curated cycle and a researched one for the same festival section and
@@ -100,6 +100,9 @@ def _cycle_row(parsed) -> dict:
         "cycle_open": None,
         "observed_open_on": parsed.observed_open_on,
         "cycle_deadline": parsed.cycle_deadline,
+        # DATED, ROLLING, NOT_ANNOUNCED or UNKNOWN. Only ROLLING is actionable
+        # without a date; the other two reach the engine's NOT_ACTIONABLE.
+        "cycle_state": parsed.cycle_state,
         "cycle_verified": True,
         # Never True. The pack told researchers to leave anything they could not
         # type entirely, so a typed subset is never a complete rule set, and the

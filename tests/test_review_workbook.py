@@ -95,11 +95,25 @@ def _write(tmp_path, claims, decisions) -> Path:
 # ── What the workbook tells a reviewer ───────────────────────────────────────
 
 
-def test_an_unannounced_call_is_a_correct_answer_not_a_correction():
+def test_an_unannounced_call_is_recorded_and_says_it_is_not_actionable():
+    """It is a correct answer, and it now stages a cycle rather than nothing.
+
+    A reviewer must still be told the opportunity will not reach a report.
+    "stages 1 cycle(s)" alone reads like it will.
+    """
     claims = [_claim(GATE_MARKET_CYCLE, "mkt-1", "deadline", "NOT_ANNOUNCED")]
     outcome = _engine_outcomes(claims, today=TODAY)[(GATE_MARKET_CYCLE, "mkt-1")]
-    assert outcome.startswith("no cycle, and none is expected")
+    assert "not actionable" in outcome
+    assert "not announced" in outcome
     assert "needs rewriting" not in outcome
+
+
+def test_a_rolling_call_is_recorded_and_actionable():
+    """No deadline because it is always open. Locked decision D.4."""
+    claims = [_claim(GATE_MARKET_CYCLE, "mkt-2", "deadline", "ROLLING")]
+    outcome = _engine_outcomes(claims, today=TODAY)[(GATE_MARKET_CYCLE, "mkt-2")]
+    assert "rolling" in outcome
+    assert "not actionable" not in outcome
 
 
 def test_a_section_name_that_matches_nothing_needs_rewriting():

@@ -52,8 +52,12 @@ class Opportunity:
     verified_on: date
     cycle_open: date | None
     cycle_deadline: date | None
-    cycle_verified: bool
-    rules_complete: bool
+    #: Why there is no deadline, when there is none. DATED, ROLLING,
+    #: NOT_ANNOUNCED or UNKNOWN. Defaulted to DATED so every existing
+    #: construction site keeps meaning what it meant.
+    cycle_state: str = "DATED"
+    cycle_verified: bool = False
+    rules_complete: bool = False
     gates: tuple[HardGate, ...] = ()
     fit_signals: tuple[FitSignal, ...] = ()
     observed_open_on: date | None = None
@@ -74,7 +78,10 @@ class Opportunity:
 class Recommendation:
     opportunity: Opportunity
     eligibility: Eligibility
-    application_status: Literal["OPEN", "UPCOMING", "NOT_ACTIONABLE"]
+    #: ROLLING is its own status rather than OPEN. A producer reading "open"
+    #: reasonably asks until when; a rolling call has no until, and flattening
+    #: the two would lose the only thing that distinguishes them.
+    application_status: Literal["OPEN", "UPCOMING", "ROLLING", "NOT_ACTIONABLE"]
     score: int
     conditions_to_confirm: tuple[str, ...]
     gate_results: tuple[tuple[str, GateResult], ...]
@@ -131,27 +138,53 @@ def evaluate_opportunity(
     # actionable today. A verified historical listing is still historical.
     known_open = opportunity.cycle_open is not None
     observed_open = opportunity.observed_open_on is not None
-    actionable = (
+
+    # A rolling call has no deadline because it is always open. That is the one
+    # case where a missing boundary is not missing evidence, and locked
+    # decision D.4 says so directly: Rolling remains Rolling.
+    #
+    # NOT_ANNOUNCED and UNKNOWN also arrive without a deadline now, and they
+    # are not actionable — nobody knows when the next call is. They stay in the
+    # universe count and out of the recommendations, which is what
+    # NOT_ACTIONABLE is for. Before this they never arrived at all: the parser
+    # dropped them, so 132 verified market cycles were invisible rather than
+    # visibly closed.
+    rolling = opportunity.cycle_state == "ROLLING"
+
+    # Common to both: someone read this off an official page, on a date that
+    # has already happened.
+    sourced = (
         opportunity.cycle_verified
         and opportunity.verified_on <= today
-        and opportunity.cycle_deadline is not None
-        and today <= opportunity.cycle_deadline
         and bool(opportunity.source_url)
-        and (
-            (known_open and opportunity.cycle_open <= opportunity.cycle_deadline)
-            or (
-                not known_open
-                and observed_open
-                and opportunity.observed_open_on <= today
-                and opportunity.observed_open_on <= opportunity.verified_on
-                and opportunity.observed_open_on <= opportunity.cycle_deadline
+    )
+    if rolling:
+        actionable = (
+            sourced
+            and observed_open
+            and opportunity.observed_open_on <= today
+        )
+    else:
+        actionable = (
+            sourced
+            and opportunity.cycle_deadline is not None
+            and today <= opportunity.cycle_deadline
+            and (
+                (known_open and opportunity.cycle_open <= opportunity.cycle_deadline)
+                or (
+                    not known_open
+                    and observed_open
+                    and opportunity.observed_open_on <= today
+                    and opportunity.observed_open_on <= opportunity.verified_on
+                    and opportunity.observed_open_on <= opportunity.cycle_deadline
+                )
             )
         )
-    )
     if not actionable:
         return Recommendation(opportunity, "NOT_ACTIONABLE", "NOT_ACTIONABLE", 0, (), ())
     application_status = (
-        "UPCOMING" if opportunity.cycle_open is not None and today < opportunity.cycle_open
+        "ROLLING" if rolling
+        else "UPCOMING" if opportunity.cycle_open is not None and today < opportunity.cycle_open
         else "OPEN"
     )
 

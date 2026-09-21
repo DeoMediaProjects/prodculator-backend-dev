@@ -147,8 +147,15 @@ def _engine_outcomes(claims, *, today: date) -> dict[tuple[str, str], str]:
     cycles, problems = build_cycles(as_verified, today=today)
 
     staged: Counter = Counter()
+    #: Cycles staged without a date, by the state that says why. A reviewer
+    #: signing off "the next call is not announced" should be told their claim
+    #: is recorded AND that it is not actionable — "stages 1 cycle(s)" alone
+    #: reads like the opportunity will appear in a report, and it will not.
+    undated: dict[str, Counter] = defaultdict(Counter)
     for cycle in cycles:
         staged[cycle.record_id] += 1
+        if cycle.cycle_deadline is None:
+            undated[cycle.record_id][cycle.cycle_state] += 1
     # Kept apart. A line nobody has to rewrite — "the next call is not
     # announced" — stages nothing and is still the right answer, and flagging it
     # beside a malformed one would tell a reviewer to send back correct work.
@@ -165,7 +172,16 @@ def _engine_outcomes(claims, *, today: date) -> dict[tuple[str, str], str]:
             continue
         count = staged.get(claim.subject_id, 0)
         trouble = corrections.get(claim.subject_id, [])
-        if count and not trouble:
+        states = undated.get(claim.subject_id)
+        if count and not trouble and states:
+            # ROLLING is actionable — no deadline because the call is always
+            # open. The other states are recorded and deliberately inert.
+            described = ", ".join(
+                f"{n} {state.lower().replace('_', ' ')}" for state, n in sorted(states.items())
+            )
+            actionable = "actionable" if set(states) == {"ROLLING"} else "not actionable"
+            outcomes[key] = f"stages {count} cycle(s) with no date ({described}), {actionable}"
+        elif count and not trouble:
             outcomes[key] = f"stages {count} cycle(s)"
         elif count:
             outcomes[key] = f"stages {count} cycle(s); {len(trouble)} line(s) need rewriting"

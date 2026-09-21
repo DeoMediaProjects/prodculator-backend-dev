@@ -41,6 +41,7 @@ STAGING_MIGRATIONS = (
     "r7s8t9u0v1w2_engine_v2_staging_tables.py",
     "s8t9u0v1w2x3_observed_open_cycle.py",
     "z5a6b7c8d9e0_cycle_premiere_requirement.py",
+    "d0e1f2a3b4c5_cycle_state.py",
 )
 TODAY = date(2026, 9, 20)
 READ_ON = date(2026, 9, 18)
@@ -122,13 +123,36 @@ def test_each_section_becomes_its_own_cycle():
     ]
 
 
-def test_a_line_naming_two_dates_is_refused():
-    """Early bird and final are two facts; picking one is a coin flip."""
+def test_a_tiered_window_closes_on_its_last_date():
+    """Early bird and final are one fact: the cycle closes on the final one.
+
+    This used to be refused as "not decidable", which dropped every tiered
+    festival — and then cascaded, because each section's rules reported no
+    deadline to attach to once the deadline line had been thrown away. Around
+    a third of the 2026-09-21 staging run's rejections came from here.
+
+    A festival does not stop accepting submissions before its last published
+    date, so reading the last one is reading the source, not guessing.
+    """
     cycles, problems = _cycles(
         _deadlines("Competition | early bird 2026-09-01, final 2026-11-15")
     )
+    assert cycles[0].cycle_deadline == date(2026, 11, 15)
+    assert problems == []
+
+
+def test_the_labelled_closing_tier_wins_over_document_order():
+    """A researcher listing tiers out of order must not move a deadline."""
+    cycles, _ = _cycles(
+        _deadlines("Competition | 2026-11-15 late | 2026-09-01 early")
+    )
+    assert cycles[0].cycle_deadline == date(2026, 11, 15)
+
+
+def test_an_unreadable_date_is_still_refused():
+    cycles, problems = _cycles(_deadlines("Competition | 2026-13-45"))
     assert cycles == []
-    assert "not decidable" in problems[0].reason
+    assert "not a real date" in problems[0].reason
 
 
 def test_a_repeated_date_on_one_line_is_still_one_date():
@@ -137,10 +161,32 @@ def test_a_repeated_date_on_one_line_is_still_one_date():
 
 
 @pytest.mark.parametrize("value", ["NOT_ANNOUNCED", "ROLLING", "UNKNOWN"])
-def test_a_real_answer_that_is_not_a_date_makes_no_cycle(value):
+def test_a_real_answer_that_is_not_a_date_still_makes_a_cycle(value):
+    """These used to be dropped, and dropping them emptied Section 09.
+
+    "The next call is not announced" is the finding the research asked for.
+    There was nowhere to put it, so 132 verified market cycles and every
+    rolling festival left the system rather than being reported as what they
+    are. The state now travels with the cycle.
+    """
     cycles, problems = _cycles(_deadlines(value))
-    assert cycles == []
-    assert problems[0].detail == value
+    assert len(cycles) == 1
+    assert cycles[0].cycle_state == value
+    assert cycles[0].cycle_deadline is None
+    # No section: the claim named none, and "All sections" would assert a
+    # scope nobody verified.
+    assert cycles[0].section_name == ""
+    assert problems == []
+
+
+def test_only_a_rolling_call_is_observed_open():
+    """A rolling call was seen open on the day it was read. An unannounced one
+    has nothing to have been seen open, and recording a date there would be
+    the inference this module exists to avoid."""
+    rolling, _ = _cycles(_deadlines("ROLLING"))
+    unannounced, _ = _cycles(_deadlines("NOT_ANNOUNCED"))
+    assert rolling[0].observed_open_on is not None
+    assert unannounced[0].observed_open_on is None
 
 
 def test_a_section_repeated_with_two_deadlines_is_refused():
@@ -284,14 +330,26 @@ def test_a_market_track_becomes_one_cycle_with_no_section():
     assert cycles[0].rules[0].expected == ["development"]
 
 
-def test_a_market_gate_with_no_verified_deadline_stages_nothing():
-    """The overwhelmingly common case: the call is not announced yet."""
+def test_a_market_gate_with_no_verified_deadline_still_stages():
+    """The overwhelmingly common case: the call is not announced yet.
+
+    All 132 verified MARKET_CYCLE claims in production read this way, and all
+    132 were discarded here — which is the whole reason 203 staged market
+    tracks produced an empty Section 09. The track is staged with its state
+    and its hard gates; the engine reaches NOT_ACTIONABLE, so it counts in the
+    universe and stays out of the recommendations.
+    """
     cycles, problems = _cycles(
         _claim(GATE_MARKET_CYCLE, "mkt-1", "deadline", "NOT_ANNOUNCED"),
         _claim(GATE_MARKET_RULE, "mkt-1", "hard_gates", "stage one_of development"),
     )
-    assert cycles == []
-    assert problems[0].detail == "NOT_ANNOUNCED"
+    assert len(cycles) == 1
+    assert cycles[0].cycle_state == "NOT_ANNOUNCED"
+    assert cycles[0].cycle_deadline is None
+    # The gates are kept. They are what the engine will evaluate the day a
+    # date appears, and re-researching them then would be waste.
+    assert len(cycles[0].rules) == 1
+    assert problems == []
 
 
 # ── Observed-open ────────────────────────────────────────────────────────────

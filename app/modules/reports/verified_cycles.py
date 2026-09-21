@@ -90,9 +90,23 @@ PREMIERE_VALUES: frozenset[str] = frozenset(
     {"WORLD", "INTERNATIONAL", "NATIONAL", "NONE"}
 )
 
-#: Values that say a deadline is not a date. Each is a real answer and none of
-#: them is a cycle: the engine needs a boundary to rank against.
+#: Values that say a deadline is not a date. Each is a real answer, and each
+#: now becomes a cycle carrying that answer as its state rather than being
+#: discarded — see ``CYCLE_STATES``.
 NOT_A_DATE: frozenset[str] = frozenset({"NOT_ANNOUNCED", "ROLLING", "UNKNOWN"})
+
+#: A cycle whose deadline is a date.
+DATED = "DATED"
+#: What a cycle without a date is. These used to be dropped at parse time, so
+#: 132 verified market cycles and every rolling festival produced nothing and
+#: Section 09 stayed empty while the research behind it was signed off.
+#:
+#: The distinction that matters is ROLLING against the other two. A rolling
+#: call has no deadline because it is always open, and locked decision D.4 says
+#: Rolling remains Rolling — it is actionable. NOT_ANNOUNCED and UNKNOWN mean
+#: nobody knows when the next call is, which is not actionable and must not be
+#: presented as though it were. The engine already has NOT_ACTIONABLE for that.
+CYCLE_STATES: frozenset[str] = frozenset({DATED}) | NOT_A_DATE
 
 _ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 #: Characters that mark prose rather than a value. A sentence compared with
@@ -116,12 +130,18 @@ class ParsedCycle:
     kind: str
     record_id: str
     section_name: str
-    cycle_deadline: date
+    #: None when the cycle has no date. `opportunity_cycles.cycle_deadline` is
+    #: nullable and the engine's actionability gate already handles the absence;
+    #: it was only ever the parser that refused to represent it.
+    cycle_deadline: date | None
     source_url: str
     verified_on: date
     observed_open_on: date | None
     premiere_requirement: str | None = None
     rules: tuple[ParsedRule, ...] = ()
+    #: One of ``CYCLE_STATES``. Defaulted so every existing construction site
+    #: keeps meaning what it meant.
+    cycle_state: str = DATED
 
 
 @dataclass(frozen=True)
@@ -223,25 +243,71 @@ def parse_rule_line(line: str) -> tuple[ParsedRule | None, str | None]:
     return ParsedRule(field_name, operator, expected, line), None
 
 
+#: Words a researcher writes beside the last date a submission is accepted.
+#: Festivals publish tiers — early bird, regular, late, extended — and the
+#: cycle closes on the last of them; the earlier ones are price points, not
+#: closures. Matched on the label rather than assumed from position, because a
+#: researcher listing tiers out of order should not silently change a deadline.
+_CLOSING_LABELS: tuple[str, ...] = (
+    "extended", "final", "last", "late", "closing", "deadline",
+)
+
+
 def _deadline_in(text: str) -> tuple[date | None, str | None]:
+    """The date this cycle closes on, or why it cannot be read.
+
+    A single date is that date. Several dates are a tiered submission window —
+    ``2026-12-07 early | 2027-01-18 regular | 2027-03-08 late`` — and the cycle
+    closes on the last tier. This used to refuse every one of them as "not
+    decidable", which dropped the tiered festivals (Berlinale's eight sections
+    among them) and then cascaded: each section's rules reported "no verified
+    deadline to attach to", because the deadline line they needed had already
+    been thrown away. Around a third of everything the staging script rejected
+    came from this one refusal.
+
+    The closing date is read from the label where there is one, and from the
+    maximum otherwise. Both are readings of what the source says rather than a
+    guess: a festival does not stop accepting submissions before its last
+    published date. Where the labelled tier and the latest date disagree the
+    later of the two wins, because accepting submissions after the advertised
+    close is the direction that does not make a producer miss a real deadline.
+    """
     found = _ISO.findall(text)
     if not found:
         return None, "carries no YYYY-MM-DD date"
-    if len(set(found)) > 1:
-        return None, f"names {len(set(found))} dates; which one closes is not decidable"
-    try:
-        return date.fromisoformat(found[0]), None
-    except ValueError:
-        return None, f"{found[0]!r} is not a real date"
+
+    parsed: list[date] = []
+    for raw in found:
+        try:
+            parsed.append(date.fromisoformat(raw))
+        except ValueError:
+            return None, f"{raw!r} is not a real date"
+
+    if len(set(parsed)) == 1:
+        return parsed[0], None
+
+    labelled: list[date] = []
+    lowered = text.lower()
+    for value, raw in zip(parsed, found):
+        after = lowered.split(raw.lower(), 1)[-1][:24]
+        if any(label in after for label in _CLOSING_LABELS):
+            labelled.append(value)
+
+    return (max(labelled + [max(parsed)]) if labelled else max(parsed)), None
 
 
-def _observed_open(deadline: date, verified_on: date) -> date | None:
+def _observed_open(deadline: date | None, verified_on: date) -> date | None:
     """When the official page was seen presenting this as the current call.
 
     ``None`` when the deadline had already passed on the day it was read: the
     page was showing a closed call, and that is evidence of closure rather than
     of an open one.
     """
+    # A dateless cycle has no deadline to have passed. A rolling call seen open
+    # on the day it was read was open; one whose next call is unannounced has
+    # nothing to observe, and the state carries that rather than a date.
+    if deadline is None:
+        return verified_on
     return verified_on if deadline >= verified_on else None
 
 
@@ -260,12 +326,38 @@ def _festival_cycles(
     for subject_id, claim in sorted(deadlines.items()):
         value = str(claim.value or "").strip()
         if value.upper() in NOT_A_DATE:
-            problems.append(
-                ParseProblem(
-                    GATE_FESTIVAL_SECTION, subject_id, value.upper(),
-                    "no dated section, so there is no cycle to rank",
-                    field="section_deadlines",
-                    needs_correction=False,
+            state = value.upper()
+            # A festival with rolling submissions has no dated section because
+            # it does not need one — several in the master read exactly this
+            # way. It becomes one cycle for the festival as a whole, carrying
+            # the state, rather than disappearing.
+            #
+            # NOT_ANNOUNCED and UNKNOWN produce a cycle too, and the engine
+            # reaches NOT_ACTIONABLE for them. That is the difference between a
+            # producer being told a festival exists but has announced nothing,
+            # and never hearing of it.
+            # Section rules are deliberately not parsed here. They are keyed by
+            # section name and this cycle has none, so every line would report
+            # "no verified deadline to attach to" — noise about a record that
+            # is behaving correctly. The cycle carries no rules, which leaves
+            # `rules_complete` false and the engine at POTENTIALLY_ELIGIBLE
+            # with conditions to confirm. That is the accurate position.
+            cycles.append(
+                ParsedCycle(
+                    kind=FESTIVAL,
+                    record_id=subject_id,
+                    # No section: the claim named none, and inventing "All
+                    # sections" would assert a scope nobody verified.
+                    section_name="",
+                    cycle_deadline=None,
+                    cycle_state=state,
+                    source_url=claim.source_url,
+                    verified_on=claim.verified_on,
+                    observed_open_on=(
+                        claim.verified_on if state == "ROLLING" else None
+                    ),
+                    premiere_requirement=None,
+                    rules=(),
                 )
             )
             continue
@@ -400,20 +492,25 @@ def _market_cycles(
     cycles: list[ParsedCycle] = []
     for subject_id, claim in sorted(deadlines.items()):
         value = str(claim.value or "").strip()
-        if value.upper() in NOT_A_DATE:
-            problems.append(ParseProblem(
-                GATE_MARKET_CYCLE, subject_id, value.upper(),
-                "is a real answer and not a cycle the engine can rank",
-                field="deadline", needs_correction=False,
-            ))
-            continue
-        deadline, problem = _deadline_in(value)
-        if deadline is None:
-            problems.append(ParseProblem(
-                GATE_MARKET_CYCLE, subject_id, value,
-                problem or "has no deadline", field="deadline",
-            ))
-            continue
+        # A track whose call has no date is still a track. It used to be
+        # dropped here, which is why 203 staged market records and 132 verified
+        # cycles produced an empty Section 09: the commonest honest answer a
+        # researcher can give about a lab — "the next call is not announced" —
+        # removed the opportunity from the system entirely.
+        #
+        # The state travels with the cycle instead. ROLLING is actionable;
+        # NOT_ANNOUNCED and UNKNOWN reach the engine's own NOT_ACTIONABLE, which
+        # is the state that exists for exactly this.
+        state = value.upper() if value.upper() in NOT_A_DATE else DATED
+        deadline: date | None = None
+        if state == DATED:
+            deadline, problem = _deadline_in(value)
+            if deadline is None:
+                problems.append(ParseProblem(
+                    GATE_MARKET_CYCLE, subject_id, value,
+                    problem or "has no deadline", field="deadline",
+                ))
+                continue
 
         rules: list[ParsedRule] = []
         gate_claim = gates.get(subject_id)
@@ -439,9 +536,15 @@ def _market_cycles(
                 # the cycle carries the track's own name and nothing more.
                 section_name="",
                 cycle_deadline=deadline,
+                cycle_state=state,
                 source_url=claim.source_url,
                 verified_on=claim.verified_on,
-                observed_open_on=_observed_open(deadline, claim.verified_on),
+                # Only a rolling call is observed open without a date. An
+                # unannounced one has nothing to have been seen open.
+                observed_open_on=(
+                    _observed_open(deadline, claim.verified_on)
+                    if state in (DATED, "ROLLING") else None
+                ),
                 rules=tuple(rules),
             )
         )
