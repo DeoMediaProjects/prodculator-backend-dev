@@ -161,10 +161,20 @@ def match_festivals(
     comparable_production_festivals: list[str] | None = None,
     target_audience: list[str] | None = None,
     audience_segments: list[str] | None = None,
+    audience_in_conflict: bool = False,
 ) -> list[FestivalMatch]:
     target_audience = target_audience or []
     audience_segments = audience_segments or []
-    declared_audience = {a.lower() for a in target_audience + audience_segments}
+    # Emptied, not ignored downstream, so no branch below can score on it by
+    # accident. A kids/family checkbox on an adult screenplay is how two
+    # children's festivals were recommended for a workplace comedy-drama: the
+    # overlap was real and the premise was not. The declared value is still
+    # kept and still reported; it just stops earning matches while the script
+    # contradicts it.
+    declared_audience = (
+        set() if audience_in_conflict
+        else {a.lower() for a in target_audience + audience_segments}
+    )
 
     comparable_production_festivals = comparable_production_festivals or []
     if completion_date is not None:
@@ -305,11 +315,17 @@ def match_distributors(
     audience_skew: str | None = None,
     production_territories: list[str] | None = None,
     production_format: str | None = None,
+    audience_in_conflict: bool = False,
 ) -> list[DistributorMatch]:
     target_audience = target_audience or []
     audience_segments = audience_segments or []
     production_territories = production_territories or []
-    declared_audience = {a.lower() for a in target_audience + audience_segments}
+    # Same rule as the festival matcher, and worth more here: the audience
+    # overlap is the single largest non-genre signal a distributor can score.
+    declared_audience = (
+        set() if audience_in_conflict
+        else {a.lower() for a in target_audience + audience_segments}
+    )
     _ = audience_skew  # banked for B2B / future matching — intentionally unused in scoring
 
     wanted_format = canonical_format(production_format)

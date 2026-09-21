@@ -139,6 +139,10 @@ _LONG_SHOOT_THRESHOLDS: dict[str, int] = {
 _LONG_SHOOT_DEFAULT = 26
 
 
+#: Distinguishes "not computed yet" from a computed None.
+_UNSET = object()
+
+
 def _join(names: list[str]) -> str:
     """"A", "A and B", "A, B and C" — for territory names inside a sentence."""
     if not names:
@@ -227,6 +231,9 @@ class ReportBuilder:
     _commercial_cache: Any = None
     #: Same reason as above: tests build instances with ``__new__``.
     _opportunity_cache: Any = None
+    #: ``_UNSET`` rather than None, because None is a real answer here: it
+    #: means the declared audience and the screenplay agree.
+    _audience_conflict_cache: Any = _UNSET
 
     def __init__(
         self,
@@ -2409,6 +2416,7 @@ class ReportBuilder:
 
         # Shoot duration context flag
         self._inject_shoot_duration_flag(summary)
+        self._inject_audience_conflict_flag(summary)
 
         # Deadline proximity
         self._inject_deadline_flags(summary)
@@ -2495,6 +2503,25 @@ class ReportBuilder:
         key_flags = summary.setdefault("keyFlags", [])
         if not any("must film in" in f.lower() for f in key_flags):
             key_flags.insert(0, note)
+
+    def _inject_audience_conflict_flag(self, summary: dict) -> None:
+        """Surface a declared audience the screenplay contradicts.
+
+        The suppression in the matchers is half the rule; this is the other
+        half. "It must not let that single field override contradictory script
+        evidence WITHOUT SURFACING THE CONFLICT" — a producer whose matches
+        quietly changed, with no way to see why, has been given a different
+        report and no reason for it.
+
+        It resolves nothing. The producer knows which of the two is wrong and
+        the engine does not.
+        """
+        conflict = self._audience_conflict()
+        if conflict is None:
+            return
+        key_flags = summary.setdefault("keyFlags", [])
+        if not any("target audience" in f.lower() for f in key_flags):
+            key_flags.append(conflict.note)
 
     def _inject_shoot_duration_flag(self, summary: dict) -> None:
         """Add keyFlag for unusually long shoot durations."""
@@ -3335,6 +3362,23 @@ class ReportBuilder:
                     countries.add(t.label if t else val)
         return countries
 
+    def _audience_conflict(self):
+        """The declared audience the screenplay contradicts, or None.
+
+        Computed once: three sections read it and a second evaluation could
+        disagree with the first, which for a rule about contradictions would
+        be its own joke.
+        """
+        if self._audience_conflict_cache is not _UNSET:
+            return self._audience_conflict_cache
+        from app.modules.reports.audience_conflict import detect_audience_conflict
+
+        self._audience_conflict_cache = detect_audience_conflict(
+            self._declared_audience_fields()["target_audience"],
+            self.script_analysis,
+        )
+        return self._audience_conflict_cache
+
     def _declared_audience_fields(self) -> dict:
         """Intake audience/representation fields — declared-only, never inferred."""
         raw_ta = self.request_metadata.get("target_audience") or []
@@ -3401,6 +3445,7 @@ class ReportBuilder:
             comparable_production_festivals=None,
             target_audience=declared["target_audience"],
             audience_segments=declared["audience_segments"],
+            audience_in_conflict=self._audience_conflict() is not None,
         )
 
         entries: list[dict] = []
@@ -3455,6 +3500,7 @@ class ReportBuilder:
             audience_skew=declared["audience_skew"],
             production_territories=production_territories,
             production_format=self._production_format,
+            audience_in_conflict=self._audience_conflict() is not None,
         )
 
         # The frozen Sales/Distribution engine first. It scores strategic fit
