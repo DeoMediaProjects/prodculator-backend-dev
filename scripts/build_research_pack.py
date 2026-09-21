@@ -108,6 +108,61 @@ def incentive_rows(conn: sa.Connection) -> list[dict]:
     return rows
 
 
+# ── Gate 1b: grants migration decisions the freeze left open ────────────────
+
+_CTX_MIGRATION = [
+    "legacy_title",
+    "legacy_territory",
+    "current_decision",
+    "canonical_action",
+    "verification_status",
+    "resolved_live_id",
+    "source_url",
+]
+
+
+def migration_decision_rows(conn: sa.Connection) -> list[dict]:
+    """Legacy mappings whose decision is NEEDS_REVIEW.
+
+    `v2_migration` parses a mapping's decision into a set of actions and
+    reports "Mapping decision is unresolved and needs human review" when
+    NEEDS_REVIEW is among them. Those rows are what a person has to settle:
+    every other mapping already says what becomes of the record.
+
+    The answer goes in `value` and must be one of the actions the migration
+    encodes — CORRECT, RECLASSIFY, ARCHIVE, SPLIT, SUSPEND, REPLACE. Anything
+    else is reported as unrecognised and changes nothing, which is the
+    behaviour that makes a typo visible instead of silent.
+    """
+    if "grant_legacy_id_map" not in set(sa.inspect(conn).get_table_names()):
+        return []
+    rows = []
+    for r in conn.execute(
+        sa.text(
+            "SELECT legacy_id, legacy_title, legacy_territory, decision, "
+            "canonical_action, verification_status, resolved_live_id, "
+            "official_source FROM grant_legacy_id_map "
+            "WHERE upper(coalesce(decision, '')) LIKE '%NEEDS_REVIEW%' "
+            "OR coalesce(decision, '') = '' ORDER BY legacy_title"
+        )
+    ):
+        rows.append(
+            {
+                "gate": "GRANTS_MIGRATION_DECISION",
+                "subject_id": str(r[0]),
+                "field": "decision",
+                "legacy_title": r[1] or "",
+                "legacy_territory": r[2] or "",
+                "current_decision": r[3] or "",
+                "canonical_action": r[4] or "",
+                "verification_status": r[5] or "",
+                "resolved_live_id": r[6] or "",
+                "source_url": r[7] or "",
+            }
+        )
+    return rows
+
+
 # ── Gate 2: grants split parents ─────────────────────────────────────────────
 
 _CTX_SPLIT = ["parent_title", "territory", "funding_body", "source_url"]
@@ -543,6 +598,11 @@ def main() -> None:
                 args.out / "gate_1_incentive_classification.csv",
                 incentive_rows(conn),
                 _CTX_INCENTIVE,
+            )
+            counts["gate_1b_grants_migration_decisions"] = _write(
+                args.out / "gate_1b_grants_migration_decisions.csv",
+                migration_decision_rows(conn),
+                _CTX_MIGRATION,
             )
             counts["gate_2_grants_split_parents"] = _write(
                 args.out / "gate_2_grants_split_parents.csv",

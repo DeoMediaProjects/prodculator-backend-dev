@@ -305,3 +305,67 @@ def test_a_blank_row_corrects_nothing(tmp_path):
     build(needs_correction(engine, today=TODAY)).save(path)
     claims, unreadable = read_corrections(path)
     assert claims == [] and unreadable == []
+
+
+# ── Sorting the rejections, without solving them ─────────────────────────────
+
+
+class TestClassify:
+    """The category is read off the parser's reason, not guessed from the data.
+
+    A wrong category costs a moment's reading. A wrong section match would
+    silently rewrite a festival's eligibility rule, which is why the one
+    genuinely ambiguous case stays blank.
+    """
+
+    def test_a_section_mismatch_is_named_and_not_solved(self):
+        from scripts.build_correction_workbook import classify
+
+        kind, fix = classify(
+            "section 'Short' has no verified deadline to attach to; "
+            "dated sections are: features (>=40 min), shorts (<40 min)"
+        )
+        assert kind == "section name matches no dated section"
+        # Deliberately empty. "Short" against "shorts (<40 min)" is almost
+        # certainly the same section, and almost certainly is the standard
+        # that turned BC Arts Council into California Arts Council.
+        assert fix == ""
+
+    def test_a_project_fact_is_flagged_as_a_taxonomy_question(self):
+        from scripts.build_correction_workbook import classify
+
+        kind, fix = classify("'completion_year' is not a Project DNA field")
+        assert kind == "possible new Project DNA field"
+        # Adding a DNA field is a change to locked decision C's taxonomy, so
+        # this raises the question and proposes no answer.
+        assert fix == ""
+
+    def test_an_application_requirement_gets_a_concrete_rewrite(self):
+        from scripts.build_correction_workbook import classify
+
+        kind, fix = classify("'attendance_required' is not a Project DNA field")
+        assert kind == "probably manual_confirmation"
+        assert "manual_confirmation attendance_required" in fix
+
+    def test_a_value_in_the_field_position_is_a_grammar_fix(self):
+        from scripts.build_correction_workbook import classify
+
+        for token in ("2027-02-01", "ineligible", "required", "2026"):
+            kind, fix = classify(f"'{token}' is not a Project DNA field")
+            assert kind == "value where a field belongs", token
+            assert "is the value, not the field" in fix
+
+    def test_prose_in_one_of_says_what_to_use_instead(self):
+        from scripts.build_correction_workbook import classify
+
+        kind, fix = classify("one_of was given prose; use manual_confirmation for it")
+        assert kind == "prose in one_of"
+        # one_of iterates its expected value, so a sentence is compared
+        # character by character and FAILs — and FAIL is INELIGIBLE_CONFIRMED,
+        # which removes the opportunity entirely.
+        assert "character by character" in fix
+
+    def test_an_unrecognised_reason_claims_nothing(self):
+        from scripts.build_correction_workbook import classify
+
+        assert classify("something nobody has seen before") == ("", "")

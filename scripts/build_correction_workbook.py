@@ -34,6 +34,7 @@ so the fact that someone once read the source differently survives the fix.
 from __future__ import annotations
 
 import argparse
+import re
 import os
 import sys
 from collections import defaultdict
@@ -56,6 +57,8 @@ CONTEXT_COLUMNS = (
     "review_state",
     "lines_that_produce_nothing",
     "sections_with_a_dated_deadline",
+    "what_kind_of_fix",
+    "mechanical_rewrite",
     "current_value",
 )
 CORRECTION_COLUMNS = (
@@ -99,6 +102,78 @@ INSTRUCTIONS = [
     ("    DB_URL=... venv/Scripts/python scripts/build_correction_workbook.py \\", False),
     ("        --apply THIS.xlsx --commit", False),
 ]
+
+
+# ── What kind of fix each rejection needs ───────────────────────────────────
+#
+# Sorting, not solving. The category is read off the parser's own reason text,
+# which is a fact about why the line was refused rather than an opinion about
+# what it should say. `mechanical_rewrite` is filled only where the fix
+# follows from the grammar and needs no knowledge of the programme.
+#
+# Section-name matches are deliberately NOT suggested, for the reason this
+# file's own docstring gives: "Competition" against "Feature Competition" is
+# almost certainly the same section, and "almost certainly" is the standard
+# that turned BC Arts Council into California Arts Council. The dated sections
+# sit in the column beside it; the person who wrote both lists settles it.
+
+#: Tokens that look like a fact about the production. These are the plausible
+#: candidates for a new Project DNA field, and adding one is a taxonomy change
+#: under locked decision C — so this suggests the question, never the answer.
+_LOOKS_LIKE_A_PROJECT_FACT: frozenset[str] = frozenset({
+    "career_stage", "completion_year", "completion_within_months",
+    "footage_complete_pct", "territory_focus", "format_target",
+    "origin", "director_identity", "applicant_type", "background",
+})
+
+#: A value sitting where a field name belongs — a year, a date, a verdict.
+#: The line's word order is wrong, which is a grammar fix.
+_VALUE_NOT_FIELD = re.compile(r"^(\d{4}(-\d{2}-\d{2})?|ineligible|required|not_required)$")
+
+_FIELD_IN_REASON = re.compile(r"'([^']+)' is not a Project DNA field")
+
+
+def classify(reason: str) -> tuple[str, str]:
+    """(what kind of fix, a mechanical rewrite or empty) for one reason."""
+    lowered = reason.lower()
+
+    if "one_of was given prose" in lowered:
+        return (
+            "prose in one_of",
+            "Use manual_confirmation for this line: one_of iterates its value, "
+            "so a sentence is compared character by character and fails.",
+        )
+
+    if "is not 'section name | rule'" in lowered:
+        return ("line has no section prefix", "Rewrite as: Section name | rule")
+
+    match = _FIELD_IN_REASON.search(reason)
+    if match:
+        token = match.group(1)
+        if _VALUE_NOT_FIELD.match(token.strip().lower()):
+            return (
+                "value where a field belongs",
+                f"{token!r} is the value, not the field. Rewrite as "
+                f"'field operator {token}'.",
+            )
+        if token in _LOOKS_LIKE_A_PROJECT_FACT:
+            return (
+                "possible new Project DNA field",
+                "",  # A taxonomy change is a decision, not a rewrite.
+            )
+        return (
+            "probably manual_confirmation",
+            f"This reads as something a person checks rather than a fact the "
+            f"engine holds. Try: manual_confirmation {token}",
+        )
+
+    if "has no verified deadline to attach to" in lowered:
+        return ("section name matches no dated section", "")
+
+    if "which one closes is not decidable" in lowered:
+        return ("tiered deadline the parser could not read", "")
+
+    return ("", "")
 
 
 def _subject_names(engine: sa.Engine) -> dict[str, str]:
@@ -226,6 +301,14 @@ def build(rows) -> Workbook:
                 claim.review_state,
                 "\n".join(trouble),
                 "\n".join(sections) or "(none carry a date)",
+                # Deduplicated and kept in order: a claim whose eight rules all
+                # fail the same way needs one category, not eight.
+                "\n".join(dict.fromkeys(
+                    kind for kind, _ in map(classify, trouble) if kind
+                )),
+                "\n".join(dict.fromkeys(
+                    fix for _, fix in map(classify, trouble) if fix
+                )),
                 str(claim.value or ""),
             )
             for column, value in enumerate(values, start=1):
