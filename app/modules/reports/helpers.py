@@ -829,3 +829,31 @@ def clean_source(source: Any) -> str:
         if p and not any(tok in p.lower() for tok in _SUPPRESSED_SOURCE_TOKENS)
     ]
     return " / ".join(kept) if kept else "Industry sources"
+
+
+#: Packages that buy the deeper display slice. Every frozen handoff states the
+#: same rule — Grants lock 9, Festival lock 17, and the same split in the
+#: Markets/Labs/WIP and Sales/Distribution freezes: Single and Professional see
+#: five, Producer and Studio see ten.
+_DEEP_DISPLAY_PACKAGES = frozenset({"producer", "studio"})
+
+
+def package_display_limit(package: Any) -> int:
+    """How many recommendations this package may be shown in one section.
+
+    Entitlement is a display depth, never a matching depth. Every package
+    matches and ranks the same full universe; this slices what is rendered, and
+    the report states the count it selected from so the slice is visible rather
+    than silent.
+
+    Unknown or missing packages get the shallower limit. A report that renders
+    five is recoverable; one that renders ten to someone who bought five has
+    already given away the product.
+
+    The same rule is written inline inside ``festival_strategy`` and
+    ``commercial_strategy``, which are frozen engine code. Point those here
+    when they are cut over, rather than adding a fourth copy now.
+    """
+    if not package:
+        return 5
+    return 10 if str(package).strip().lower() in _DEEP_DISPLAY_PACKAGES else 5

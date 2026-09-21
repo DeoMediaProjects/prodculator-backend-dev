@@ -23,6 +23,7 @@ from app.modules.reports.helpers import (
     STALE_DAYS,
     STATIC_FX_TO_GBP,
     TERMINAL_LABELS,
+    package_display_limit,
     prog_name,
     index_incentives,
     index_incentives_by_territory,
@@ -146,6 +147,31 @@ def _join(names: list[str]) -> str:
         return names[0]
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
+
+def _sourced_values(sourced: Any) -> list[str]:
+    """The list inside a ``SourcedValue``, or nothing.
+
+    A value whose source has gone stale or was never recorded reads as absent
+    rather than as an empty answer. ``SourcedValue.known`` owns that rule, and
+    calling it here keeps the report from rendering a fact the engine would
+    have refused to score.
+    """
+    from datetime import date as _date
+
+    if sourced is None or not sourced.known(_date.today()):
+        return []
+    value = sourced.value
+    if isinstance(value, (list, tuple, set)):
+        return sorted(str(v) for v in value if v)
+    return [str(value)] if value else []
+
+
+def _sourced_scalar(sourced: Any) -> str | None:
+    """One value from a ``SourcedValue``, or None. Same staleness rule."""
+    values = _sourced_values(sourced)
+    return values[0] if values else None
+
+
 # HETV constants (must match validator)
 _HETV_TV_FORMATS = frozenset({"TV Series", "Limited Series", "Mini-Series", "Docuseries"})
 _HETV_MIN_PER_HOUR_GBP = 1_000_000.0
@@ -193,6 +219,13 @@ class ReportBuilder:
     finalise the report.
     """
 
+    #: Declared on the class, not only in ``__init__``. Several tests build an
+    #: instance with ``ReportBuilder.__new__`` and set only the few attributes
+    #: the path under test needs, so an instance attribute alone would make any
+    #: section that reads this raise AttributeError there — a failure about
+    #: test construction rather than about the behaviour being tested.
+    _commercial_cache: Any = None
+
     def __init__(
         self,
         datasets: dict,
@@ -214,6 +247,10 @@ class ReportBuilder:
             request_metadata, self.project_dna
         )
         self.warnings: list[str] = []
+        #: Comparables + Sales/Distribution, built once by _commercial_strategies.
+        #: None = not attempted, False = attempted and unavailable. The two are
+        #: kept apart so a catalogue that cannot load is not retried per section.
+        self._commercial_cache: Any = None
         #: The Grants Engine v2 result. Built once in _build_funding_opportunities and
         #: read by every other grant-consuming section, so none of them re-queries the
         #: table or re-derives eligibility (Logic Guide §3).
@@ -573,23 +610,15 @@ class ReportBuilder:
             self.warnings.append(f"[orchestration-v2] opportunities: {exc}")
 
         # ── Comparables and sales, from the approved commercial catalogue ────
+        # The same objects section 12 renders, not a second build. Two builds
+        # could disagree, and a comparison payload that disagrees with the
+        # report it is meant to be compared against is worse than none.
         try:
-            from app.modules.reports.commercial_catalogue import (
-                load_commercial_catalogue,
-            )
-            from app.modules.reports.commercial_strategy import (
-                build_sales_distribution_strategy,
-                match_comparables,
-            )
-
-            catalogue = load_commercial_catalogue(engine, today=today)
-            comparables = match_comparables(
-                catalogue.comparables,
-                self.project_dna,
-                today=today,
-                projectfacts_snapshot_id=snapshot.snapshot_id,
-                projectfacts_version=snapshot.version,
-            )
+            strategies = self._commercial_strategies()
+            if strategies is None:
+                raise RuntimeError("commercial catalogue unavailable")
+            comparables = strategies.comparables
+            sales = strategies.sales
             add(
                 "comparables",
                 COMMERCIAL_ENGINE_VERSION,
@@ -607,15 +636,6 @@ class ReportBuilder:
                 ],
             )
 
-            sales = build_sales_distribution_strategy(
-                catalogue.companies,
-                self.project_dna,
-                package=package,
-                today=today,
-                comparables=comparables,
-                projectfacts_snapshot_id=snapshot.snapshot_id,
-                projectfacts_version=snapshot.version,
-            )
             add(
                 "sales",
                 COMMERCIAL_ENGINE_VERSION,
@@ -2731,6 +2751,17 @@ class ReportBuilder:
                 # the reader is the one deciding how much weight to give it.
                 "formatVerified": format_known,
                 "relevanceDescription": None,  # AI fills
+                # What this title is evidence OF. `comparable_productions` is a
+                # production/location dataset — territory, scale, infrastructure
+                # — and the regression report is explicit that those titles
+                # "should not automatically drive buyer recommendations".
+                #
+                # Stated on the row rather than left implicit, so a reader can
+                # see that a film offered as a production analogue is not also
+                # being offered as evidence about buyers. Commercial-comparable
+                # evidence is a separate, sourced title-company relationship
+                # graph, and only the Sales/Distribution engine reads it.
+                "roles": ["PRODUCTION_COMPARABLE"],
             }
 
             # Budget gap caveat for AI prompt context
@@ -3382,7 +3413,12 @@ class ReportBuilder:
         )
 
         entries: list[dict] = []
-        for m in matches[:5]:
+        # Package entitlement, not a constant. The frozen handoff's README is
+        # explicit — "Do not hardcode 5/10 display limits in the matcher" — and
+        # a hardcoded five served a Producer or Studio report half the festivals
+        # it was sold. Matching and ranking already run over the full universe;
+        # this is the display slice alone.
+        for m in matches[:package_display_limit(self._package())]:
             fest = m.festival
             reasons = [r for r in m.reasons if not r.startswith("Tier:")]
             entries.append({
@@ -3430,9 +3466,25 @@ class ReportBuilder:
             production_format=self._production_format,
         )
 
+        # The frozen Sales/Distribution engine first. It scores strategic fit
+        # from sourced company rules and states an access route, where the
+        # legacy matcher below scores a hand-maintained distributors table and
+        # cannot say how a producer would reach anyone on it.
+        #
+        # Falls back rather than replacing outright, which grants did not need
+        # to do. Grants cut over against 338 rows whose gating had already run
+        # in production; the commercial catalogue was empty here until its
+        # staging landed, and an empty section in a paid report is worse than a
+        # labelled older one. `commercialEngine` on every entry says which
+        # produced it, so the two are never confused, and the fallback goes
+        # once a real run shows the v2 engine returning companies.
+        v2_entries = self._v2_distributor_recommendations()
+        if v2_entries:
+            return v2_entries
+
         recommended_names = {f["name"] for f in festival_recs}
         entries: list[dict] = []
-        for m in matches[:4]:
+        for m in matches[:package_display_limit(self._package())]:
             dist = m.distributor
             scouted = sorted(
                 set(dist.get("scouts_festivals") or []) & recommended_names
@@ -3451,6 +3503,136 @@ class ReportBuilder:
                 "whyMatched": ". ".join(reasons) + "." if reasons else "",
                 "verified": bool(dist.get("verified_at")),
                 "sourceUrl": dist.get("source_url"),
+                "commercialEngine": "legacy",
+            })
+        return entries
+
+    def _commercial_strategies(self):
+        """Comparables and Sales/Distribution, built once per report.
+
+        Memoised because three sections read them — comparables, distributors
+        and the orchestration payload — and the catalogue is three table reads
+        plus a full match. ``False`` is the cached failure, distinct from
+        ``None`` meaning "not attempted yet", so a catalogue that cannot load
+        is not retried once per section.
+
+        Every failure is swallowed to a warning. This decorates a report; it
+        does not get to fail one.
+        """
+        if self._commercial_cache is not None:
+            return self._commercial_cache or None
+
+        from datetime import date as _date
+        from types import SimpleNamespace
+
+        # Every engine consumes the same ProjectFacts snapshot (locked decision
+        # I.1). Without one there is nothing legitimate to compute against, so
+        # this declines rather than building a result whose provenance it
+        # cannot state.
+        snapshot = getattr(self, "project_facts_snapshot", None)
+        if snapshot is None:
+            self._commercial_cache = False
+            return None
+
+        try:
+            from app.core.db import engine
+            from app.modules.reports.commercial_catalogue import (
+                load_commercial_catalogue,
+            )
+            from app.modules.reports.commercial_strategy import (
+                build_sales_distribution_strategy,
+                match_comparables,
+            )
+
+            today = _date.today()
+            catalogue = load_commercial_catalogue(engine, today=today)
+            comparables = match_comparables(
+                catalogue.comparables,
+                self.project_dna,
+                today=today,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            sales = build_sales_distribution_strategy(
+                catalogue.companies,
+                self.project_dna,
+                package=self._package(),
+                today=today,
+                comparables=comparables,
+                projectfacts_snapshot_id=snapshot.snapshot_id,
+                projectfacts_version=snapshot.version,
+            )
+            self._commercial_cache = SimpleNamespace(
+                catalogue=catalogue, comparables=comparables, sales=sales
+            )
+        except Exception as exc:  # noqa: BLE001 — see docstring
+            logger.warning("commercial strategies unavailable: %s", exc)
+            # getattr, because this runs on partially-built instances too and a
+            # failure handler that raises turns a degraded section into a
+            # failed report.
+            warnings = getattr(self, "warnings", None)
+            if warnings is not None:
+                warnings.append(f"[commercial] {exc}")
+            self._commercial_cache = False
+            return None
+
+        return self._commercial_cache
+
+    def _v2_distributor_recommendations(self) -> list[dict]:
+        """Section 12 from the frozen Sales/Distribution engine, or nothing.
+
+        Returns [] rather than raising on any failure. A producer's report must
+        not fail because the commercial catalogue could not be read; the
+        caller then renders the legacy section and the warning says why.
+
+        Three things this carries that the legacy matcher cannot:
+
+        ``matchState``          the engine's own status, so a strategic fit is
+                                never read as buyer interest. The freeze is
+                                explicit that this scores profile fit and never
+                                probability of acquisition.
+        ``accessRoute``         how a producer would actually reach the
+                                company. Unknown stays unknown — a company
+                                whose route nobody established is not thereby
+                                approachable.
+        ``conditionsToConfirm`` what is still unresolved, instead of a score
+                                that quietly absorbed the gaps.
+
+        Entitlement is applied inside the engine, over the full ranked
+        universe, so there is no slice here.
+        """
+        strategy = self._commercial_strategies()
+        if strategy is None or not strategy.sales.recommendations:
+            return []
+
+        entries: list[dict] = []
+        for match in strategy.sales.recommendations:
+            profile = match.profile
+            entries.append({
+                "name": profile.name,
+                "primaryMarket": None,
+                "territoryReach": sorted(_sourced_values(profile.rights_territories)),
+                "rightsType": _sourced_scalar(profile.role),
+                "budgetTierFit": None,
+                # Deliberately absent. The legacy table carried a free-text
+                # submission line; this engine states a canonical access route
+                # instead, and inventing prose from it would put words in a
+                # company's mouth.
+                "submissionProcess": None,
+                "scoutsRecommendedFestivals": [],
+                "matchScore": match.score,
+                "matchedOn": list(match.reasons),
+                "whyMatched": " ".join(match.reasons),
+                "verified": profile.rules_complete,
+                "sourceUrl": None,
+                "commercialEngine": "v2",
+                # v2 additions, mirroring how the grants cutover added
+                # eligibilityStatus and caveats beside the legacy shape.
+                "matchState": match.status,
+                "accessRoute": profile.access_route,
+                "strategicFitScore": match.fit.score,
+                "componentsKnown": match.fit.components_known,
+                "conditionsToConfirm": list(match.conditions_to_confirm),
             })
         return entries
 

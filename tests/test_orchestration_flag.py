@@ -208,8 +208,14 @@ def test_the_flag_on_marks_the_report_even_when_it_worked(monkeypatch):
     # information the key is for.
     assert "orchestrationV2Warnings" in report
     assert "orchestrationV2" in report
+    # Every warning says which step produced it. Not all of them say
+    # "[orchestration-v2]": the comparables and sales strategies are built by a
+    # helper section 12 also calls, so a catalogue it cannot read is reported
+    # as "[commercial]" wherever it is noticed first. Attributability is the
+    # invariant — a bare string in this list would leave a reader unable to
+    # tell which engine failed.
     assert all(
-        warning.startswith("[orchestration-v2]")
+        warning.startswith(("[orchestration-v2]", "[commercial]"))
         for warning in report["orchestrationV2Warnings"]
     )
 

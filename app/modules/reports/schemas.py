@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.territories import resolve_territory
 from app.modules.incentives.v2_contracts import (
@@ -585,6 +585,12 @@ class ComparableProductionEntry(BaseModel):
     source: str
     relevanceDescription: str | None = None
     budgetUSD: int | None = None
+    #: What this title is evidence of. A production comparable demonstrates a
+    #: territory, scale or infrastructure route and proves nothing about
+    #: buyers; a commercial comparable needs a sourced title-company
+    #: relationship before it may influence Sales & Distribution. Defaulted
+    #: rather than required so an older stored report still validates.
+    roles: list[str] = Field(default_factory=lambda: ["PRODUCTION_COMPARABLE"])
 
 
 class WeatherLogistic(BaseModel):
