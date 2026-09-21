@@ -46,7 +46,6 @@ def _build_settings(**overrides) -> Settings:
         "ANTHROPIC_TIMEOUT_SCRIPT_CHUNK": None,
         "ANTHROPIC_TIMEOUT_SCRIPT_AGGREGATE": None,
         "ANTHROPIC_TIMEOUT_REPORT": None,
-        "SCRIPT_ANALYSIS_CHUNKED_ENABLED": False,
     }
     defaults.update(overrides)
     return _as_settings(SimpleNamespace(**defaults))
@@ -150,7 +149,6 @@ def test_call_anthropic_uses_stage_specific_values(monkeypatch):
 def test_build_script_chunks_respects_max_chunks_and_overlap(monkeypatch):
     monkeypatch.setattr("app.modules.scripts.service.Anthropic", _FakeAnthropic)
     settings = _build_settings(
-        SCRIPT_ANALYSIS_CHUNKED_ENABLED=True,
         SCRIPT_CHUNK_TARGET_TOKENS=40,
         SCRIPT_CHUNK_OVERLAP_TOKENS=10,
         SCRIPT_MAX_CHUNKS=3,
@@ -173,7 +171,7 @@ def test_build_script_chunks_respects_max_chunks_and_overlap(monkeypatch):
 
 def test_analyze_prefers_chunked_path_when_enabled(monkeypatch):
     monkeypatch.setattr("app.modules.scripts.service.Anthropic", _FakeAnthropic)
-    settings = _build_settings(SCRIPT_ANALYSIS_CHUNKED_ENABLED=True)
+    settings = _build_settings()
     service = ScriptAnalysisService(settings)
 
     class _SentinelAnalysis:
@@ -349,7 +347,7 @@ def test_extract_analysis_metadata_reads_structured_payload(monkeypatch):
 
 def test_analyze_with_meta_records_chunked_fallback(monkeypatch):
     monkeypatch.setattr("app.modules.scripts.service.Anthropic", _FakeAnthropic)
-    service = ScriptAnalysisService(_build_settings(SCRIPT_ANALYSIS_CHUNKED_ENABLED=True))
+    service = ScriptAnalysisService(_build_settings())
 
     monkeypatch.setattr(service, "_analyze_chunked", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")))
 

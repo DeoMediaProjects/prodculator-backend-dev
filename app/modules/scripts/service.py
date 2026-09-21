@@ -644,16 +644,20 @@ class ScriptAnalysisService:
             logger.info("Script analysis cache hit: title=%s key=%s", script_title, cache_key[:12])
             return result, {**meta, "mode": "cache", "cacheHit": True}
 
-        chunked_enabled = bool(getattr(self.settings, "SCRIPT_ANALYSIS_CHUNKED_ENABLED", False))
+        # `SCRIPT_ANALYSIS_CHUNKED_ENABLED` no longer selects anything: the
+        # legacy hard-trim path it switched away from has been removed, so
+        # chunked analysis is the only path and runs whatever the flag says.
+        #
+        # It used to warn on every analysis that the flag was being ignored.
+        # That is a deployment note shouted once per report, at WARNING, into
+        # the log an operator reads to find real failures — and it told them
+        # about a setting they cannot usefully change. `chunkedEnabled` stays in
+        # the metadata as a constant so the metrics series keeps its shape.
         analysis_meta: dict[str, Any] = {
             "mode": "chunked",
-            "chunkedEnabled": chunked_enabled,
+            "chunkedEnabled": True,
             "fallbackUsed": False,
         }
-        if not chunked_enabled:
-            logger.warning(
-                "SCRIPT_ANALYSIS_CHUNKED_ENABLED is false, but legacy hard-trim path is removed; running chunked analysis anyway"
-            )
 
         try:
             result = self._analyze_chunked(script_content, script_title)

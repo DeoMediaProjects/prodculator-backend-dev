@@ -13,7 +13,6 @@ def _settings(api_key: str = "sk-test-dummy") -> Settings:
         ANTHROPIC_API_KEY=api_key,
         ANTHROPIC_MODEL="claude-test",
         ANTHROPIC_HEALTHCHECK_TIMEOUT=5,
-        SCRIPT_ANALYSIS_CHUNKED_ENABLED=True,
     )
 
 

@@ -1,7 +1,15 @@
 FROM python:3.11-slim
 
+# WeasyPrint renders the PDF through Pango, which asks fontconfig for the font
+# list. Fontconfig caches that under $XDG_CACHE_HOME, defaulting to
+# $HOME/.cache — and the runtime user below is created with --no-create-home,
+# so there is no $HOME to write to. Every report logged "Fontconfig error: No
+# writable cache directories" a dozen times and rebuilt the cache from scratch.
+#
+# Pointed at a directory created and owned by that user further down.
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/app/.cache
 
 WORKDIR /app
 
@@ -47,7 +55,7 @@ COPY alembic ./alembic
 # writable for development; production should use S3.
 RUN groupadd --gid 10001 prodculator \
     && useradd --uid 10001 --gid prodculator --no-create-home --shell /usr/sbin/nologin prodculator \
-    && mkdir -p /app/storage \
+    && mkdir -p /app/storage /app/.cache/fontconfig \
     && chown -R prodculator:prodculator /app
 
 USER prodculator

@@ -280,7 +280,11 @@ class Settings(BaseSettings):
     REPORT_ORCHESTRATION_V2_ENABLED: bool = False
 
     # Script analysis chunking controls.
-    SCRIPT_ANALYSIS_CHUNKED_ENABLED: bool = False
+    # `SCRIPT_ANALYSIS_CHUNKED_ENABLED` was removed: the legacy hard-trim path
+    # it selected away from is gone, so chunking is the only path and the flag
+    # decided nothing. Deployed environments that still set it are unaffected —
+    # `extra="ignore"` below means an unrecognised key is dropped rather than
+    # rejected — so the variable can be deleted from Railway at leisure.
     SCRIPT_CHUNK_TARGET_TOKENS: int = 1800
     SCRIPT_CHUNK_OVERLAP_TOKENS: int = 200
     SCRIPT_MAX_CHUNKS: int = 80
