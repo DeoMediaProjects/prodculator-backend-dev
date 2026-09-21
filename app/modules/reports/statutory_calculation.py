@@ -96,9 +96,9 @@ _SINGLE_INPUT_ENGINES: dict[str, str] = {
 #:   ``QUALIFIED_LABOUR``  pays on labour alone. Canada's CPTC counts Canadian
 #:                         labour expenditure, a fraction of territory spend and
 #:                         not a predictable one.
-#:   ``CORE_LOWER_OF``     compares two figures. One number cannot answer it,
-#:                         and substituting the same number for both would make
-#:                         the comparison vacuous.
+#:   ``CORE_LOWER_OF``     compares two figures, so it is seeded from two —
+#:                         see ``CORE_SEEDABLE_ENGINES`` below. Substituting one
+#:                         number for both would make the comparison vacuous.
 #:   ``QAPE`` / ``QNZPE``  are statutory definitions with their own exclusions.
 #:   ``MULTI_BUCKET``      is a sum of programme-specific buckets.
 #:
@@ -108,6 +108,24 @@ _SINGLE_INPUT_ENGINES: dict[str, str] = {
 SPEND_SEEDABLE_ENGINES: frozenset[str] = frozenset(
     {"ELIGIBLE_LOCAL_SPEND", "TIERED_SPEND"}
 )
+
+#: The two inputs ``CORE_LOWER_OF`` compares.
+LOCAL_CORE = "local_core_expenditure"
+GLOBAL_CORE = "global_core_expenditure"
+
+#: Engines whose base is a comparison of two core-expenditure figures, both of
+#: which the producer has effectively already given: the spend they stated for
+#: this territory, and the production budget.
+#:
+#: Excluded from ``SPEND_SEEDABLE_ENGINES`` because one number cannot answer a
+#: comparison of two, and handled separately rather than not at all because
+#: four of the five United Kingdom programmes are this engine — so a UK-led
+#: production filled in every field the form emphasises and still got no
+#: figure at all.
+CORE_SEEDABLE_ENGINES: frozenset[str] = frozenset({"CORE_LOWER_OF"})
+
+#: Every engine this module can stand a figure in for.
+SEEDABLE_ENGINES: frozenset[str] = SPEND_SEEDABLE_ENGINES | CORE_SEEDABLE_ENGINES
 
 
 def seed_spend_from_scenario(
@@ -128,11 +146,18 @@ def seed_spend_from_scenario(
     is not a return to it: the figure used here is one the producer typed, for
     this territory, in answer to "expected spend here".
 
-    Seeding happens only when every one of these holds:
+    Two shapes, by engine:
 
-    * the engine's base is the territory's qualifying spend (see
-      ``SPEND_SEEDABLE_ENGINES``);
-    * no statutory figure was supplied for that key, so nothing is overwritten;
+    * ``SPEND_SEEDABLE_ENGINES`` take the territory spend as their single base.
+    * ``CORE_SEEDABLE_ENGINES`` compare two core-expenditure figures, and take
+      the territory spend as the local one and the production budget as the
+      global one.
+
+    Either way, seeding happens only when both of these hold:
+
+    * no statutory figure was supplied for that key, so nothing is overwritten
+      and a producer who typed one figure keeps it while the other is stood in
+      for;
     * ``scenario_spend_source`` is ``user_entered``. An imported budget line or
       an unknown provenance is not the producer answering the question, and
       ``unknown`` is what the wizard sends for a field left blank.
@@ -143,10 +168,7 @@ def seed_spend_from_scenario(
     the least visible way to be wrong.
     """
     normalised = (engine or "").strip().upper()
-    if normalised not in SPEND_SEEDABLE_ENGINES or not scenario:
-        return supplied, ()
-    key = _SINGLE_INPUT_ENGINES.get(normalised)
-    if key is None or resolve_statutory_amount(supplied.get(key)) is not None:
+    if not scenario or normalised not in SEEDABLE_ENGINES:
         return supplied, ()
 
     source = (
@@ -159,10 +181,46 @@ def seed_spend_from_scenario(
     raw = scenario.get("scenario_spend")
     if raw is None:
         raw = scenario.get("scenarioSpend")
-    amount = resolve_statutory_amount(raw)
-    if amount is None:
+    spend = resolve_statutory_amount(raw)
+
+    seeded: dict[str, float] = {}
+
+    if normalised in SPEND_SEEDABLE_ENGINES:
+        key = _SINGLE_INPUT_ENGINES.get(normalised)
+        if key and spend is not None and resolve_statutory_amount(supplied.get(key)) is None:
+            seeded[key] = spend
+
+    elif normalised in CORE_SEEDABLE_ENGINES:
+        # The two figures this engine compares, from the two the producer has
+        # already given. Local core expenditure is the spend they stated for
+        # this territory; global core expenditure is the production budget.
+        #
+        # Both overstate. Core expenditure excludes financing costs, some
+        # above-the-line and anything outside the statutory definition, so
+        # neither is the certified figure — which is exactly why they are
+        # recorded as planning assumptions and why the wizard leaves both
+        # fields editable above them.
+        #
+        # Seeded independently. A producer who typed their real local core
+        # costs and left the global one blank keeps their figure and gets the
+        # budget standing in for the other, rather than all or nothing.
+        if spend is not None and resolve_statutory_amount(
+            supplied.get(LOCAL_CORE)
+        ) is None:
+            seeded[LOCAL_CORE] = spend
+        budget = resolve_statutory_amount(
+            scenario.get("production_budget")
+            if scenario.get("production_budget") is not None
+            else scenario.get("productionBudget")
+        )
+        if budget is not None and resolve_statutory_amount(
+            supplied.get(GLOBAL_CORE)
+        ) is None:
+            seeded[GLOBAL_CORE] = budget
+
+    if not seeded:
         return supplied, ()
-    return {**supplied, key: amount}, (key,)
+    return {**supplied, **seeded}, tuple(sorted(seeded))
 
 
 @dataclass(frozen=True)
@@ -349,12 +407,21 @@ def resolve_statutory_qualifying_spend(
     # works from. A reader who sees only "qualifying spend $8,000,000" cannot
     # tell a certified cost statement from a figure typed into an intake form.
     if seeded:
+        stood_in = {
+            "eligible_local_spend": "the expected spend stated for this territory",
+            "local_core_expenditure": "the expected spend stated for this territory",
+            "global_core_expenditure": "the declared production budget",
+        }
+        named = ", ".join(
+            f"{key.replace('_', ' ')} from {stood_in.get(key, 'a figure already supplied')}"
+            for key in seeded
+        )
         notes.append(
-            "No statutory cost breakdown was supplied for this programme, so "
-            "the expected spend stated for this territory is used as the "
-            "qualifying base. That is a planning assumption rather than "
-            "certified eligible spend, and the figure will move once the "
-            "actual qualifying costs are known."
+            f"No statutory cost breakdown was supplied for this programme, so "
+            f"{named}. Those are planning assumptions rather than certified "
+            f"figures — core expenditure excludes financing and some "
+            f"above-the-line costs — and the amount will move once the actual "
+            f"qualifying costs are known."
         )
 
     # ── The programme's own caps on that base ────────────────────────────────

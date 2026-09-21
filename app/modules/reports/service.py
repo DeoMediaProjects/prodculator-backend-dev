@@ -1110,8 +1110,9 @@ class ReportService:
         # label rather than by ISO code because that is what the incentive rows
         # and the builder both use; the canonical IDs travel inside the entry for
         # anything that needs them.
-        datasets["_territory_scenarios"] = self._index_territory_scenarios(
-            request_metadata
+        datasets["_territory_scenarios"] = self._attach_production_budget(
+            self._index_territory_scenarios(request_metadata),
+            request_metadata,
         )
 
         self._pre_compute_territory_financials(datasets)
@@ -1719,6 +1720,12 @@ class ReportService:
         # supplied. It was copied through unconverted while nothing downstream
         # read it, which would have made a USD scenario spend arrive in a GBP
         # calculation and overstate the rebate by the whole exchange rate.
+        # CORE_LOWER_OF compares local core expenditure against a percentage
+        # of global core expenditure, and the producer has effectively given
+        # both: the territory spend and the production budget. The budget is
+        # already GBP here, which is the currency everything below this line
+        # is in, so it travels on the scenario for the seeder to find.
+        converted_scenario["production_budget"] = budget_gbp
         scenario_spend = scenario.get("scenario_spend")
         if scenario_spend is not None:
             try:
@@ -1804,6 +1811,24 @@ class ReportService:
                 continue
             resolved = resolve_territory(label)
             indexed[resolved.label if resolved else label] = scenario
+        return indexed
+
+    @staticmethod
+    def _attach_production_budget(indexed: dict, request_metadata: dict) -> dict:
+        """Put the declared budget on each scenario, for the core-expenditure seed.
+
+        ``calculation_status`` only asks whether an input is known, never how
+        much, so the declared amount in its own currency is enough here. The
+        calculator gets the GBP-converted figure from ``_statutory_base_for``,
+        which is the layer that holds the rate.
+
+        Never overwrites a budget already on the scenario.
+        """
+        budget = request_metadata.get("budget_amount")
+        if budget is None:
+            return indexed
+        for scenario in indexed.values():
+            scenario.setdefault("production_budget", budget)
         return indexed
 
     @staticmethod

@@ -17,7 +17,7 @@ they are would be misleading even before an answer is given.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace, field
 from typing import Any, Iterable
 
 from app.modules.incentives.v2_contracts import (
@@ -133,6 +133,14 @@ def resolve_questions(
     questions: dict[str, ScenarioQuestion] = {}
     programmes: list[dict[str, Any]] = []
     non_calculating: list[dict[str, Any]] = []
+    #: Inputs some PRIMARY programme needs. A supplementary uplift is an extra
+    #: a production may or may not claim — the United Kingdom's VFX credit
+    #: stacks onto AVEC rather than replacing it — so an input only it uses is
+    #: not something the producer must supply to get a figure. Counting those
+    #: as required made the UK card read "0/3 provided" when two answers would
+    #: have produced a rebate, which tells a producer the form is longer than
+    #: it is.
+    needed_by_primary: set[str] = set()
 
     for row in in_scope:
         programme_id = row.get("programme_id")
@@ -155,12 +163,16 @@ def resolve_questions(
             })
             continue
 
+        supplementary = bool(row.get("is_supplementary"))
+
         for declared in declared_by_programme.get(programme_id, []):
             key = declared.get("input_key")
             if key not in CANONICAL_INPUTS:
                 # A key outside the registry has no engine that reads it, so a
                 # question for it could never change a result.
                 continue
+            if not supplementary and bool(declared.get("required_for_exact", True)):
+                needed_by_primary.add(key)
             existing = questions.get(key)
             if existing is None:
                 questions[key] = ScenarioQuestion(
@@ -186,6 +198,13 @@ def resolve_questions(
                     used_by=existing.used_by + (name,),
                 )
 
+    # Settled once, after every programme has been seen. Doing it inside the
+    # loop would mark an input optional because the supplementary programme
+    # using it happened to be read first.
+    questions = {
+        key: replace(question, required_for_exact=key in needed_by_primary)
+        for key, question in questions.items()
+    }
     ordered = sorted(
         questions.values(),
         key=lambda q: (not q.required_for_exact, q.input_key),
