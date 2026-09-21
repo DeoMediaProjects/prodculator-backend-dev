@@ -95,9 +95,15 @@ class TestSeeding:
 class TestRefusals:
     @pytest.mark.parametrize("engine", ["QUALIFIED_LABOUR", "CORE_LOWER_OF", "QAPE", "MULTI_BUCKET"])
     def test_engines_whose_base_is_not_territory_spend_still_decline(self, engine):
-        # Canada's CPTC pays on Canadian labour; the UK compares two core
-        # expenditure figures. Seeding either from one spend number produces a
-        # confident answer wrong by millions, which is worse than no answer.
+        # None of these can be answered by a territory spend alone. Canada's
+        # CPTC pays on Canadian labour, a fraction of it; QAPE has its own
+        # statutory exclusions; MULTI_BUCKET sums programme-specific buckets.
+        #
+        # CORE_LOWER_OF is here too, and is the interesting one: it IS seeded,
+        # but from two figures. This scenario carries no production budget, so
+        # the global limb stays unknown and the comparison cannot run —
+        # seeding one side of a comparison is not seeding it. See
+        # TestTheCoreExpenditurePair for the case where both arrive.
         assert engine not in SPEND_SEEDABLE_ENGINES
         assert resolve_statutory_qualifying_spend(_row(engine), _scenario()) is None
 
@@ -202,3 +208,82 @@ class TestCurrency:
         assert self._base(_scenario()).amount == pytest.approx(
             self._base(typed).amount, rel=1e-9
         )
+
+
+class TestTheCoreExpenditurePair:
+    """CORE_LOWER_OF is seeded from two figures, because it compares two.
+
+    Four of the five United Kingdom programmes are this engine, so excluding
+    it meant a UK-led production that filled in every field the form
+    emphasises still got no figure at all.
+    """
+
+    UK = {
+        "program": "AVEC (Enhanced/IFTC)",
+        "status": "active",
+        "qs_engine_type": "CORE_LOWER_OF",
+        "qualifying_spend_cap_pct": 80,
+    }
+
+    def _scenario(self, **over):
+        return {
+            "territory": "United Kingdom",
+            "scenario_spend": 7_000_000,
+            "scenario_spend_source": "user_entered",
+            "production_budget": 9_000_000,
+            "calculation_inputs": [],
+            **over,
+        }
+
+    def test_the_comparison_runs_on_both_stood_in_figures(self):
+        # min(local 7M, 80% of global 9M = 7.2M) = 7M, the local limb binding.
+        result = resolve_statutory_qualifying_spend(self.UK, self._scenario())
+        assert result is not None
+        assert result.amount == 7_000_000
+        assert result.inputs_used == {
+            "local_core_expenditure": 7_000_000.0,
+            "global_core_expenditure": 9_000_000.0,
+        }
+
+    def test_the_global_limb_can_bind(self):
+        # A territory spend close to the whole budget: 80% of it is lower.
+        result = resolve_statutory_qualifying_spend(
+            self.UK, self._scenario(scenario_spend=9_000_000)
+        )
+        assert result is not None
+        assert result.amount == 7_200_000
+
+    def test_a_typed_figure_is_kept_and_only_the_other_stood_in_for(self):
+        # All or nothing would discard a producer's real number because they
+        # had not also supplied the second.
+        scenario = self._scenario(calculation_inputs=[{
+            "input_key": "local_core_expenditure",
+            "amount": 5_000_000,
+            "input_status": "known",
+        }])
+        result = resolve_statutory_qualifying_spend(self.UK, scenario)
+        assert result is not None
+        assert result.inputs_used["local_core_expenditure"] == 5_000_000
+        assert result.inputs_used["global_core_expenditure"] == 9_000_000
+
+    def test_the_note_names_what_each_figure_came_from(self):
+        note = resolve_statutory_qualifying_spend(self.UK, self._scenario()).note
+        assert "planning assumptions" in note
+        assert "declared production budget" in note
+        assert "expected spend stated for this territory" in note
+
+    def test_no_budget_leaves_the_global_limb_unknown(self):
+        # And therefore no figure: the comparison cannot run on one side.
+        scenario = self._scenario(production_budget=None)
+        assert resolve_statutory_qualifying_spend(self.UK, scenario) is None
+
+    def test_it_still_holds_at_conditional_not_estimated(self):
+        out = resolve_calculation_status({}, self.UK, scenario=self._scenario())
+        assert out["calculationStatus"] == "CONDITIONAL"
+        assert out["calculationCarriesFigure"] is True
+
+    def test_a_blank_spend_seeds_nothing(self):
+        scenario = self._scenario(
+            scenario_spend=None, scenario_spend_source="unknown"
+        )
+        assert resolve_statutory_qualifying_spend(self.UK, scenario) is None
