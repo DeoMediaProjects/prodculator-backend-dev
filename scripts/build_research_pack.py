@@ -136,16 +136,26 @@ def migration_decision_rows(conn: sa.Connection) -> list[dict]:
     """
     if "grant_legacy_id_map" not in set(sa.inspect(conn).get_table_names()):
         return []
+    # The migration's own parser decides which rows are open, not a LIKE on
+    # the decision text. NEEDS_TERMS and NEEDS_REVIEW_NONMATCHABLE both resolve
+    # to NEEDS_REVIEW, so matching the literal string missed a row the
+    # reconciler was reporting — the sheet and the reconciler have to agree
+    # about what is outstanding or the research misses one.
+    from app.modules.grants.v2_migration import NEEDS_REVIEW, parse_decision
+
     rows = []
     for r in conn.execute(
         sa.text(
             "SELECT legacy_id, legacy_title, legacy_territory, decision, "
             "canonical_action, verification_status, resolved_live_id, "
-            "official_source FROM grant_legacy_id_map "
-            "WHERE upper(coalesce(decision, '')) LIKE '%NEEDS_REVIEW%' "
-            "OR coalesce(decision, '') = '' ORDER BY legacy_title"
+            "official_source FROM grant_legacy_id_map ORDER BY legacy_title"
         )
     ):
+        actions, unrecognised = parse_decision(r[3])
+        # Unrecognised actions are open too: the migration encodes nothing for
+        # them, so the row is as unsettled as one that says NEEDS_REVIEW.
+        if NEEDS_REVIEW not in actions and not unrecognised and actions:
+            continue
         rows.append(
             {
                 "gate": "GRANTS_MIGRATION_DECISION",
