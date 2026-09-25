@@ -1,10 +1,38 @@
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+import redis as sync_redis
+
+from app.core.config import get_settings
 from app.core.database_client import DatabaseClient
 from app.core.timestamps import is_on_or_after
 from app.modules.payments.plan_catalog import list_price_usd_cents
+
+logger = logging.getLogger(__name__)
+
+
+def _bust_user_cache(user_id: str) -> None:
+    """Drop the cached profile get_current_user serves for five minutes.
+
+    The cache is read before the is_blocked check, so without this a blocked
+    user keeps working until it expires, and a credit change shows the old
+    balance for as long.
+    """
+    try:
+        # Bounded: an unreachable Redis must not stall the admin's request.
+        r = sync_redis.from_url(
+            get_settings().REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=1,
+            socket_timeout=1,
+        )
+        r.delete(f"user_profile:{user_id}")
+        r.close()
+    except Exception as exc:
+        logger.warning("Cache bust failed for user %s: %s", user_id, exc)
+
 
 PLAN_DISPLAY_NAMES: dict[str, str] = {
     "free": "Free",
@@ -313,12 +341,14 @@ class SubscriberAdminService:
             "is_blocked": True,
             "blocked_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", user_id).execute()
+        _bust_user_cache(user_id)
 
     def unblock_subscriber(self, user_id: str) -> None:
         self.supabase.table("users").update({
             "is_blocked": False,
             "blocked_at": None,
         }).eq("id", user_id).execute()
+        _bust_user_cache(user_id)
 
     def adjust_credits(self, user_id: str, adjustment: int) -> dict[str, Any]:
         user_result = (
@@ -344,4 +374,5 @@ class SubscriberAdminService:
             .single()
             .execute()
         )
+        _bust_user_cache(user_id)
         return updated.data

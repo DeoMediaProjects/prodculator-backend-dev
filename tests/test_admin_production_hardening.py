@@ -2,8 +2,9 @@
 
 Each test names a way the portal could be abused before the fix: a support
 admin reading password hashes, a revoked refresh token minting new sessions,
-a low-privilege role blocking paying users or approving rebate figures, and a
-stale cookie locking an admin out of sign-in.
+a low-privilege role blocking paying users or approving rebate figures, a
+stale cookie locking an admin out of sign-in, and a block that waited out the
+profile cache.
 """
 import asyncio
 from types import SimpleNamespace
@@ -21,6 +22,15 @@ from app.modules.auth.service import AuthService
 from tests.admin_fakes import FakeSupabase
 
 HEADERS = {"Authorization": "Bearer token"}
+
+
+@pytest.fixture(autouse=True)
+def _no_redis(monkeypatch):
+    # Subscriber actions drop the cached profile in Redis. Keep that off the
+    # network; the tests that care about it install their own fake.
+    import app.modules.subscribers.service as subscriber_service
+
+    monkeypatch.setattr(subscriber_service.sync_redis, "from_url", lambda *a, **k: _RecordingRedis())
 
 
 def _as(role: str):
@@ -274,3 +284,55 @@ def test_a_stale_access_cookie_does_not_block_admin_sign_in(client, path, body):
     response = client.post(path, json=body)
 
     assert response.status_code == 401
+
+
+# ── profile cache after a subscriber action ──────────────────────────────────
+
+
+class _RecordingRedis:
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    def delete(self, key):
+        self.deleted.append(key)
+
+    def close(self):
+        pass
+
+
+@pytest.mark.parametrize(
+    "path, body",
+    [
+        ("/api/admin/subscribers/u1/block", None),
+        ("/api/admin/subscribers/u1/unblock", None),
+        ("/api/admin/subscribers/u1/credit", {"adjustment": 5}),
+    ],
+)
+def test_a_subscriber_action_drops_the_cached_profile(client, monkeypatch, path, body):
+    # get_current_user serves the cached profile before it checks is_blocked,
+    # so a block that leaves the cache in place does nothing for five minutes.
+    import app.modules.subscribers.service as subscriber_service
+
+    redis = _RecordingRedis()
+    monkeypatch.setattr(subscriber_service.sync_redis, "from_url", lambda *a, **k: redis)
+    store = _users_store()
+    client.app.dependency_overrides[get_current_admin] = _as("senior_admin")
+    client.app.dependency_overrides[get_supabase] = lambda: store
+
+    assert client.post(path, headers=HEADERS, json=body).status_code == 200
+    assert redis.deleted == ["user_profile:u1"]
+
+
+def test_a_block_still_lands_when_redis_is_down(client, monkeypatch):
+    import app.modules.subscribers.service as subscriber_service
+
+    def unreachable(*_a, **_k):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(subscriber_service.sync_redis, "from_url", unreachable)
+    store = _users_store()
+    client.app.dependency_overrides[get_current_admin] = _as("senior_admin")
+    client.app.dependency_overrides[get_supabase] = lambda: store
+
+    assert client.post("/api/admin/subscribers/u1/block", headers=HEADERS).status_code == 200
+    assert store.store["users"][0]["is_blocked"] is True

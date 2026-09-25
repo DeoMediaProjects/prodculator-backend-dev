@@ -129,6 +129,10 @@ app = FastAPI(
     description="Production Intelligence Platform Backend",
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
+    # The schema maps every admin route and its payload, so it goes with the
+    # docs pages: served in DEBUG only. Turning off the docs alone left it
+    # public at the default /openapi.json.
+    openapi_url="/openapi.json" if settings.DEBUG else None,
     lifespan=lifespan,
 )
 

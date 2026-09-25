@@ -237,6 +237,9 @@ class DistributorsService:
             .single()
             .execute()
         )
+        # Matches approve_change, which the router turns into a 404.
+        if not result.data:
+            raise ValueError("Pending change not found")
         return _pending_change_from_db(result.data)
 
     # ── Sync trigger ──────────────────────────────────────────────────────────
