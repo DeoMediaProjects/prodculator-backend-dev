@@ -200,7 +200,11 @@ async def signout(
     if not token:
         return SuccessResponse(message="Signed out successfully")
     try:
-        await auth_service.sign_out(token, redis_client=get_redis())
+        await auth_service.sign_out(
+            token,
+            redis_client=get_redis(),
+            refresh_token=extract_refresh_token(request, None),
+        )
         return SuccessResponse(message="Signed out successfully")
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))

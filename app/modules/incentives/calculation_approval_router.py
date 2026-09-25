@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_current_admin, get_supabase
+from app.core.permissions import RequirePermission
 from app.modules.admin.schemas import AdminUser
 from app.modules.incentives.calculation_approval import (
     ALLOWED_STATUSES,
@@ -81,7 +82,9 @@ async def approval_queue(
 async def set_calculation_status(
     programme_id: str,
     body: SetStatusRequest,
-    admin: AdminUser = Depends(get_current_admin),
+    # Changes which rebate figure every later report states, so it takes the
+    # same permission as editing the incentive data itself.
+    admin: AdminUser = Depends(RequirePermission("canEditIncentiveData")),
     service: CalculationApprovalService = Depends(_service),
 ) -> dict:
     """Promote or demote one programme's calculation gate.

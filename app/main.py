@@ -157,6 +157,8 @@ _CSRF_EXEMPT_PATHS = frozenset({
     "/api/auth/resend-verification",
     "/api/auth/reset-password",
     "/api/auth/reset-password/confirm",
+    "/api/admin/auth/signin",
+    "/api/admin/auth/refresh",
 })
 
 

@@ -83,14 +83,23 @@ def get_business_metrics_dashboard_service(
     return BusinessMetricsDashboardService(supabase, settings)
 
 
+# Credentials a users row carries that no admin screen needs. The list reads
+# every column, and GET /users is open to every admin role, so without this
+# the response hands each user's password hash to a support admin.
+_USER_SECRET_COLUMNS = frozenset({"password_hash", "google_uid"})
+
+
 def _list_resource(
     service: AdminService,
     *,
     table_name: str,
     limit: int,
     offset: int,
+    omit_columns: frozenset[str] = frozenset(),
 ) -> AdminListResponse:
     items, total = service.list_table(table_name, limit=limit, offset=offset)
+    if omit_columns:
+        items = [{k: v for k, v in row.items() if k not in omit_columns} for row in items]
     return AdminListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -102,7 +111,13 @@ async def list_users(
     service: AdminService = Depends(get_admin_service),
 ):
     try:
-        return _list_resource(service, table_name="users", limit=limit, offset=offset)
+        return _list_resource(
+            service,
+            table_name="users",
+            limit=limit,
+            offset=offset,
+            omit_columns=_USER_SECRET_COLUMNS,
+        )
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch users")
 

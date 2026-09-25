@@ -11,7 +11,7 @@ NOW = datetime.now(timezone.utc).isoformat()
 
 
 def _admin_user() -> AdminUser:
-    return AdminUser(id="admin-1", email="admin@example.com", name="Admin")
+    return AdminUser(id="admin-1", email="admin@example.com", name="Admin", role="senior_admin")
 
 
 def _seed() -> FakeSupabase:

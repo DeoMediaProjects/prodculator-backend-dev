@@ -236,7 +236,7 @@ class TestEndpoint:
         store = _store()
         client.app.dependency_overrides[get_supabase] = lambda: _Supabase(store)
         client.app.dependency_overrides[get_current_admin] = lambda: type(
-            "Admin", (), {"email": "admin@prodculator.com", "id": "admin-1"},
+            "Admin", (), {"email": "admin@prodculator.com", "id": "admin-1", "role": "data_admin"},
         )()
         yield client
         client.app.dependency_overrides.clear()
