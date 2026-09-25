@@ -16,7 +16,7 @@ class CookieAuthService:
             user=AuthUser(id="user-1", email="user@example.com"),
         )
 
-    async def sign_out(self, token, redis_client=None):
+    async def sign_out(self, token, redis_client=None, refresh_token=None):
         return None
 
 

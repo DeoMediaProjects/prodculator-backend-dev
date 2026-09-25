@@ -10,6 +10,7 @@ from app.core.security import (
     create_refresh_token,
     create_verification_token,
     decode_token,
+    is_token_revoked,
     revoke_token,
 )
 from app.modules.admin.schemas import AdminTokenResponse, AdminUser
@@ -18,6 +19,25 @@ from app.modules.auth.schemas import AuthUser, SignUpResponse, TokenResponse
 from app.modules.email.service import EmailService
 
 logger = logging.getLogger(__name__)
+
+
+async def _reject_revoked_refresh(claims: dict[str, Any] | None, redis_client: Any | None) -> None:
+    """Refuse a refresh token that rotation or sign-out has already revoked.
+
+    Rotation and sign-out write the old refresh token's jti to the blocklist,
+    so a refresh has to read it too, or a stolen refresh token outlives both
+    for its full lifetime. A Redis outage fails open, as the access-token
+    check in dependencies.py does: the token still expires on schedule.
+    """
+    if not redis_client or not claims:
+        return
+    try:
+        revoked = await is_token_revoked(claims, redis_client)
+    except Exception as exc:
+        logger.warning("Refresh-token revocation check skipped (Redis unavailable): %s", exc)
+        return
+    if revoked:
+        raise ValueError("Refresh token has been revoked")
 
 
 class AuthService:
@@ -245,6 +265,8 @@ class AuthService:
         if not auth_response.session:
             raise ValueError("Failed to refresh session")
 
+        await _reject_revoked_refresh(auth_response.claims, redis_client)
+
         if redis_client and auth_response.claims:
             # Best-effort, same rationale as refresh_session: a Redis outage
             # must not 500 every admin session refresh.
@@ -287,16 +309,42 @@ class AuthService:
             user=admin,
         )
 
-    async def sign_out(self, token: str, redis_client: Any | None = None) -> None:
-        """Sign out the current user and revoke their access token."""
+    async def _revoke_refresh_on_sign_out(
+        self, refresh_token: str | None, redis_client: Any | None
+    ) -> None:
+        # Revoking only the access token leaves the refresh token able to mint
+        # a new one for the rest of its lifetime. An already-expired or
+        # malformed refresh token has nothing left to revoke.
+        if not refresh_token or not redis_client:
+            return
+        try:
+            await revoke_token(refresh_token, redis_client, self.supabase.settings)
+        except ValueError:
+            pass
+        except Exception as exc:
+            logger.warning("Refresh-token revocation on sign-out skipped: %s", exc)
+
+    async def sign_out(
+        self,
+        token: str,
+        redis_client: Any | None = None,
+        refresh_token: str | None = None,
+    ) -> None:
+        """Sign out the current user and revoke their access and refresh tokens."""
         user_response = self.supabase.auth.get_user(token)
         if not user_response or not user_response.user:
             raise ValueError("Invalid or expired token")
         if redis_client:
             await revoke_token(token, redis_client, self.supabase.settings)
+        await self._revoke_refresh_on_sign_out(refresh_token, redis_client)
 
-    async def sign_out_admin(self, token: str, redis_client: Any | None = None) -> None:
-        """Sign out the current admin and revoke their access token."""
+    async def sign_out_admin(
+        self,
+        token: str,
+        redis_client: Any | None = None,
+        refresh_token: str | None = None,
+    ) -> None:
+        """Sign out the current admin and revoke their access and refresh tokens."""
         user_response = self.supabase.auth.get_admin(token)
         if not user_response or not user_response.user:
             raise ValueError("Invalid or expired token")
@@ -305,6 +353,7 @@ class AuthService:
                 await revoke_token(token, redis_client, self.supabase.settings)
             except Exception:
                 pass  # Redis unavailable — degrade gracefully, token expires naturally
+        await self._revoke_refresh_on_sign_out(refresh_token, redis_client)
 
     def get_user(self, token: str) -> AuthUser:
         """Verify token and return user profile."""
@@ -516,6 +565,8 @@ class AuthService:
         auth_response = self.supabase.auth.refresh_session(refresh_token)
         if not auth_response.session:
             raise ValueError("Failed to refresh session")
+
+        await _reject_revoked_refresh(auth_response.claims, redis_client)
 
         if redis_client and auth_response.claims:
             # Revocation of the rotated-out token is defence-in-depth, not the

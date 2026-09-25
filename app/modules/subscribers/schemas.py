@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PlanDistributionItem(BaseModel):
@@ -60,6 +60,10 @@ class SubscriberListResponse(BaseModel):
     counts: StatusCounts
 
 
+# Bounded so one typo cannot hand out an unlimited stock of paid reports.
+MAX_CREDIT_ADJUSTMENT = 100
+
+
 class CreditAdjustRequest(BaseModel):
-    adjustment: int
+    adjustment: int = Field(ge=-MAX_CREDIT_ADJUSTMENT, le=MAX_CREDIT_ADJUSTMENT)
     reason: str | None = None

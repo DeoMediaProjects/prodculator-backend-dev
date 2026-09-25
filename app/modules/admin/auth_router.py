@@ -81,7 +81,11 @@ async def admin_signout(
         return SuccessResponse(message="Signed out successfully")
     redis = get_redis_client(settings)
     try:
-        await auth_service.sign_out_admin(token, redis_client=redis)
+        await auth_service.sign_out_admin(
+            token,
+            redis_client=redis,
+            refresh_token=extract_refresh_token(request, None),
+        )
         return SuccessResponse(message="Signed out successfully")
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))

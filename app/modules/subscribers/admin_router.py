@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.audit import AuditedAPIRoute
 from app.core.database_client import DatabaseClient
 from app.core.dependencies import get_current_admin, get_supabase
+from app.core.permissions import RequirePermission
 from app.core.schemas import SuccessResponse
 from app.modules.admin.schemas import AdminUser
 from app.modules.subscribers.schemas import (
@@ -92,10 +93,13 @@ async def list_subscribers(
         raise HTTPException(status_code=500, detail="Failed to fetch subscribers")
 
 
+# Blocking a paying user and granting report credits are account and money
+# actions, so they need more than a signed-in admin. Reading the list stays
+# open to every role, because support answers questions from it.
 @router.post("/{user_id}/block", response_model=SuccessResponse)
 async def block_subscriber(
     user_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageSubscribers")),
     service: SubscriberAdminService = Depends(get_subscriber_service),
 ):
     try:
@@ -109,7 +113,7 @@ async def block_subscriber(
 @router.post("/{user_id}/unblock", response_model=SuccessResponse)
 async def unblock_subscriber(
     user_id: str,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageSubscribers")),
     service: SubscriberAdminService = Depends(get_subscriber_service),
 ):
     try:
@@ -124,7 +128,7 @@ async def unblock_subscriber(
 async def adjust_credits(
     user_id: str,
     body: CreditAdjustRequest,
-    _: AdminUser = Depends(get_current_admin),
+    _: AdminUser = Depends(RequirePermission("canManageSubscribers")),
     service: SubscriberAdminService = Depends(get_subscriber_service),
 ):
     try:
