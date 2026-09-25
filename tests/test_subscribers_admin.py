@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pytest
 from fastapi import HTTPException
 
 from app.core.dependencies import get_current_admin, get_supabase
@@ -8,6 +9,23 @@ from tests.admin_fakes import FakeSupabase
 
 HEADERS = {"Authorization": "Bearer token"}
 NOW = datetime.now(timezone.utc).isoformat()
+
+
+@pytest.fixture(autouse=True)
+def _no_redis(monkeypatch):
+    # Block, unblock and credit drop the cached profile; keep that off the
+    # network. The cache bust itself is covered in
+    # test_admin_production_hardening.py.
+    import app.modules.subscribers.service as subscriber_service
+
+    class _Redis:
+        def delete(self, _key):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(subscriber_service.sync_redis, "from_url", lambda *a, **k: _Redis())
 
 
 def _admin_user() -> AdminUser:

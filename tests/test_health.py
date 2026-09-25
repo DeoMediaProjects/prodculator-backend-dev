@@ -16,10 +16,14 @@ def test_readiness_check_reports_database(client):
     assert payload["checks"]["database"] is True
 
 
+def test_the_schema_is_not_served_outside_debug(client):
+    # Tests run with DEBUG=false, as production does.
+    assert client.get("/openapi.json").status_code == 404
+    assert client.get("/api/docs").status_code == 404
+
+
 def test_openapi_includes_core_paths(client):
-    response = client.get("/openapi.json")
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+    paths = client.app.openapi()["paths"]
 
     assert "/api/health" in paths
     assert "/api/auth/signup" in paths
