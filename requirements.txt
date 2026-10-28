@@ -54,4 +54,6 @@ openpyxl>=3.1.0
 # Account logo upload: decodes and re-encodes user-supplied images so the bytes
 # served back are never the bytes uploaded. Previously present only as a
 # transitive dependency, which is too load-bearing to leave unpinned.
-Pillow==12.3.0
+# 13.0.0 fixes every advisory pip-audit reports against 12.3.0, several in code
+# this upload reaches (JPEG decoding, mode conversion, APNG/Exif parsing).
+Pillow==13.0.0
