@@ -54,7 +54,19 @@ def _resolve_catalog_price(
     billing_cycle: str = "monthly",
 ) -> str:
     """Resolve a purchasable price exclusively from server configuration."""
+    supplied = (supplied_price_id or "").strip()
     if plan_type is None:
+        # The single report has one price per currency, and the website sends
+        # the price without the currency, which then defaults to USD. Matching
+        # against that currency's price alone rejected every GBP buyer's
+        # correct £35 price. Any configured single-report price is purchasable;
+        # the currency only picks the price when none was supplied.
+        single_prices = {
+            getattr(settings, f"STRIPE_PRICE_SINGLE_{cur}", "") or ""
+            for cur in ("USD", "GBP")
+        } - {""}
+        if supplied in single_prices:
+            return supplied
         expected = getattr(settings, f"STRIPE_PRICE_SINGLE_{currency.upper()}", "") or ""
     else:
         expected = _resolve_base_subscription_price(
@@ -62,7 +74,6 @@ def _resolve_catalog_price(
         )
     if not expected:
         raise HTTPException(status_code=503, detail="Requested product is not configured")
-    supplied = (supplied_price_id or "").strip()
     if supplied and supplied != expected:
         raise HTTPException(status_code=400, detail="Invalid price for the selected product")
     return expected
