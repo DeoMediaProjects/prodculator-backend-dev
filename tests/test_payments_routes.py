@@ -110,6 +110,10 @@ class _CapturingStripeService:
         self.received["test_billing"] = test_billing
         return {"session_id": "cs_resolved", "url": "https://checkout.stripe.test/resolved"}
 
+    def create_credit_checkout_session(self, price_id, user_email, user_id):
+        self.received["price_id"] = price_id
+        return {"session_id": "cs_credit", "url": "https://checkout.stripe.test/credit"}
+
 
 def _settings_with_prices():
     return Settings(
@@ -121,6 +125,65 @@ def _settings_with_prices():
         STRIPE_PRICE_PROFESSIONAL_USD="price_prof_usd_live",
         STRIPE_PRICE_PROFESSIONAL_ANNUAL_GBP="price_prof_annual_gbp_live",
     )
+
+
+def _post_credit_checkout(client, auth_user, body):
+    capturing = _CapturingStripeService()
+    client.app.dependency_overrides[get_current_user] = lambda: auth_user
+    client.app.dependency_overrides[get_stripe_service] = lambda: capturing
+    client.app.dependency_overrides[get_settings] = _settings_with_prices
+    resp = client.post(
+        "/api/payments/credit-checkout",
+        headers={"Authorization": "Bearer token"},
+        json=body,
+    )
+    client.app.dependency_overrides.pop(get_settings, None)
+    return resp, capturing
+
+
+def test_credit_checkout_accepts_gbp_price_without_currency(client, auth_user):
+    """The live bug: the website sends the single-report price but no currency,
+    so currency defaulted to USD and the correct GBP price was rejected with
+    'Invalid price for the selected product' — no GBP buyer could check out."""
+    resp, capturing = _post_credit_checkout(
+        client, auth_user, {"price_id": "price_single_gbp_live"}
+    )
+    assert resp.status_code == 200
+    assert capturing.received["price_id"] == "price_single_gbp_live"
+
+
+def test_credit_checkout_accepts_usd_price(client, auth_user):
+    resp, capturing = _post_credit_checkout(client, auth_user, {"price_id": "price_123"})
+    assert resp.status_code == 200
+    assert capturing.received["price_id"] == "price_123"
+
+
+def test_credit_checkout_resolves_by_currency_when_price_empty(client, auth_user):
+    resp, capturing = _post_credit_checkout(
+        client, auth_user, {"price_id": "", "currency": "gbp"}
+    )
+    assert resp.status_code == 200
+    assert capturing.received["price_id"] == "price_single_gbp_live"
+
+
+def test_credit_checkout_rejects_non_catalog_price(client, auth_user):
+    """Client input still cannot choose an arbitrary Stripe price."""
+    resp, capturing = _post_credit_checkout(
+        client, auth_user, {"price_id": "price_client_supplied"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid price for the selected product"
+    assert "price_id" not in capturing.received
+
+
+def test_credit_checkout_rejects_subscription_price(client, auth_user):
+    """Accepting either single-report price must not open the one-off checkout
+    to a subscription plan's price."""
+    resp, capturing = _post_credit_checkout(
+        client, auth_user, {"price_id": "price_prof_gbp_live"}
+    )
+    assert resp.status_code == 400
+    assert "price_id" not in capturing.received
 
 
 def test_subscription_checkout_resolves_price_when_client_sends_empty(client, auth_user):
